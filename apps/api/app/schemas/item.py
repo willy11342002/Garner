@@ -7,6 +7,7 @@ from pydantic import BaseModel, HttpUrl
 class ItemCreate(BaseModel):
     url: HttpUrl
     title: str | None = None
+    raw_content: str | None = None
 
 
 class ItemRead(BaseModel):
@@ -14,7 +15,8 @@ class ItemRead(BaseModel):
     url: str
     title: str | None
     summary: str | None
-    created_at: datetime
+    thumbnail_url: str | None
+    saved_at: datetime
     deleted_at: datetime | None = None
 
     model_config = {"from_attributes": True}

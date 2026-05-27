@@ -27,6 +27,9 @@ async def summarize(content: str) -> str:
 async def embed(text: str) -> list[float]:
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
-    result = await client.embeddings.create(model="text-embedding-3-small", input=text)
+    client = AsyncOpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url="https://openrouter.ai/api/v1",
+    )
+    result = await client.embeddings.create(model="openai/text-embedding-3-small", input=text)
     return result.data[0].embedding
