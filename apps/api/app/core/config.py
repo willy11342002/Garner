@@ -7,12 +7,9 @@ class Settings(BaseSettings):
     database_url: str
     supabase_url: str
     supabase_service_key: str
+    supabase_jwt_secret: str
     openrouter_api_key: str
-    openai_api_key: str
-    cloudflare_r2_bucket: str = ""
-    cloudflare_r2_endpoint: str = ""
-    cloudflare_r2_access_key: str = ""
-    cloudflare_r2_secret_key: str = ""
+    storage_bucket: str = "thumbnails"
     sentry_dsn: str = ""
 
 
