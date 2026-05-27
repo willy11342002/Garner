@@ -44,6 +44,14 @@
 
 <script setup lang="ts">
 useHead({ title: 'Vela — 被動建立的個人知識庫' })
+
+const user = useSupabaseUser()
+if (user.value) {
+  await navigateTo('/app')
+}
+watch(user, (u) => {
+  if (u) navigateTo('/app')
+})
 </script>
 
 <style>
