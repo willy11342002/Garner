@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     database_url: str
     supabase_url: str
     supabase_service_key: str
-    supabase_jwt_secret: str
     openrouter_api_key: str
     storage_bucket: str = "thumbnails"
     sentry_dsn: str = ""

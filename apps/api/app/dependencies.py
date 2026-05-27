@@ -15,9 +15,10 @@ async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer)],
 ):
     try:
-        payload = decode_token(credentials.credentials, settings.supabase_jwt_secret)
+        payload = decode_token(credentials.credentials, settings.supabase_url)
         return payload
-    except Exception:
+    except Exception as e:
+        print(f"[auth] JWT decode error: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 

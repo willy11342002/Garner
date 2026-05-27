@@ -20,7 +20,7 @@
 
 ## Items
 
-- [ ] **T05** `apps/web/composables/useItems.ts` — 補齊所有方法：
+- [x] **T05** `apps/web/composables/useItems.ts` — 補齊所有方法：
   - `listItems()` → `GET /items/`
   - `createItem(data)` → `POST /items/`（body: `{ url, title?, raw_content? }`）
   - `getItem(id)` → `GET /items/{id}`
