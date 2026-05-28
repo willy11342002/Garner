@@ -276,7 +276,11 @@ async function submitAdd() {
   }
 }
 
-const avatarUrl = computed(() => supabaseUser.value?.user_metadata?.avatar_url ?? null)
+const avatarUrl = computed(() =>
+  authStore.user?.avatar_url
+  ?? supabaseUser.value?.user_metadata?.avatar_url
+  ?? null
+)
 const displayName = computed(() =>
   supabaseUser.value?.user_metadata?.full_name
   ?? supabaseUser.value?.user_metadata?.name

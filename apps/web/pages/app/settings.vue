@@ -11,7 +11,12 @@ const displayName = computed(() =>
   ?? supabaseUser.value?.email?.split('@')[0]
   ?? '—'
 )
-const avatarUrl = computed(() => supabaseUser.value?.user_metadata?.avatar_url ?? null)
+const authStore = useAuthStore()
+const avatarUrl = computed(() =>
+  authStore.user?.avatar_url
+  ?? supabaseUser.value?.user_metadata?.avatar_url
+  ?? null
+)
 const initials = computed(() => displayName.value.slice(0, 2).toUpperCase())
 const email = computed(() => supabaseUser.value?.email ?? '—')
 
