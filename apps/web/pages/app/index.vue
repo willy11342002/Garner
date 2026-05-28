@@ -450,7 +450,7 @@ onUnmounted(() => {
           <span class="tagrow__name">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
           <span class="tagrow__count">{{ group.items.length }}</span>
           <NuxtLink to="/app/share" class="tagrow__share">↗ 分享這個標籤</NuxtLink>
-          <a href="#" class="tagrow__all">查看全部 →</a>
+          <NuxtLink :to="`/app/tag/${group.tag.id}`" class="tagrow__all">查看全部 →</NuxtLink>
         </header>
         <div class="tagrow__scroll">
           <NuxtLink
@@ -475,7 +475,7 @@ onUnmounted(() => {
               </div>
             </div>
           </NuxtLink>
-          <a v-if="group.items.length > 6" class="card--more" href="#">查看更多 +{{ group.items.length - 6 }}</a>
+          <NuxtLink v-if="group.items.length > 6" :to="`/app/tag/${group.tag.id}`" class="card--more">查看更多 +{{ group.items.length - 6 }}</NuxtLink>
         </div>
       </section>
 

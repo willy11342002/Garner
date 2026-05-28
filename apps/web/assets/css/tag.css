@@ -1,0 +1,70 @@
+/* ---------- app/tag/[id].vue ---------- */
+
+.tg-header {
+  margin-bottom: 28px;
+}
+
+.tg-back {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-decoration: none;
+  margin-bottom: 16px;
+  transition: color .15s ease;
+}
+.tg-back:hover { color: var(--text); }
+
+.tg-header__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tg-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tg-name {
+  font-family: var(--font-ui);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.tg-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+.tg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 4px 4px 8px;
+}
+
+.tg-grid .card {
+  width: 100%;
+}
+
+.tg-empty {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.tg-error {
+  padding: 80px 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--text-dim);
+}
