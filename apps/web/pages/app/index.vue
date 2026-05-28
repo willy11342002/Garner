@@ -16,6 +16,30 @@ const confirmingSelected = ref(false)
 const archivingSelected = ref(false)
 const addingTagFor = ref<string | null>(null)
 const newTagInput = ref('')
+const openMenuId = ref<string | null>(null)
+
+function closeMenu() { openMenuId.value = null }
+function toggleRowMenu(itemId: string, e: MouseEvent) {
+  e.stopPropagation()
+  openMenuId.value = openMenuId.value === itemId ? null : itemId
+}
+
+async function handleConfirmItem(item: ItemPendingReview) {
+  openMenuId.value = null
+  for (const tag of [...item.pending_tags]) {
+    await confirmItemTag(item.id, tag.id)
+  }
+  pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
+  itemTagsMap.value[item.id] = await getItemTags(item.id)
+}
+
+async function handleArchiveItem(item: ItemPendingReview) {
+  openMenuId.value = null
+  await itemStore.patch(item.id, { status: 'archived' })
+  const idx = itemStore.items.findIndex(i => i.id === item.id)
+  if (idx !== -1) itemStore.items.splice(idx, 1)
+  pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
+}
 
 function pendingKey(itemId: string, tagId: string) {
   return `${itemId}:${tagId}`
@@ -202,6 +226,7 @@ watch(() => itemStore.recentlyProcessed, async (itemId) => {
 })
 
 onMounted(async () => {
+  document.addEventListener('click', closeMenu)
   await itemStore.load()
   const [, pending] = await Promise.all([
     Promise.all(
@@ -213,6 +238,10 @@ onMounted(async () => {
   ])
   pendingItems.value = pending
   loading.value = false
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeMenu)
 })
 </script>
 
@@ -281,7 +310,7 @@ onMounted(async () => {
             >{{ localize(tag.name_i18n, tag.name) }}</span>
           </div>
           <div class="hero__actions">
-            <a :href="heroItem.url" target="_blank" rel="noopener" class="btn btn--accent">開啟閱讀 →</a>
+            <NuxtLink :to="`/app/item/${heroItem.id}`" class="btn btn--accent">開啟閱讀 →</NuxtLink>
           </div>
         </div>
       </section>
@@ -367,8 +396,50 @@ onMounted(async () => {
                 @click.stop="addingTagFor = item.id; newTagInput = ''"
               >+</button>
             </div>
-            <span class="pending-row__badge mono">• {{ item.pending_tags.length }}</span>
+            <div class="pending-row__menu-wrap" @click.stop>
+              <button
+                class="pending-row__more"
+                :class="{ 'pending-row__more--open': openMenuId === item.id }"
+                @click.stop="toggleRowMenu(item.id, $event)"
+              >···</button>
+              <div v-if="openMenuId === item.id" class="pending-row__dropdown">
+                <button class="pending-row__drop-btn" @click.stop="handleConfirmItem(item)">確認</button>
+                <button class="pending-row__drop-btn pending-row__drop-btn--danger" @click.stop="handleArchiveItem(item)">封存</button>
+              </div>
+            </div>
           </div>
+        </div>
+      </section>
+
+      <!-- Untagged -->
+      <section v-if="untaggedItems.length > 0" class="tagrow">
+        <header class="tagrow__head">
+          <span class="tagrow__dot" style="background:var(--border2)"></span>
+          <span class="tagrow__name">未分類</span>
+          <span class="tagrow__count">{{ untaggedItems.length }}</span>
+        </header>
+        <div class="tagrow__scroll">
+          <NuxtLink
+            v-for="item in untaggedItems.slice(0, 6)"
+            :key="item.id"
+            class="card"
+            :to="`/app/item/${item.id}`"
+          >
+            <div class="card__thumb">
+              <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
+              <div v-else class="placeholder placeholder--a">
+                <div class="placeholder__stripes"></div>
+              </div>
+              <span class="source-badge">{{ sourceLabel(item.url) }}</span>
+            </div>
+            <div class="card__body">
+              <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
+              <div class="card__footer">
+                <span class="mono">{{ relativeTime(item.saved_at) }}</span>
+                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
+              </div>
+            </div>
+          </NuxtLink>
         </div>
       </section>
 
@@ -382,13 +453,11 @@ onMounted(async () => {
           <a href="#" class="tagrow__all">查看全部 →</a>
         </header>
         <div class="tagrow__scroll">
-          <a
+          <NuxtLink
             v-for="item in group.items.slice(0, 6)"
             :key="item.id"
             class="card"
-            :href="item.url"
-            target="_blank"
-            rel="noopener"
+            :to="`/app/item/${item.id}`"
           >
             <div class="card__thumb">
               <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
@@ -405,7 +474,7 @@ onMounted(async () => {
                 <span v-else :class="`tag-chip tag-chip--${tagColor(i)}`">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
               </div>
             </div>
-          </a>
+          </NuxtLink>
           <a v-if="group.items.length > 6" class="card--more" href="#">查看更多 +{{ group.items.length - 6 }}</a>
         </div>
       </section>
@@ -417,39 +486,6 @@ onMounted(async () => {
         </button>
       </div>
 
-      <!-- Untagged -->
-      <section v-if="untaggedItems.length > 0" class="tagrow">
-        <header class="tagrow__head">
-          <span class="tagrow__dot" style="background:var(--border2)"></span>
-          <span class="tagrow__name">未分類</span>
-          <span class="tagrow__count">{{ untaggedItems.length }}</span>
-        </header>
-        <div class="tagrow__scroll">
-          <a
-            v-for="item in untaggedItems.slice(0, 6)"
-            :key="item.id"
-            class="card"
-            :href="item.url"
-            target="_blank"
-            rel="noopener"
-          >
-            <div class="card__thumb">
-              <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
-              <div v-else class="placeholder placeholder--a">
-                <div class="placeholder__stripes"></div>
-              </div>
-              <span class="source-badge">{{ sourceLabel(item.url) }}</span>
-            </div>
-            <div class="card__body">
-              <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
-              <div class="card__footer">
-                <span class="mono">{{ relativeTime(item.saved_at) }}</span>
-                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
-              </div>
-            </div>
-          </a>
-        </div>
-      </section>
     </template>
   </main>
 </template>

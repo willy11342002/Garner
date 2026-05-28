@@ -7,6 +7,7 @@ export default defineNuxtConfig({
     '~/assets/css/selbar.css',
     '~/assets/css/home.css',
     '~/assets/css/archive.css',
+    '~/assets/css/item-detail.css',
   ],
 
   modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n'],
