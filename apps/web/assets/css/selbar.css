@@ -1,0 +1,22 @@
+/* ---------- Selbar (shared selection action bar) ---------- */
+.selbar {
+  position: sticky; top: 60px; z-index: 10;
+  margin: 0 0 14px; padding: 12px 16px;
+  background: none;
+  border: none;
+  border-radius: 12px;
+  gap: 10px;
+  box-shadow: 0 8px 24px -12px var(--shadow);
+  backdrop-filter: blur(12px);
+  display: flex; /* 啟動 Flexbox 佈局 */
+  justify-content: space-between; /* 讓子元素平均分配空間，左右緊貼邊緣 */
+  align-items: center; /* 可選：讓兩個元素在垂直方向上居中對齊 */
+}
+.selbar__count {
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--accent); padding: 5px 10px;
+  background: var(--accent-dim); border-radius: 6px;
+  border: 1px solid var(--accent-bdr);
+  white-space: nowrap;
+}
+.selbar__actions { display: flex; gap: 8px; }

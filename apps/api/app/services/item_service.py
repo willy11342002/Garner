@@ -82,6 +82,8 @@ async def update_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     if data.title is not None:
         user_item.content.title = data.title
+    if data.status is not None:
+        user_item.status = data.status
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item)

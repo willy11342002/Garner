@@ -8,6 +8,7 @@ export interface Item {
   url: string
   title: string | null
   summary: string | null
+  summary_i18n: Record<string, string> | null
   thumbnail_url: string | null
   saved_at: string
   deleted_at: string | null
@@ -22,6 +23,7 @@ export interface ItemCreate {
 
 export interface ItemUpdate {
   title?: string
+  status?: 'active' | 'archived' | 'deleted'
 }
 
 export type CollectionVisibility = 'private' | 'link' | 'public'
@@ -29,6 +31,16 @@ export type CollectionVisibility = 'private' | 'link' | 'public'
 export interface Tag {
   id: string
   name: string
+  name_i18n: Record<string, string> | null
+}
+
+export interface ItemPendingReview {
+  id: string
+  url: string
+  title: string | null
+  thumbnail_url: string | null
+  saved_at: string
+  pending_tags: Tag[]
 }
 
 export interface TagCreate {

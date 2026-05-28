@@ -1,4 +1,4 @@
-import type { Item, ItemCreate, ItemUpdate, Tag } from '~/types/api'
+import type { Item, ItemCreate, ItemPendingReview, ItemUpdate, Tag } from '~/types/api'
 
 export function useItems() {
   const apiFetch = useApiFetch()
@@ -27,13 +27,26 @@ export function useItems() {
     return apiFetch(`/items/${id}/tags`)
   }
 
-  function attachTag(id: string, name: string): Promise<Tag> {
-    return apiFetch(`/items/${id}/tags`, { method: 'POST', body: { name } })
+  function attachTag(id: string, name: string, pending = false): Promise<Tag> {
+    const url = pending ? `/items/${id}/tags?pending=1` : `/items/${id}/tags`
+    return apiFetch(url, { method: 'POST', body: { name } })
   }
 
   function detachTag(itemId: string, tagId: string): Promise<void> {
     return apiFetch(`/items/${itemId}/tags/${tagId}`, { method: 'DELETE' })
   }
 
-  return { listItems, createItem, getItem, updateItem, deleteItem, getItemTags, attachTag, detachTag }
+  function getPendingReview(): Promise<ItemPendingReview[]> {
+    return apiFetch('/items/pending-review')
+  }
+
+  function confirmItemTag(itemId: string, tagId: string): Promise<void> {
+    return apiFetch(`/items/${itemId}/tags/${tagId}/confirm`, { method: 'POST' })
+  }
+
+  return {
+    listItems, createItem, getItem, updateItem, deleteItem,
+    getItemTags, attachTag, detachTag,
+    getPendingReview, confirmItemTag,
+  }
 }

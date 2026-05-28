@@ -172,7 +172,12 @@ apps/web/
 │   └── useAuthStore.ts
 ├── server/              # Nitro server routes（若需要 BFF 層）
 │   └── api/
-├── assets/              # 需要被 Vite 處理的靜態資源（CSS、fonts）
+├── assets/
+│   └── css/
+│       ├── vela.css          # base：tokens、reset、nav、buttons、cards、utilities
+│       ├── selbar.css        # 共用 selbar 元件
+│       ├── home.css          # app/index.vue 首頁
+│       └── archive.css       # app/archive.vue 封存頁
 ├── public/              # 不需處理的靜態資源（favicon 等）
 ├── plugins/             # Nuxt plugins（初始化第三方 lib）
 ├── middleware/          # Route middleware（auth guard 等）
@@ -201,6 +206,13 @@ routeRules: {
 - **stores/** → 跨元件共享狀態。命名：`use` 前綴（`useItemStore`）。
 - **components/** → 按功能分資料夾，base/ 放原子元件，其他放業務元件。
 - **utils/** → 純函式，不依賴 Vue 響應式，可直接 import。
+
+### CSS 規則
+
+- **所有 global CSS 放 `assets/css/` 下**，在 `nuxt.config.ts` 的 `css[]` 陣列引入。
+- **Vue 的 `<style>` 只允許 `scoped`**（元件局部樣式）。禁止在 `.vue` 檔案內用 unscoped `<style>` 寫全域樣式。
+- 跨頁共用的元件樣式（例如 `.selbar`）獨立成一支 CSS 檔案。
+- 每個頁面（`app/index.vue`、`app/archive.vue` 等）有對應的 CSS 檔案（`home.css`、`archive.css`）。
 
 ### 命名規則
 

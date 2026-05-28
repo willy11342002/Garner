@@ -2,7 +2,12 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: false },
 
-  css: ['~/assets/css/vela.css'],
+  css: [
+    '~/assets/css/vela.css',
+    '~/assets/css/selbar.css',
+    '~/assets/css/home.css',
+    '~/assets/css/archive.css',
+  ],
 
   modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n'],
 

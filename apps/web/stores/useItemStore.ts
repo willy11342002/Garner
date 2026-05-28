@@ -3,10 +3,14 @@ import type { Item, ItemCreate, ItemUpdate } from '~/types/api'
 
 export const useItemStore = defineStore('item', () => {
   const items = ref<Item[]>([])
+  const recentlyProcessed = ref<string | null>(null)
 
   async function load() {
     const { listItems } = useItems()
     items.value = await listItems()
+    for (const item of items.value) {
+      if (!item.parsed_at) _watchProcessing(item.id)
+    }
   }
 
   async function add(data: ItemCreate): Promise<Item> {
@@ -70,6 +74,7 @@ export const useItemStore = defineStore('item', () => {
             if (msg.status === 'done') {
               const idx = items.value.findIndex(i => i.id === itemId)
               if (idx !== -1 && msg.item) items.value[idx] = msg.item
+              recentlyProcessed.value = itemId
               return
             }
             if (msg.status === 'timeout' || msg.status === 'error') return
@@ -81,5 +86,5 @@ export const useItemStore = defineStore('item', () => {
     }
   }
 
-  return { items, load, add, remove, patch }
+  return { items, load, add, remove, patch, recentlyProcessed }
 })

@@ -12,7 +12,11 @@ from app.models.user_item import UserItem, UserItemStatus
 async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
     result = await db.execute(
         select(UserItem)
-        .where(UserItem.user_id == user_id, UserItem.deleted_at.is_(None))
+        .where(
+            UserItem.user_id == user_id,
+            UserItem.deleted_at.is_(None),
+            UserItem.status == UserItemStatus.active,
+        )
         .options(joinedload(UserItem.content))
         .order_by(UserItem.saved_at.desc())
     )

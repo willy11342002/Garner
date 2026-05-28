@@ -1,22 +1,124 @@
 <script setup lang="ts">
-import type { Item, Tag } from '~/types/api'
+import type { Item, ItemPendingReview, Tag } from '~/types/api'
 
 const itemStore = useItemStore()
-const { getItemTags } = useItems()
+const { getItemTags, getPendingReview, confirmItemTag, detachTag, attachTag } = useItems()
+const { localize } = useI18nContent()
 
 const loading = ref(true)
 const itemTagsMap = ref<Record<string, Tag[]>>({})
+
+const pendingItems = ref<ItemPendingReview[]>([])
+const pendingCollapsed = ref(false)
+const selectedPendingIds = reactive(new Set<string>())
+const tagDismissing = ref<Record<string, boolean>>({})
+const confirmingSelected = ref(false)
+const archivingSelected = ref(false)
+const addingTagFor = ref<string | null>(null)
+const newTagInput = ref('')
+
+function pendingKey(itemId: string, tagId: string) {
+  return `${itemId}:${tagId}`
+}
+
+function sourceEmoji(url: string) {
+  if (/youtu/.test(url)) return '▶'
+  if (/instagram\.com/.test(url)) return '◈'
+  return '◎'
+}
+
+function sourceIconBg(url: string) {
+  if (/youtu/.test(url)) return 'rgba(255,80,80,.18)'
+  if (/instagram\.com/.test(url)) return 'rgba(200,60,180,.18)'
+  return 'rgba(80,120,255,.18)'
+}
+
+function togglePendingItem(itemId: string, e: MouseEvent) {
+  if ((e.target as HTMLElement).closest('button, input')) return
+  if (selectedPendingIds.has(itemId)) selectedPendingIds.delete(itemId)
+  else selectedPendingIds.add(itemId)
+}
+
+async function handleConfirmSelected() {
+  confirmingSelected.value = true
+  try {
+    for (const itemId of [...selectedPendingIds]) {
+      const item = pendingItems.value.find(i => i.id === itemId)
+      if (!item) continue
+      for (const tag of [...item.pending_tags]) {
+        await confirmItemTag(item.id, tag.id)
+      }
+      pendingItems.value = pendingItems.value.filter(i => i.id !== itemId)
+      itemTagsMap.value[itemId] = await getItemTags(itemId)
+      selectedPendingIds.delete(itemId)
+    }
+  } finally {
+    confirmingSelected.value = false
+  }
+}
+
+async function handleArchiveSelected() {
+  archivingSelected.value = true
+  try {
+    for (const itemId of [...selectedPendingIds]) {
+      await itemStore.patch(itemId, { status: 'archived' })
+      const idx = itemStore.items.findIndex(i => i.id === itemId)
+      if (idx !== -1) itemStore.items.splice(idx, 1)
+      pendingItems.value = pendingItems.value.filter(i => i.id !== itemId)
+      selectedPendingIds.delete(itemId)
+    }
+  } finally {
+    archivingSelected.value = false
+  }
+}
+
+async function handleDismissTag(item: ItemPendingReview, tagId: string) {
+  const key = pendingKey(item.id, tagId)
+  tagDismissing.value[key] = true
+  try {
+    await detachTag(item.id, tagId)
+    item.pending_tags = item.pending_tags.filter(t => t.id !== tagId)
+    if (item.pending_tags.length === 0) {
+      pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
+      selectedPendingIds.delete(item.id)
+    }
+  } finally {
+    tagDismissing.value[key] = false
+  }
+}
+
+async function handleAddTag(item: ItemPendingReview) {
+  const name = newTagInput.value.trim()
+  addingTagFor.value = null
+  newTagInput.value = ''
+  if (!name) return
+
+  // 樂觀更新：先 push 一個暫時 id 讓 chip 立刻出現
+  const tempId = `local-${name}-${Date.now()}`
+  item.pending_tags.push({ id: tempId, name, name_i18n: null })
+
+  // 送 API（pending=true → confirmed=false，跟 AI tag 一樣待確認）
+  const tag = await attachTag(item.id, name, true)
+  // 替換成真實 id，讓 × 能正確呼叫 detachTag
+  if (tag?.id) {
+    const idx = item.pending_tags.findIndex(t => t.id === tempId)
+    if (idx !== -1) item.pending_tags[idx] = tag
+  }
+}
 
 // URL quick-save (empty state CTA)
 const newUrl = ref('')
 const saving = ref(false)
 const saveError = ref('')
 
-const heroItem = computed(() => itemStore.items[0] ?? null)
+const heroItem = computed(() => itemStore.items.find(i => !!i.parsed_at) ?? null)
 
 const heroTags = computed(() =>
   heroItem.value ? (itemTagsMap.value[heroItem.value.id] ?? []) : []
 )
+
+const TAGROWS_PER_PAGE = 3
+const visibleTagCount = ref(TAGROWS_PER_PAGE)
 
 const tagGroups = computed(() => {
   const groups = new Map<string, { tag: Tag; items: Item[] }>()
@@ -26,17 +128,38 @@ const tagGroups = computed(() => {
       groups.get(tag.id)!.items.push(item)
     }
   }
-  return [...groups.values()]
+  // Sort: primary = item count desc, secondary = most recent saved_at desc
+  return [...groups.values()].sort((a, b) => {
+    if (b.items.length !== a.items.length) return b.items.length - a.items.length
+    const latestA = Math.max(...a.items.map(i => new Date(i.saved_at).getTime()))
+    const latestB = Math.max(...b.items.map(i => new Date(i.saved_at).getTime()))
+    return latestB - latestA
+  })
 })
 
+const visibleTagGroups = computed(() => tagGroups.value.slice(0, visibleTagCount.value))
+const hasMoreTagGroups = computed(() => tagGroups.value.length > visibleTagCount.value)
+
+const pendingItemIds = computed(() => new Set(pendingItems.value.map(i => i.id)))
+
 const untaggedItems = computed(() =>
-  itemStore.items.filter(item => (itemTagsMap.value[item.id] ?? []).length === 0)
+  itemStore.items.filter(item =>
+    !!item.parsed_at &&
+    (itemTagsMap.value[item.id] ?? []).length === 0 &&
+    !pendingItemIds.value.has(item.id)
+  )
 )
 
 const TAG_COLORS = ['a', 'b', 'c', 'd', 'e'] as const
 
 function tagColor(i: number) {
   return TAG_COLORS[i % TAG_COLORS.length]
+}
+
+function cardTitle(url: string, title: string | null) {
+  if (title) return title
+  try { return new URL(url).hostname.replace(/^www\./, '') }
+  catch { return '' }
 }
 
 function sourceLabel(url: string) {
@@ -72,13 +195,23 @@ async function quickSave() {
   }
 }
 
+watch(() => itemStore.recentlyProcessed, async (itemId) => {
+  if (!itemId) return
+  itemTagsMap.value[itemId] = await getItemTags(itemId)
+  pendingItems.value = await getPendingReview()
+})
+
 onMounted(async () => {
   await itemStore.load()
-  await Promise.all(
-    itemStore.items.map(async item => {
-      itemTagsMap.value[item.id] = await getItemTags(item.id)
-    })
-  )
+  const [, pending] = await Promise.all([
+    Promise.all(
+      itemStore.items.map(async item => {
+        itemTagsMap.value[item.id] = await getItemTags(item.id)
+      })
+    ),
+    getPendingReview(),
+  ])
+  pendingItems.value = pending
   loading.value = false
 })
 </script>
@@ -138,14 +271,14 @@ onMounted(async () => {
         </div>
         <div class="hero__body">
           <span class="hero__eyebrow">TODAY'S REVISIT</span>
-          <h1 class="hero__title">{{ heroItem.title ?? heroItem.url }}</h1>
-          <p v-if="heroItem.summary" class="hero__summary">{{ heroItem.summary }}</p>
+          <h1 class="hero__title">{{ cardTitle(heroItem.url, heroItem.title) }}</h1>
+          <p v-if="heroItem.summary || heroItem.summary_i18n" class="hero__summary">{{ localize(heroItem.summary_i18n, heroItem.summary) }}</p>
           <div v-if="heroTags.length > 0" class="hero__chips">
             <span
               v-for="(tag, i) in heroTags"
               :key="tag.id"
               :class="`tag-chip tag-chip--${tagColor(i)}`"
-            >{{ tag.name }}</span>
+            >{{ localize(tag.name_i18n, tag.name) }}</span>
           </div>
           <div class="hero__actions">
             <a :href="heroItem.url" target="_blank" rel="noopener" class="btn btn--accent">開啟閱讀 →</a>
@@ -153,11 +286,97 @@ onMounted(async () => {
         </div>
       </section>
 
+      <!-- 新知識 pending list -->
+      <section v-if="pendingItems.length > 0" class="pending-section fadeup">
+        <header class="pending-section__head">
+          <span class="pending-section__dot"></span>
+          <span class="pending-section__count">{{ pendingItems.length }} 筆待整理</span>
+          <button class="pending-section__toggle mono" @click="pendingCollapsed = !pendingCollapsed">
+            {{ pendingCollapsed ? '展開 ↓' : '收起 ↑' }}
+          </button>
+        </header>
+
+        <!-- Selbar -->
+        <div v-if="selectedPendingIds.size > 0" class="selbar">
+          <span class="selbar__count">已選 {{ selectedPendingIds.size }} 項</span>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn--ghost" :disabled="confirmingSelected || archivingSelected" @click="selectedPendingIds.clear()">取消</button>
+            <button
+              class="btn btn--accent"
+              :disabled="confirmingSelected || archivingSelected"
+              @click="handleConfirmSelected"
+            >{{ confirmingSelected ? '確認中...' : '確認' }}</button>
+            <button
+              class="btn btn--danger"
+              :disabled="confirmingSelected || archivingSelected"
+              @click="handleArchiveSelected"
+            >{{ archivingSelected ? '封存中...' : '封存' }}</button>
+          </div>
+        </div>
+
+        <div v-if="!pendingCollapsed" class="pending-list">
+          <div
+            v-for="item in pendingItems"
+            :key="item.id"
+            class="pending-row"
+            :class="{ 'pending-row--selected': selectedPendingIds.has(item.id) }"
+            @click="togglePendingItem(item.id, $event)"
+          >
+            <span class="checkbox">
+              <svg v-if="selectedPendingIds.has(item.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
+            </span>
+            <div class="pending-row__icon" :style="`background:${sourceIconBg(item.url)}`">
+              {{ sourceEmoji(item.url) }}
+            </div>
+            <div class="pending-row__main">
+              <div class="pending-row__title">{{ cardTitle(item.url, item.title) }}</div>
+              <div class="pending-row__meta">
+                <span class="source-badge source-badge--sm">{{ sourceLabel(item.url) }}</span>
+                <span class="mono">{{ relativeTime(item.saved_at) }}</span>
+              </div>
+            </div>
+            <div class="pending-row__tags">
+              <div
+                v-for="tag in item.pending_tags"
+                :key="tag.id"
+                class="pending-tag-chip"
+                :class="{ 'pending-tag-chip--acting': tagDismissing[pendingKey(item.id, tag.id)] }"
+              >
+                <span>#{{ localize(tag.name_i18n, tag.name) }}</span>
+                <button
+                  :disabled="tagDismissing[pendingKey(item.id, tag.id)]"
+                  @click.stop="handleDismissTag(item, tag.id)"
+                >×</button>
+              </div>
+              <template v-if="addingTagFor === item.id">
+                <input
+                  v-model="newTagInput"
+                  class="pending-tag-input"
+                  placeholder="標籤名稱"
+                  autofocus
+                  @keydown.enter.stop="handleAddTag(item)"
+                  @keydown.esc.stop="addingTagFor = null; newTagInput = ''"
+                  @blur="handleAddTag(item)"
+                  @click.stop
+                />
+              </template>
+              <button
+                v-else
+                class="pending-row__add"
+                title="新增標籤"
+                @click.stop="addingTagFor = item.id; newTagInput = ''"
+              >+</button>
+            </div>
+            <span class="pending-row__badge mono">• {{ item.pending_tags.length }}</span>
+          </div>
+        </div>
+      </section>
+
       <!-- Tag rows -->
-      <section v-for="(group, i) in tagGroups" :key="group.tag.id" class="tagrow">
+      <section v-for="(group, i) in visibleTagGroups" :key="group.tag.id" class="tagrow">
         <header class="tagrow__head">
           <span class="tagrow__dot" :style="`background:var(--tag-${tagColor(i)})`"></span>
-          <span class="tagrow__name">{{ group.tag.name }}</span>
+          <span class="tagrow__name">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
           <span class="tagrow__count">{{ group.items.length }}</span>
           <NuxtLink to="/app/share" class="tagrow__share">↗ 分享這個標籤</NuxtLink>
           <a href="#" class="tagrow__all">查看全部 →</a>
@@ -179,17 +398,24 @@ onMounted(async () => {
               <span class="source-badge">{{ sourceLabel(item.url) }}</span>
             </div>
             <div class="card__body">
-              <h3 class="card__title">{{ item.title ?? item.url }}</h3>
+              <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
               <div class="card__footer">
-                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
-                <span v-else :class="`tag-chip tag-chip--${tagColor(i)}`">{{ group.tag.name }}</span>
                 <span class="mono">{{ relativeTime(item.saved_at) }}</span>
+                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
+                <span v-else :class="`tag-chip tag-chip--${tagColor(i)}`">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
               </div>
             </div>
           </a>
           <a v-if="group.items.length > 6" class="card--more" href="#">查看更多 +{{ group.items.length - 6 }}</a>
         </div>
       </section>
+
+      <!-- Load more tag rows -->
+      <div v-if="hasMoreTagGroups" class="tagrows-more">
+        <button class="tagrows-more__btn mono" @click="visibleTagCount += TAGROWS_PER_PAGE">
+          顯示更多標籤 · 還有 {{ tagGroups.length - visibleTagCount }} 組 ↓
+        </button>
+      </div>
 
       <!-- Untagged -->
       <section v-if="untaggedItems.length > 0" class="tagrow">
@@ -215,10 +441,10 @@ onMounted(async () => {
               <span class="source-badge">{{ sourceLabel(item.url) }}</span>
             </div>
             <div class="card__body">
-              <h3 class="card__title">{{ item.title ?? item.url }}</h3>
+              <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
               <div class="card__footer">
-                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
                 <span class="mono">{{ relativeTime(item.saved_at) }}</span>
+                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
               </div>
             </div>
           </a>
@@ -227,163 +453,3 @@ onMounted(async () => {
     </template>
   </main>
 </template>
-
-<style>
-/* Loading */
-.loading-state {
-  padding: 80px 0;
-  text-align: center;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 13px;
-}
-
-/* Empty state: tall hero fills viewport */
-.hero.hero--empty {
-  min-height: calc(100vh - 52px - 24px - 64px - 28px - 40px);
-}
-.hero.hero--empty .hero__media {
-  min-height: 0;
-}
-
-/* Empty state CTA in hero body */
-.hero__cta { gap: 16px; }
-
-.cta-input-row {
-  display: flex;
-  gap: 8px;
-}
-.cta-input {
-  flex: 1;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 13px;
-  color: var(--text);
-  font-family: var(--font-ui);
-  outline: none;
-  transition: border-color .15s ease;
-  min-width: 0;
-}
-.cta-input:focus { border-color: var(--accent-bdr); }
-.cta-input::placeholder { color: var(--text-dim); }
-.cta-input:disabled { opacity: 0.5; }
-
-.cta-error {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--danger);
-}
-
-.cta-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.cta-divider::before,
-.cta-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.cta-ext-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Thumbnail images */
-.hero__img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.card__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-/* Hero */
-.hero {
-  position: relative;
-  margin: 28px 0 40px;
-  border-radius: 20px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  min-height: 300px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
-}
-.hero__media { position: relative; min-height: 300px; overflow: hidden; }
-.hero__media .placeholder__label { font-size: 11px; color: rgba(255,255,255,0.55); }
-body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
-.hero__media::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent 0%, transparent 45%, var(--surface) 95%);
-  pointer-events: none;
-}
-.hero__mediaTag { position: absolute; left: 18px; top: 18px; z-index: 2; }
-.hero__source { position: absolute; right: 18px; bottom: 18px; z-index: 2; }
-.hero__body {
-  padding: 28px 32px 28px 8px;
-  display: flex; flex-direction: column; justify-content: center; gap: 14px;
-  position: relative; z-index: 3;
-}
-.hero__eyebrow { display: inline-flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; }
-.hero__eyebrow::before { content: ''; width: 3px; height: 12px; background: var(--accent); border-radius: 2px; }
-.hero__title { font-family: var(--font-brand); font-weight: 600; font-size: 26px; line-height: 1.25; letter-spacing: -0.015em; margin: 0; max-width: 520px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.hero__summary { font-size: 13px; color: var(--text-mid); line-height: 1.75; max-width: 520px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.hero__chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.hero__actions { display: flex; gap: 10px; margin-top: 4px; }
-
-/* Tag rows */
-.tagrow { margin-bottom: 36px; }
-.tagrow__head { display: flex; align-items: center; padding: 0 4px 10px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
-.tagrow__dot { width: 7px; height: 7px; border-radius: 50%; margin-right: 10px; flex-shrink: 0; }
-.tagrow__name { font-family: var(--font-ui); font-weight: 500; font-size: 14px; color: var(--text); }
-.tagrow__count { margin-left: 10px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
-.tagrow__share { margin-left: 12px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); padding: 2px 8px; border: 1px solid var(--border); border-radius: 12px; transition: all .15s ease; }
-.tagrow__share:hover { color: var(--accent); border-color: var(--accent-bdr); }
-.tagrow__all { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); transition: color .15s ease; }
-.tagrow__all:hover { color: var(--text); }
-.tagrow__scroll { display: flex; gap: 12px; overflow-x: auto; padding: 4px 4px 8px; scrollbar-width: none; }
-.tagrow__scroll::-webkit-scrollbar { display: none; }
-.processing-badge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--accent);
-  border: 1px solid var(--accent-bdr);
-  border-radius: 8px;
-  padding: 1px 7px;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.card--more { width: 200px; flex: 0 0 auto; border: 1px dashed var(--border2); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--text-mid); font-family: var(--font-mono); font-size: 12px; border-radius: 12px; }
-.card--more:hover { color: var(--accent); border-color: var(--accent-bdr); }
-
-@media (max-width: 880px) {
-  .hero { grid-template-columns: 1fr; min-height: 0; }
-  .hero__media { height: 200px; min-height: 0; }
-  .hero__media::after { background: linear-gradient(180deg, transparent 0%, var(--surface) 90%); }
-  .hero__body { padding: 20px 22px 24px; }
-  .hero__title { font-size: 22px; }
-  .card { width: 168px; }
-  .card__thumb { height: 96px; }
-}
-</style>
