@@ -6,17 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
-from app.models.content_object import ContentObject, SourceType
+from app.models.content_object import ContentObject, detect_source_type
 from app.schemas.item import ItemCreate, ItemRead, ItemUpdate
 from app.workers.process_item import process_item
-
-
-def _detect_source_type(url: str) -> SourceType:
-    if "youtube.com" in url or "youtu.be" in url:
-        return SourceType.youtube
-    if "instagram.com" in url:
-        return SourceType.ig
-    return SourceType.article
 
 
 def _item_to_read(user_item) -> ItemRead:
@@ -29,12 +21,13 @@ def _item_to_read(user_item) -> ItemRead:
         thumbnail_url=content.thumbnail_url,
         saved_at=user_item.saved_at,
         deleted_at=user_item.deleted_at,
+        parsed_at=content.parsed_at,
     )
 
 
-async def _run_process_item(content_id: UUID, url: str, raw_content: str) -> None:
+async def _run_process_item(content_id: UUID, user_id: UUID, user_item_id: UUID, url: str) -> None:
     async with AsyncSessionLocal() as db:
-        await process_item(db, content_id, url, raw_content)
+        await process_item(db, content_id, user_id, user_item_id, url)
 
 
 async def create_item(
@@ -48,10 +41,11 @@ async def create_item(
     result = await db.execute(select(ContentObject).where(ContentObject.url == url))
     content = result.scalar_one_or_none()
 
-    if content is None:
+    is_new = content is None
+    if is_new:
         content = ContentObject(
             url=url,
-            source_type=_detect_source_type(url),
+            source_type=detect_source_type(url),
             title=data.title,
         )
         db.add(content)
@@ -62,8 +56,8 @@ async def create_item(
     await db.refresh(user_item)
     await db.refresh(user_item.content)
 
-    raw_content = data.raw_content or url
-    background_tasks.add_task(_run_process_item, content.id, url, raw_content)
+    if is_new or content.parsed_at is None:
+        background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, url)
 
     return _item_to_read(user_item)
 

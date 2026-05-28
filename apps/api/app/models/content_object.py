@@ -17,6 +17,14 @@ class SourceType(str, enum.Enum):
     ig = "ig"
 
 
+def detect_source_type(url: str) -> "SourceType":
+    if "youtube.com" in url or "youtu.be" in url:
+        return SourceType.youtube
+    if "instagram.com" in url:
+        return SourceType.ig
+    return SourceType.article
+
+
 class ContentObject(Base):
     __tablename__ = "content_objects"
 

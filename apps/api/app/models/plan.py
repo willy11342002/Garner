@@ -14,6 +14,7 @@ class Plan(Base):
     price_monthly: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_saves_per_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_storage_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    whisper_daily_limit_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=3600)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="plan")

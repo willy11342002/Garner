@@ -1,7 +1,12 @@
+import asyncio
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi.responses import StreamingResponse
 
+from app.core import events
+from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
 from app.schemas.item import ItemCreate, ItemRead, ItemUpdate
@@ -39,6 +44,41 @@ async def update_item(item_id: UUID, data: ItemUpdate, current_user: CurrentUser
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(item_id: UUID, current_user: CurrentUser, db: DbSession):
     await item_service.delete_item(db, UUID(current_user["sub"]), item_id)
+
+
+@router.get("/{item_id}/stream")
+async def stream_item_status(item_id: UUID, current_user: CurrentUser, db: DbSession):
+    user_item = await crud_items.get_one(db, UUID(current_user["sub"]), item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    async def generator():
+        # Already processed — return immediately
+        if user_item.content.parsed_at is not None:
+            item_data = item_service._item_to_read(user_item)
+            yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
+            return
+
+        event = events.register(str(item_id))
+        yield 'data: {"status":"processing"}\n\n'
+
+        try:
+            await asyncio.wait_for(event.wait(), timeout=300)
+        except asyncio.TimeoutError:
+            yield 'data: {"status":"timeout"}\n\n'
+            return
+
+        # Re-fetch updated item after processing
+        updated = await crud_items.get_one(db, UUID(current_user["sub"]), item_id)
+        if updated:
+            item_data = item_service._item_to_read(updated)
+            yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{item_id}/tags", response_model=list[TagRead])

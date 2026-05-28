@@ -106,7 +106,7 @@ def upgrade() -> None:
     op.create_table(
         "tags",
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
         sa.Column("color", sa.String(7), nullable=True),
         sa.Column("item_count", sa.Integer(), nullable=False, server_default="0"),

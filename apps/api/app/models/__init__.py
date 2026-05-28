@@ -7,6 +7,7 @@ from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.tag import Tag
 from app.models.user import SSOProvider, User
 from app.models.user_item import UserItem, UserItemStatus
+from app.models.whisper_usage import WhisperUsage
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "Collection",
     "CollectionVisibility",
     "CollectionItem",
+    "WhisperUsage",
 ]

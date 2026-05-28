@@ -18,6 +18,7 @@ class ItemRead(BaseModel):
     thumbnail_url: str | None
     saved_at: datetime
     deleted_at: datetime | None = None
+    parsed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
