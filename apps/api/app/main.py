@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import auth, collections, items, search, tags
+from app.routers import auth, collections, explore, items, search, share, tags
 
 if settings.sentry_dsn:
     sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.2)
@@ -32,6 +32,8 @@ app.include_router(items.router, prefix="/items", tags=["items"])
 app.include_router(tags.router, prefix="/tags", tags=["tags"])
 app.include_router(collections.router, prefix="/collections", tags=["collections"])
 app.include_router(search.router, prefix="/search", tags=["search"])
+app.include_router(explore.router, prefix="/explore", tags=["explore"])
+app.include_router(share.router, prefix="/share", tags=["share"])
 
 
 @app.exception_handler(Exception)

@@ -7,6 +7,7 @@ from app.crud import items as crud_items
 from app.dependencies import CurrentUser, DbSession
 from app.schemas.collection import (
     CollectionCreate,
+    CollectionForkCreate,
     CollectionRead,
     CollectionReadDetail,
     CollectionUpdate,
@@ -107,3 +108,18 @@ async def remove_item_from_collection(
         raise HTTPException(status_code=404, detail="Item not found")
     await crud_collections.remove_item(db, collection_id, user_item.content_id)
     await db.commit()
+
+
+@router.post("/{collection_id}/fork", response_model=CollectionRead, status_code=status.HTTP_201_CREATED)
+async def fork_collection(
+    collection_id: UUID, data: CollectionForkCreate, current_user: CurrentUser, db: DbSession
+):
+    source = await crud_collections.get_by_id_with_items(db, collection_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    title = data.title or source.title
+    new_collection = await crud_collections.fork_collection(
+        db, source, UUID(current_user["sub"]), title, data.content_ids
+    )
+    await db.commit()
+    return new_collection

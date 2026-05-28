@@ -31,3 +31,29 @@ class CollectionReadDetail(CollectionRead):
 class CollectionUpdate(BaseModel):
     title: str | None = None
     visibility: CollectionVisibility | None = None
+
+
+class CollectionShareItemRead(BaseModel):
+    id: UUID
+    url: str
+    title: str | None
+    thumbnail_url: str | None
+    source_type: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class CollectionShareRead(BaseModel):
+    id: UUID
+    title: str
+    slug: str
+    fork_count: int
+    created_at: datetime
+    author_username: str
+    author_avatar_url: str | None
+    items: list[CollectionShareItemRead]
+
+
+class CollectionForkCreate(BaseModel):
+    title: str | None = None
+    content_ids: list[UUID] = []

@@ -7,9 +7,9 @@
           <h1 class="page-title" style="margin-top:4px;">探索 · 漫遊</h1>
         </div>
         <div class="ex-head__stats">
-          <div class="stat"><b>1,284</b>知識庫總量</div>
-          <div class="stat"><b>12</b>公開集合</div>
-          <div class="stat"><b>+38</b>本週新增</div>
+          <div class="stat"><b>{{ stats ? stats.total_items.toLocaleString() : '—' }}</b>知識庫總量</div>
+          <div class="stat"><b>{{ stats ? stats.public_collections : '—' }}</b>公開集合</div>
+          <div class="stat"><b>{{ stats ? '+' + stats.weekly_new : '—' }}</b>本週新增</div>
         </div>
       </div>
       <nav class="ex-tabs">
@@ -181,8 +181,21 @@
 </template>
 
 <script setup lang="ts">
+import type { ExploreStats } from '~/types/api'
+
 const activeTab = ref<'focus' | 'surprise' | 'browse'>('focus')
 const browseFilter = ref('all')
+
+const apiFetch = useApiFetch()
+const stats = ref<ExploreStats | null>(null)
+
+onMounted(async () => {
+  try {
+    stats.value = await apiFetch<ExploreStats>('/explore/stats')
+  } catch {
+    // stats remain null, UI shows '—'
+  }
+})
 </script>
 
 <style>

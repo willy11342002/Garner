@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -63,3 +63,30 @@ async def soft_delete(db: AsyncSession, user_item: UserItem) -> UserItem:
     user_item.status = UserItemStatus.deleted
     await db.flush()
     return user_item
+
+
+async def count_all(db: AsyncSession, user_id: UUID) -> int:
+    result = await db.execute(
+        select(func.count())
+        .select_from(UserItem)
+        .where(
+            UserItem.user_id == user_id,
+            UserItem.deleted_at.is_(None),
+            UserItem.status.in_([UserItemStatus.active, UserItemStatus.archived]),
+        )
+    )
+    return result.scalar_one()
+
+
+async def count_weekly_new(db: AsyncSession, user_id: UUID) -> int:
+    week_start = datetime.now(timezone.utc) - timedelta(days=7)
+    result = await db.execute(
+        select(func.count())
+        .select_from(UserItem)
+        .where(
+            UserItem.user_id == user_id,
+            UserItem.deleted_at.is_(None),
+            UserItem.saved_at >= week_start,
+        )
+    )
+    return result.scalar_one()

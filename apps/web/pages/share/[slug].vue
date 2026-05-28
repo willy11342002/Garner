@@ -1,69 +1,122 @@
 <template>
-  <div :class="{ 'pick-mode': pickMode }">
+  <div v-if="collection" :class="{ 'pick-mode': pickMode }">
     <section class="ch-wrap">
       <div class="ch-mosaic">
-        <div class="tile"><div class="placeholder placeholder--c"><div class="placeholder__stripes"></div><div class="placeholder__label">[ KYOTO TEMPLE ]</div></div></div>
-        <div class="tile"><div class="placeholder placeholder--a"><div class="placeholder__stripes"></div></div></div>
-        <div class="tile"><div class="placeholder placeholder--e"><div class="placeholder__stripes"></div></div></div>
-        <div class="tile"><div class="placeholder placeholder--b"><div class="placeholder__stripes"></div><div class="placeholder__label">[ OSAKA NIGHT ]</div></div></div>
-        <div class="tile"><div class="placeholder placeholder--d"><div class="placeholder__stripes"></div></div></div>
+        <div
+          v-for="(item, i) in mosaicItems"
+          :key="item.id"
+          class="tile"
+        >
+          <img
+            v-if="item.thumbnail_url"
+            :src="item.thumbnail_url"
+            :alt="item.title ?? ''"
+            style="width:100%;height:100%;object-fit:cover;"
+          />
+          <div v-else :class="`placeholder placeholder--${placeholderColors[i % placeholderColors.length]}`">
+            <div class="placeholder__stripes"></div>
+          </div>
+        </div>
+        <div v-for="i in Math.max(0, 5 - mosaicItems.length)" :key="`fill-${i}`" class="tile">
+          <div :class="`placeholder placeholder--${placeholderColors[(mosaicItems.length + i - 1) % placeholderColors.length]}`">
+            <div class="placeholder__stripes"></div>
+          </div>
+        </div>
       </div>
       <div class="ch-content">
         <div class="ch-author">
-          <span class="ch-author__av">YK</span>
-          <span class="ch-author__name">@yuki_travels</span>
+          <span class="ch-author__av" :style="avatarStyle">
+            <img
+              v-if="collection.author_avatar_url"
+              :src="collection.author_avatar_url"
+              :alt="collection.author_username"
+              style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
+            />
+            <template v-else>{{ authorInitials }}</template>
+          </span>
+          <span class="ch-author__name">@{{ collection.author_username }}</span>
           <span class="ch-author__suffix">的公開集合</span>
         </div>
-        <h1 class="ch-title">京都・大阪深度 14 天</h1>
-        <p class="ch-desc">從早晨的清水寺路線到深夜的法善寺横丁，含 4 家不收訂金的隱藏 sushi。整理自我去年自己 14 天的行程。</p>
+        <h1 class="ch-title">{{ collection.title }}</h1>
         <div class="ch-stats">
-          <span class="ch-stat"><b>42</b> 件內容</span>
-          <span class="ch-stat"><b>184</b> 次 Fork</span>
-          <span class="ch-stat">建立於 6 天前</span>
-          <span class="ch-stat">⭐ 1.2k stars</span>
+          <span class="ch-stat"><b>{{ collection.items.length }}</b> 件內容</span>
+          <span class="ch-stat"><b>{{ collection.fork_count }}</b> 次 Fork</span>
+          <span class="ch-stat">建立於 {{ createdAgo }}</span>
         </div>
       </div>
     </section>
 
     <div class="cta-bar">
-      <span class="ch-author__av" style="width:28px;height:28px;font-size:10px;">YK</span>
-      <span class="cta-bar__title">京都・大阪深度 14 天</span>
-      <span class="cta-bar__sub">42 件 · @yuki_travels</span>
+      <span class="ch-author__av" style="width:28px;height:28px;font-size:10px;">
+        <img
+          v-if="collection.author_avatar_url"
+          :src="collection.author_avatar_url"
+          style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
+        />
+        <template v-else>{{ authorInitials }}</template>
+      </span>
+      <span class="cta-bar__title">{{ collection.title }}</span>
+      <span class="cta-bar__sub">{{ collection.items.length }} 件 · @{{ collection.author_username }}</span>
       <div class="cta-bar__actions">
-        <button class="btn" @click="pickMode = !pickMode">
+        <button class="btn" @click="togglePickMode">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          {{ pickMode ? `已選 ${selectedCards.size} 件` : '挑選 Fork' }}
+          {{ pickMode ? `已選 ${selectedIds.size} 件` : '挑選 Fork' }}
         </button>
-        <button class="btn btn--accent">
+        <button
+          v-if="pickMode && selectedIds.size > 0"
+          class="btn btn--accent"
+          :disabled="forking"
+          @click="doFork(false)"
+        >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 5v6a4 4 0 0 0 4 4h6M6 13v6"/></svg>
-          全部 Fork (42)
+          Fork {{ selectedIds.size }} 件
+        </button>
+        <button
+          v-else
+          class="btn btn--accent"
+          :disabled="forking"
+          @click="doFork(true)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 5v6a4 4 0 0 0 4 4h6M6 13v6"/></svg>
+          全部 Fork ({{ collection.items.length }})
         </button>
       </div>
     </div>
 
     <section class="content-grid">
-      <div
-        v-for="item in items"
+      <a
+        v-for="(item, i) in collection.items"
         :key="item.id"
         class="icard"
-        :class="{ sel: selectedCards.has(item.id) }"
-        @click="handleItemClick($event, item.id)"
+        :class="{ sel: selectedIds.has(item.id) }"
+        :href="item.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click.prevent="handleItemClick($event, item)"
       >
         <span class="icard__check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
         </span>
         <div class="icard__thumb">
-          <div :class="`placeholder placeholder--${item.color}`"><div class="placeholder__stripes"></div><div v-if="item.thumbLabel" class="placeholder__label">{{ item.thumbLabel }}</div></div>
-          <span class="source-badge">{{ item.source }}</span>
+          <img
+            v-if="item.thumbnail_url"
+            :src="item.thumbnail_url"
+            :alt="item.title ?? ''"
+            style="width:100%;height:100%;object-fit:cover;"
+          />
+          <div v-else :class="`placeholder placeholder--${placeholderColors[i % placeholderColors.length]}`">
+            <div class="placeholder__stripes"></div>
+          </div>
+          <span class="source-badge">{{ sourceBadge(item.source_type) }}</span>
         </div>
         <div class="icard__body">
-          <h3 class="icard__title">{{ item.title }}</h3>
+          <h3 class="icard__title">{{ item.title || item.url }}</h3>
           <div class="icard__foot">
-            <span :class="`tag-chip tag-chip--${item.tagColor}`">{{ item.tag }}</span>
-            <a href="#" @click.stop>↗ {{ item.sourceLabel }}</a>
+            <span class="tag-chip tag-chip--a">{{ sourceLabel(item.source_type) }}</span>
+            <a :href="item.url" target="_blank" rel="noopener noreferrer" @click.stop>↗ 原文</a>
           </div>
         </div>
-      </div>
+      </a>
     </section>
 
     <section class="rec-section">
@@ -86,39 +139,113 @@
       </div>
     </section>
   </div>
+
+  <div v-else-if="error" class="empty-state" style="padding:80px 32px;text-align:center;">
+    <p style="color:var(--text-mid);">找不到這個集合，可能已被刪除或設為私人。</p>
+    <NuxtLink to="/app/explore" class="btn" style="margin-top:16px;">探索其他集合</NuxtLink>
+  </div>
 </template>
 
 <script setup lang="ts">
-useHead({ title: '京都・大阪深度 14 天 — Vela' })
+import type { CollectionForkCreate, CollectionShareRead } from '~/types/api'
 
+const route = useRoute()
+const router = useRouter()
+const config = useRuntimeConfig()
+const session = useSupabaseSession()
+const slug = route.params.slug as string
+
+const { data: collection, error } = await useAsyncData<CollectionShareRead>(
+  `share-${slug}`,
+  () => $fetch(`${config.public.apiBase}/share/${slug}`)
+)
+
+useHead({
+  title: collection.value ? `${collection.value.title} — Vela` : 'Vela',
+})
+
+const placeholderColors = ['a', 'b', 'c', 'd', 'e']
+
+const mosaicItems = computed(() => (collection.value?.items ?? []).slice(0, 5))
+
+const authorInitials = computed(() => {
+  const name = collection.value?.author_username ?? ''
+  return name.slice(0, 2).toUpperCase()
+})
+
+const avatarStyle = computed(() => ({
+  background: 'linear-gradient(135deg, var(--tag-c), var(--tag-a))',
+}))
+
+const createdAgo = computed(() => {
+  if (!collection.value) return ''
+  const diff = Date.now() - new Date(collection.value.created_at).getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days < 30) return `${days} 天前`
+  if (days < 365) return `${Math.floor(days / 30)} 個月前`
+  return `${Math.floor(days / 365)} 年前`
+})
+
+function sourceBadge(sourceType: string | null): string {
+  if (sourceType === 'youtube') return '▶'
+  if (sourceType === 'ig') return 'IG'
+  return '⎘'
+}
+
+function sourceLabel(sourceType: string | null): string {
+  if (sourceType === 'youtube') return 'YouTube'
+  if (sourceType === 'ig') return 'Instagram'
+  return '文章'
+}
+
+// Pick / fork
 const pickMode = ref(false)
-const selectedCards = reactive(new Set<number>())
+const selectedIds = reactive(new Set<string>())
+const forking = ref(false)
 
-const handleItemClick = (e: MouseEvent, id: number) => {
-  if (!pickMode.value) return
+function togglePickMode() {
+  pickMode.value = !pickMode.value
+  if (!pickMode.value) selectedIds.clear()
+}
+
+function handleItemClick(e: MouseEvent, item: { id: string; url: string }) {
+  if (!pickMode.value) {
+    window.open(item.url, '_blank', 'noopener,noreferrer')
+    return
+  }
   e.preventDefault()
-  if (selectedCards.has(id)) {
-    selectedCards.delete(id)
+  if (selectedIds.has(item.id)) {
+    selectedIds.delete(item.id)
   } else {
-    selectedCards.add(id)
+    selectedIds.add(item.id)
   }
 }
 
-const items = [
-  { id: 1,  color: 'c', thumbLabel: '[ 嵐山竹林 ]', source: 'Article',    title: '京都嵐山竹林 7am 完全沒人的拍照路線（含 GPS）',         tag: '日本旅遊', tagColor: 'c', sourceLabel: '原文' },
-  { id: 2,  color: 'a', thumbLabel: null,             source: 'Maps',       title: '大阪 18 家不需訂位但值得一吃的居酒屋（含營業時間）',     tag: '美食',     tagColor: 'e', sourceLabel: 'Maps' },
-  { id: 3,  color: 'b', thumbLabel: null,             source: '▶ YouTube', title: '京都市巴士萬用攻略：1 日券 vs 地下鐵 1 日券',           tag: '交通',     tagColor: 'c', sourceLabel: '影片' },
-  { id: 4,  color: 'd', thumbLabel: null,             source: 'IG',         title: '京都和服體驗：四條河原町站 5 分鐘的 3 家比較',           tag: '日本旅遊', tagColor: 'c', sourceLabel: 'IG' },
-  { id: 5,  color: 'e', thumbLabel: null,             source: 'Article',    title: '大阪燒 vs 廣島燒：給觀光客的 5 分鐘區別指南',           tag: '美食',     tagColor: 'e', sourceLabel: '原文' },
-  { id: 6,  color: 'c', thumbLabel: null,             source: 'Maps',       title: '京都祇園夜間步行路線：7:30pm 後該怎麼走',               tag: '日本旅遊', tagColor: 'c', sourceLabel: 'Maps' },
-  { id: 7,  color: 'a', thumbLabel: null,             source: '𝕏 Post',    title: '大阪到名古屋的新幹線最便宜訂票時段',                     tag: '交通',     tagColor: 'c', sourceLabel: 'Twitter' },
-  { id: 8,  color: 'b', thumbLabel: null,             source: 'Article',    title: '京都 4 家不收訂金的隱藏 omakase（含老闆 IG）',          tag: '美食',     tagColor: 'e', sourceLabel: '原文' },
-  { id: 9,  color: 'd', thumbLabel: null,             source: 'Note',       title: '14 天 vs 10 天行程取捨：我會砍掉哪些景點',              tag: '行程',     tagColor: 'c', sourceLabel: 'Note' },
-  { id: 10, color: 'c', thumbLabel: null,             source: '▶ YouTube', title: '奈良公園鹿的 5 個冷知識（為什麼牠們會鞠躬）',            tag: '日本旅遊', tagColor: 'c', sourceLabel: '影片' },
-  { id: 11, color: 'e', thumbLabel: null,             source: 'Article',    title: '大阪心齋橋一蘭凌晨 23:00 後變半小時的時段',             tag: '美食',     tagColor: 'e', sourceLabel: '原文' },
-  { id: 12, color: 'accent', thumbLabel: null,        source: 'Note',       title: '便利商店早餐排行：711 vs Lawson vs Family Mart',         tag: '美食',     tagColor: 'e', sourceLabel: 'Note' },
-]
+async function doFork(all: boolean) {
+  if (!session.value) {
+    router.push('/login')
+    return
+  }
+  if (!collection.value) return
+  forking.value = true
+  try {
+    const apiFetch = useApiFetch()
+    const body: CollectionForkCreate = {
+      content_ids: all ? [] : Array.from(selectedIds),
+    }
+    const newCol = await apiFetch<{ id: string }>(`/collections/${collection.value.id}/fork`, {
+      method: 'POST',
+      body,
+    })
+    router.push(`/app/collection/${newCol.id}`)
+  } finally {
+    forking.value = false
+  }
+}
 
+// Static recs (placeholder until recommendation engine is built)
 const recs = [
   { slug: 'tokyo-local',  title: '東京 7 天 — 在地人路線',      c1: 'a', c2: 'b', meta: '@tk_local · 28 items · ⑂ 256' },
   { slug: 'okinawa',      title: '沖繩離島跳島 9 天',            c1: 'c', c2: 'e', meta: '@ocean_runner · 36 items · ⑂ 142' },
@@ -169,6 +296,7 @@ const recs = [
   display: inline-flex; align-items: center; justify-content: center;
   font-family: var(--font-mono); font-size: 12px; font-weight: 500;
   border: 1px solid var(--border2);
+  overflow: hidden;
 }
 .ch-author__name { font-weight: 500; font-size: 13.5px; }
 .ch-author__suffix { font-family: var(--font-mono); font-size: 11px; color: var(--text-mid); margin-left: 4px; }
@@ -180,13 +308,6 @@ const recs = [
   margin: 0 0 10px;
   line-height: 1.15;
   text-wrap: balance;
-}
-.ch-desc {
-  color: var(--text-mid);
-  font-size: 14px;
-  line-height: 1.6;
-  margin: 0 0 14px;
-  max-width: 580px;
 }
 .ch-stats {
   display: flex; gap: 14px; flex-wrap: wrap;
@@ -224,6 +345,8 @@ const recs = [
   overflow: hidden;
   cursor: pointer;
   transition: all .2s ease;
+  text-decoration: none;
+  color: inherit;
 }
 .icard:hover { transform: translateY(-3px); border-color: var(--border2); box-shadow: 0 12px 28px -12px var(--shadow); }
 .icard__check {
@@ -240,7 +363,7 @@ const recs = [
 .pick-mode .icard__check { display: inline-flex; }
 .icard.sel .icard__check { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .icard__check svg { width: 14px; height: 14px; }
-.icard__thumb { height: 130px; position: relative; }
+.icard__thumb { height: 130px; position: relative; overflow: hidden; }
 .icard__thumb .source-badge { position: absolute; right: 8px; bottom: 8px; }
 .icard__body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .icard__title {

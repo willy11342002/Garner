@@ -1,11 +1,13 @@
-from uuid import UUID
+import re
+from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.collection import Collection
+from app.models.collection import Collection, CollectionVisibility
 from app.models.collection_item import CollectionItem
+from app.models.user import User
 from app.schemas.collection import CollectionCreate, CollectionUpdate
 
 
@@ -24,7 +26,7 @@ async def get_one(db: AsyncSession, user_id: UUID, collection_id: UUID) -> Colle
         .where(Collection.id == collection_id, Collection.user_id == user_id)
         .options(joinedload(Collection.collection_items).joinedload(CollectionItem.content))
     )
-    return result.scalar_one_or_none()
+    return result.unique().scalar_one_or_none()
 
 
 async def create(db: AsyncSession, user_id: UUID, data: CollectionCreate) -> Collection:
@@ -81,3 +83,76 @@ async def remove_item(db: AsyncSession, collection_id: UUID, content_id: UUID) -
         )
     )
     await db.flush()
+
+
+async def count_public(db: AsyncSession, user_id: UUID) -> int:
+    result = await db.execute(
+        select(func.count())
+        .select_from(Collection)
+        .where(
+            Collection.user_id == user_id,
+            Collection.visibility == CollectionVisibility.public,
+        )
+    )
+    return result.scalar_one()
+
+
+async def get_by_id_with_items(db: AsyncSession, collection_id: UUID) -> Collection | None:
+    result = await db.execute(
+        select(Collection)
+        .where(
+            Collection.id == collection_id,
+            Collection.visibility.in_([CollectionVisibility.public, CollectionVisibility.link]),
+        )
+        .options(joinedload(Collection.collection_items).joinedload(CollectionItem.content))
+    )
+    return result.unique().scalar_one_or_none()
+
+
+async def get_public_by_slug(db: AsyncSession, slug: str) -> Collection | None:
+    result = await db.execute(
+        select(Collection)
+        .where(
+            Collection.slug == slug,
+            Collection.visibility.in_([CollectionVisibility.public, CollectionVisibility.link]),
+        )
+        .options(
+            joinedload(Collection.user),
+            joinedload(Collection.collection_items).joinedload(CollectionItem.content),
+        )
+    )
+    return result.unique().scalar_one_or_none()
+
+
+async def fork_collection(
+    db: AsyncSession,
+    source: Collection,
+    user_id: UUID,
+    title: str,
+    content_ids: list[UUID],
+) -> Collection:
+    slug_base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40]
+    slug = f"{slug_base}-{str(uuid4())[:8]}"
+
+    new_collection = Collection(
+        user_id=user_id,
+        title=title,
+        visibility=CollectionVisibility.private,
+        slug=slug,
+        fork_from_collection_id=source.id,
+    )
+    db.add(new_collection)
+    await db.flush()
+
+    items_to_copy = source.collection_items
+    if content_ids:
+        id_set = set(content_ids)
+        items_to_copy = [ci for ci in items_to_copy if ci.content_id in id_set]
+
+    for ci in items_to_copy:
+        db.add(CollectionItem(collection_id=new_collection.id, content_id=ci.content_id))
+
+    source.fork_count += 1
+    await db.flush()
+    await db.refresh(new_collection)
+    return new_collection

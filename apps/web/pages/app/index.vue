@@ -449,7 +449,7 @@ onUnmounted(() => {
           <span class="tagrow__dot" :style="`background:var(--tag-${tagColor(i)})`"></span>
           <span class="tagrow__name">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
           <span class="tagrow__count">{{ group.items.length }}</span>
-          <NuxtLink to="/app/share" class="tagrow__share">↗ 分享這個標籤</NuxtLink>
+          <NuxtLink :to="`/app/share?tag=${group.tag.id}`" class="tagrow__share">↗ 分享這個標籤</NuxtLink>
           <NuxtLink :to="`/app/tag/${group.tag.id}`" class="tagrow__all">查看全部 →</NuxtLink>
         </header>
         <div class="tagrow__scroll">

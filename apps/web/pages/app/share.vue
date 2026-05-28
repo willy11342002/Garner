@@ -5,7 +5,7 @@
 
     <!-- Stepper -->
     <div class="stepper" :data-step="currentStep">
-      <div class="step" :class="{ 'step--done': currentStep > 1, 'step--current': currentStep === 1 }">
+      <div class="step" :class="{ 'step--done': currentStep > 1, 'step--current': currentStep === 1, 'step--clickable': true }" @click="goToStep(1)">
         <span class="step__circle">
           <template v-if="currentStep > 1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
@@ -14,7 +14,7 @@
         </span>
         <span class="step__label">1. 選擇來源</span>
       </div>
-      <div class="step" :class="{ 'step--done': currentStep > 2, 'step--current': currentStep === 2 }">
+      <div class="step" :class="{ 'step--done': currentStep > 2, 'step--current': currentStep === 2, 'step--clickable': maxReachedStep >= 2, 'step--locked': maxReachedStep < 2 }" @click="goToStep(2)">
         <span class="step__circle">
           <template v-if="currentStep > 2">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
@@ -23,92 +23,99 @@
         </span>
         <span class="step__label">2. 微調內容</span>
       </div>
-      <div class="step" :class="{ 'step--current': currentStep === 3 }">
+      <div class="step" :class="{ 'step--current': currentStep === 3, 'step--clickable': maxReachedStep >= 3, 'step--locked': maxReachedStep < 3 }" @click="goToStep(3)">
         <span class="step__circle">3</span>
         <span class="step__label">3. 設定公開</span>
       </div>
     </div>
 
     <!-- Step 1 — Tag picker -->
-    <section class="step-section" :class="{ 'is-disabled': currentStep > 1 }">
-      <span class="step-section__num">STEP 1 · {{ currentStep > 1 ? '已完成' : '進行中' }}</span>
+    <section v-if="currentStep === 1" class="step-section">
+      <span class="step-section__num">STEP 1 · 進行中</span>
       <h2>從哪個標籤建立集合？</h2>
       <p class="desc">系統會把這個標籤底下的所有內容帶入集合，下一步可以微調。</p>
-      <div class="tag-grid">
+
+      <div v-if="tagsLoading" class="loading-row">載入標籤中...</div>
+      <div v-else-if="tags.length === 0" class="empty-hint">你還沒有任何標籤，先去存幾篇內容吧。</div>
+      <div v-else class="tag-grid">
         <button
-          v-for="tag in tags"
-          :key="tag.name"
+          v-for="(tag, i) in tags"
+          :key="tag.id"
           class="tag-pick"
-          :class="{ sel: selectedTag === tag.name }"
-          @click="selectedTag = tag.name"
+          :class="{ sel: selectedTagId === tag.id }"
+          @click="selectTag(tag)"
         >
-          <span class="dot" :style="{ background: `var(--tag-${tag.color})` }"></span>
+          <span class="dot" :style="{ background: `var(--tag-${tagColor(i)})` }"></span>
           <span class="name">{{ tag.name }}</span>
-          <span class="count">{{ tag.count }} 筆</span>
+          <span class="count">{{ tag.item_count }} 筆</span>
           <span class="thumbs">
-            <span v-for="c in tag.thumbColors" :key="c" class="t">
+            <span v-for="c in thumbColors(i)" :key="c" class="t">
               <span :class="`placeholder placeholder--${c}`"><span class="placeholder__stripes"></span></span>
             </span>
           </span>
-          <span class="check" v-if="selectedTag === tag.name">
+          <span v-if="selectedTagId === tag.id" class="check">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
           </span>
         </button>
       </div>
       <div class="step-foot">
         <span class="spacer"></span>
-        <button class="btn btn--accent" @click="currentStep = 2" :disabled="!selectedTag">下一步 →</button>
+        <button class="btn btn--accent" :disabled="!selectedTagId" @click="goToStep2">下一步 →</button>
       </div>
     </section>
 
     <!-- Step 2 — Content picker -->
-    <section class="step-section" :class="{ 'is-disabled': currentStep < 2 }">
-      <span class="step-section__num">STEP 2 · {{ currentStep < 2 ? '待完成' : currentStep > 2 ? '已完成' : '進行中' }}</span>
+    <section v-if="currentStep === 2" class="step-section">
+      <span class="step-section__num">STEP 2 · 進行中</span>
       <h2>選擇要包含哪些內容</h2>
       <p class="desc">預設全選，點擊取消勾選你不想公開的項目。</p>
 
-      <div class="select-all">
-        <button class="pill" @click="toggleAllItems">{{ selectedItems.size === contentItems.length ? '取消全選' : '全選' }}</button>
-        <span class="spacer" style="flex:1;"></span>
-        <span>共 {{ contentItems.length }} 筆 · 已選 {{ selectedItems.size }}</span>
-      </div>
-
-      <div class="clist">
-        <div
-          v-for="item in contentItems"
-          :key="item.id"
-          class="citem"
-          :class="{ unsel: !selectedItems.has(item.id) }"
-          @click="toggleItem(item.id)"
-        >
-          <span class="checkbox">
-            <svg v-if="selectedItems.has(item.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
-          </span>
-          <div class="citem__thumb">
-            <div :class="`placeholder placeholder--${item.color}`"><div class="placeholder__stripes"></div></div>
-          </div>
-          <div class="citem__main">
-            <h4 class="citem__title">{{ item.title }}</h4>
-            <div class="citem__meta">
-              <span :class="`tag-chip tag-chip--${item.tagColor}`">{{ item.tag }}</span>
-              <span>{{ item.src }} · {{ item.age }}</span>
-            </div>
-          </div>
-          <span class="citem__src">{{ item.srcLabel }}</span>
+      <div v-if="itemsLoading" class="loading-row">載入內容中...</div>
+      <template v-else>
+        <div class="select-all">
+          <button class="pill" @click="toggleAllItems">{{ selectedItemIds.size === tagItems.length ? '取消全選' : '全選' }}</button>
+          <span class="spacer" style="flex:1;"></span>
+          <span>共 {{ tagItems.length }} 筆 · 已選 {{ selectedItemIds.size }}</span>
         </div>
-      </div>
+
+        <div class="clist">
+          <div
+            v-for="(item, i) in tagItems"
+            :key="item.id"
+            class="citem"
+            :class="{ unsel: !selectedItemIds.has(item.id) }"
+            @click="toggleItem(item.id)"
+          >
+            <span class="checkbox">
+              <svg v-if="selectedItemIds.has(item.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
+            </span>
+            <div class="citem__thumb">
+              <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" />
+              <div v-else :class="`placeholder placeholder--${tagColor(i)}`"><div class="placeholder__stripes"></div></div>
+            </div>
+            <div class="citem__main">
+              <h4 class="citem__title">{{ item.title || item.url }}</h4>
+              <div class="citem__meta">
+                <span class="tag-chip tag-chip--a">{{ sourceLabel(item.source_type) }}</span>
+                <span>{{ timeAgo(item.saved_at) }}</span>
+              </div>
+            </div>
+            <span class="citem__src">{{ sourceBadge(item.source_type) }}</span>
+          </div>
+        </div>
+      </template>
 
       <div class="step-foot">
-        <span class="mono" style="color:var(--accent);">已選 {{ selectedItems.size }} / {{ contentItems.length }} 筆</span>
+        <span class="mono" style="color:var(--accent);">已選 {{ selectedItemIds.size }} / {{ tagItems.length }} 筆</span>
         <span class="spacer"></span>
-        <button class="btn" @click="currentStep = 1">← 上一步</button>
-        <button class="btn btn--accent" @click="currentStep = 3">下一步 →</button>
+        <button class="btn" @click="goToStep(1)">← 上一步</button>
+        <button class="btn btn--accent" :disabled="selectedItemIds.size === 0" @click="advanceTo3">下一步 →</button>
       </div>
     </section>
 
     <!-- Step 3 — Visibility -->
-    <section class="step-section" :class="{ 'is-disabled': currentStep < 3 }">
-      <span class="step-section__num">STEP 3 · {{ currentStep < 3 ? '待完成' : '預覽' }}</span>
+    <section v-if="currentStep === 3" class="step-section">
+      <span class="step-section__num">STEP 3 · 預覽</span>
       <h2>設定這個集合的公開程度</h2>
       <p class="desc">你可以隨時改變公開設定，原本 Fork 過的人不會被回收。</p>
 
@@ -122,11 +129,6 @@
                 <span class="radio"></span>
               </div>
               <p class="vis-opt__desc">{{ opt.desc }}</p>
-              <div v-if="opt.value === 'public' && visibility === 'public'" class="link-box">
-                <span>vela.app/c/</span>
-                <code>chenli/kyoto-osaka-14d</code>
-                <button class="btn" style="height:24px; padding:0 8px; font-size:11px;" @click.stop>複製</button>
-              </div>
             </label>
           </div>
 
@@ -134,26 +136,22 @@
             <label>集合標題</label>
             <input class="input" v-model="collectionTitle" />
           </div>
-          <div class="form-row">
-            <label>集合描述（選填）</label>
-            <textarea class="input" v-model="collectionDesc" placeholder="告訴別人這個集合在說什麼..."></textarea>
-          </div>
         </div>
 
         <div>
           <div class="preview-card">
             <header class="preview-card__head">即時預覽</header>
             <div class="preview-card__cover">
-              <div class="t"><div class="placeholder placeholder--c"><div class="placeholder__stripes"></div></div></div>
-              <div class="t"><div class="placeholder placeholder--a"><div class="placeholder__stripes"></div></div></div>
-              <div class="t"><div class="placeholder placeholder--e"><div class="placeholder__stripes"></div></div></div>
+              <div v-for="i in 3" :key="i" class="t">
+                <img v-if="tagItems[i - 1]?.thumbnail_url" :src="tagItems[i - 1].thumbnail_url!" style="width:100%;height:100%;object-fit:cover;" />
+                <div v-else :class="`placeholder placeholder--${tagColor(i - 1)}`"><div class="placeholder__stripes"></div></div>
+              </div>
             </div>
             <div class="preview-card__body">
               <h3 class="preview-card__title">{{ collectionTitle || '（無標題）' }}</h3>
-              <p class="preview-card__desc">{{ collectionDesc || '尚未填寫描述' }}</p>
               <div class="preview-card__user">
-                <span class="preview-card__avatar">CL</span>
-                <span>@chenli · 剛剛建立</span>
+                <span class="preview-card__avatar">{{ authorInitials }}</span>
+                <span>@{{ authStore.user?.username || '...' }} · 剛剛建立</span>
               </div>
             </div>
           </div>
@@ -161,14 +159,16 @@
       </div>
 
       <div class="step-foot">
-        <button class="btn" @click="currentStep = 2">← 上一步</button>
+        <button class="btn" @click="goToStep(2)">← 上一步</button>
         <span class="spacer"></span>
-        <button class="btn btn--accent btn--lg" @click="publish">建立並分享 →</button>
+        <button class="btn btn--accent btn--lg" :disabled="publishing || !collectionTitle" @click="publish">
+          {{ publishing ? '建立中...' : '建立並分享 →' }}
+        </button>
       </div>
     </section>
 
     <!-- Success Toast -->
-    <aside v-if="showToast" class="toast">
+    <aside v-if="showToast && newCollectionId" class="toast">
       <div class="toast__head">
         <span class="ico">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
@@ -177,62 +177,139 @@
         <span style="flex:1;"></span>
         <button style="color:var(--text-dim); font-size:14px;" @click="showToast = false">×</button>
       </div>
-      <div class="toast__link">
-        <span>🔗</span>
-        <code>vela.app/c/chenli/kyoto-osaka-14d</code>
-      </div>
       <div class="toast__actions">
-        <button class="btn" @click="copyLink">複製連結</button>
-        <NuxtLink to="/app/collection/1" class="btn btn--accent">前往查看 →</NuxtLink>
+        <NuxtLink :to="`/app/collection/${newCollectionId}`" class="btn btn--accent">前往查看 →</NuxtLink>
       </div>
     </aside>
   </main>
 </template>
 
 <script setup lang="ts">
-const currentStep = ref(2)
-const selectedTag = ref('日本旅遊')
+import type { Collection, Item, Tag } from '~/types/api'
+
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+const apiFetch = useApiFetch()
+
+// ── Tags (step 1) ─────────────────────────────────────────────────
+const tags = ref<Tag[]>([])
+const tagsLoading = ref(true)
+const selectedTagId = ref<string | null>(null)
+const selectedTagName = ref('')
+
+onMounted(async () => {
+  try {
+    const all = await apiFetch<Tag[]>('/tags/')
+    tags.value = all.filter(t => t.item_count > 0)
+  } finally {
+    tagsLoading.value = false
+  }
+
+  const presetTagId = route.query.tag as string | undefined
+  if (presetTagId) {
+    const tag = tags.value.find(t => t.id === presetTagId)
+    if (tag) await goToStep2WithTag(tag)
+  }
+})
+
+const COLORS = ['a', 'b', 'c', 'd', 'e'] as const
+function tagColor(i: number) { return COLORS[i % COLORS.length] }
+function thumbColors(i: number) {
+  const base = i % COLORS.length
+  return [COLORS[base], COLORS[(base + 1) % 5], COLORS[(base + 2) % 5]]
+}
+
+// ── Items (step 2) ────────────────────────────────────────────────
+const tagItems = ref<Item[]>([])
+const itemsLoading = ref(false)
+const selectedItemIds = reactive(new Set<string>())
+
+function selectTag(tag: Tag) {
+  selectedTagId.value = tag.id
+  selectedTagName.value = tag.name
+  collectionTitle.value = tag.name
+}
+
+async function goToStep2WithTag(tag: Tag) {
+  selectTag(tag)
+  await loadTagItems(tag.id)
+}
+
+async function goToStep2() {
+  if (!selectedTagId.value) return
+  await loadTagItems(selectedTagId.value)
+}
+
+async function loadTagItems(tagId: string) {
+  maxReachedStep.value = Math.max(maxReachedStep.value, 2)
+  currentStep.value = 2
+  itemsLoading.value = true
+  selectedItemIds.clear()
+  try {
+    tagItems.value = await apiFetch<Item[]>(`/tags/${tagId}/items`)
+    tagItems.value.forEach(item => selectedItemIds.add(item.id))
+  } finally {
+    itemsLoading.value = false
+  }
+}
+
+function toggleItem(id: string) {
+  if (selectedItemIds.has(id)) selectedItemIds.delete(id)
+  else selectedItemIds.add(id)
+}
+
+function toggleAllItems() {
+  if (selectedItemIds.size === tagItems.value.length) {
+    selectedItemIds.clear()
+  } else {
+    tagItems.value.forEach(i => selectedItemIds.add(i.id))
+  }
+}
+
+function sourceLabel(t: string | null) {
+  if (t === 'youtube') return 'YouTube'
+  if (t === 'ig') return 'Instagram'
+  return '文章'
+}
+function sourceBadge(t: string | null) {
+  if (t === 'youtube') return '▶'
+  if (t === 'ig') return 'IG'
+  return '⎘'
+}
+function timeAgo(iso: string) {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  if (days === 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days < 30) return `${days}d ago`
+  return `${Math.floor(days / 30)}mo ago`
+}
+
+// ── Stepper navigation ───────────────────────────────────────────
+const currentStep = ref(1)
+const maxReachedStep = ref(1)
+
+function goToStep(n: 1 | 2 | 3) {
+  if (maxReachedStep.value < n) return
+  currentStep.value = n
+}
+
+function advanceTo3() {
+  maxReachedStep.value = Math.max(maxReachedStep.value, 3)
+  currentStep.value = 3
+}
+
+// ── Visibility & publish (step 3) ────────────────────────────────
 const visibility = ref<'private' | 'link' | 'public'>('public')
-const collectionTitle = ref('京都・大阪深度 14 天')
-const collectionDesc = ref('從早晨的清水寺到深夜的法善寺横丁，含 4 家不需要訂金的隱藏 sushi。整理自我去年自己 14 天的行程。')
+const collectionTitle = ref('')
+const publishing = ref(false)
 const showToast = ref(false)
+const newCollectionId = ref<string | null>(null)
 
-const tags = [
-  { name: 'AI',     color: 'a', count: 142, thumbColors: ['a', 'b', 'c'] },
-  { name: '設計',   color: 'b', count: 87,  thumbColors: ['b', 'c', 'a'] },
-  { name: '日本旅遊', color: 'c', count: 34, thumbColors: ['c', 'a', 'b'] },
-  { name: '產品策略', color: 'd', count: 56, thumbColors: ['d', 'a', 'b'] },
-  { name: '食譜',   color: 'e', count: 23,  thumbColors: ['e', 'c', 'a'] },
-  { name: '遠端工作', color: 'b', count: 19, thumbColors: ['b', 'd', 'c'] },
-]
-
-const contentItems = [
-  { id: 1, color: 'c', title: '京都嵐山竹林 7am 完全沒人的拍照路線',             tag: '日本旅遊', tagColor: 'c', src: 'IG',      age: '1d ago',  srcLabel: 'IG' },
-  { id: 2, color: 'a', title: '金澤 vs 富山：北陸新幹線開通後的客流量轉移',       tag: '日本旅遊', tagColor: 'c', src: 'Article', age: '6d ago',  srcLabel: 'Note' },
-  { id: 3, color: 'b', title: '心齋橋一蘭凌晨 23:00 後排隊時間：個人經驗',       tag: '日本旅遊', tagColor: 'c', src: 'TikTok', age: '11d ago', srcLabel: 'TikTok' },
-  { id: 4, color: 'd', title: '東京：18 家不需訂位但值得一吃的居酒屋清單',        tag: '日本旅遊', tagColor: 'c', src: 'Maps',   age: '19d ago', srcLabel: 'Maps' },
-  { id: 5, color: 'e', title: '京都祇園夜間步行路線 — 一張地圖告訴你 7:30pm 之後該怎麼走', tag: '日本旅遊', tagColor: 'c', src: 'Article', age: '22d ago', srcLabel: 'Article' },
-  { id: 6, color: 'c', title: '[個人筆記] 我的 JR Pass 行程草稿 v3（不適合公開）', tag: '日本旅遊', tagColor: 'c', src: 'Note',   age: '28d ago', srcLabel: 'Note' },
-  { id: 7, color: 'a', title: '大阪到名古屋的新幹線最便宜訂票時段（每月 25 號後）', tag: '日本旅遊', tagColor: 'c', src: 'Twitter', age: '34d ago', srcLabel: '𝕏' },
-]
-
-const selectedItems = reactive(new Set<number>([1, 2, 4, 5, 7]))
-
-const toggleItem = (id: number) => {
-  if (selectedItems.has(id)) {
-    selectedItems.delete(id)
-  } else {
-    selectedItems.add(id)
-  }
-}
-
-const toggleAllItems = () => {
-  if (selectedItems.size === contentItems.length) {
-    selectedItems.clear()
-  } else {
-    contentItems.forEach(i => selectedItems.add(i.id))
-  }
-}
+const authorInitials = computed(() => {
+  const name = authStore.user?.username ?? ''
+  return name.slice(0, 2).toUpperCase() || 'ME'
+})
 
 const visOptions: { value: 'private' | 'link' | 'public'; icon: string; label: string; desc: string }[] = [
   { value: 'private', icon: '🔒', label: '私人',    desc: '只有你自己看得到，連結分享也無效。' },
@@ -240,13 +317,32 @@ const visOptions: { value: 'private' | 'link' | 'public'; icon: string; label: s
   { value: 'public',  icon: '🌐', label: '公開',    desc: '任何人都能搜尋與 Fork。會出現在 Browse、Google 結果中。' },
 ]
 
-const publish = () => {
-  showToast.value = true
-  currentStep.value = 3
-}
+async function publish() {
+  if (!collectionTitle.value || publishing.value) return
+  publishing.value = true
+  try {
+    const slug = collectionTitle.value
+      .toLowerCase()
+      .replace(/[^a-z0-9一-鿿]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) + '-' + Math.random().toString(36).slice(2, 8)
 
-const copyLink = () => {
-  navigator.clipboard?.writeText('https://vela.app/c/chenli/kyoto-osaka-14d')
+    const col = await apiFetch<Collection>('/collections/', {
+      method: 'POST',
+      body: { title: collectionTitle.value, visibility: visibility.value, slug },
+    })
+
+    // Add selected items sequentially
+    const ids = Array.from(selectedItemIds)
+    for (const itemId of ids) {
+      await apiFetch(`/collections/${col.id}/items?item_id=${itemId}`, { method: 'POST' })
+    }
+
+    newCollectionId.value = col.id
+    showToast.value = true
+  } finally {
+    publishing.value = false
+  }
 }
 </script>
 
@@ -269,6 +365,9 @@ const copyLink = () => {
 .step--current .step__circle { border-color: var(--accent); color: var(--accent); background: var(--bg); box-shadow: 0 0 0 4px var(--accent-dim); }
 .step__label { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-mid); letter-spacing: 0.03em; }
 .step--current .step__label { color: var(--text); }
+.step--clickable { cursor: pointer; }
+.step--clickable:hover .step__circle { border-color: var(--accent-bdr); }
+.step--locked { cursor: default; opacity: 0.45; }
 .stepper::before {
   content: ''; position: absolute;
   left: 16.67%; right: 16.67%; top: 16px;
@@ -294,6 +393,9 @@ const copyLink = () => {
 .step-section h2 { font-family: var(--font-brand); font-weight: 600; font-size: 21px; letter-spacing: -0.01em; margin: 0 0 6px; }
 .step-section .desc { color: var(--text-mid); font-size: 13.5px; margin: 0 0 22px; }
 .step-section__num { display: inline-block; font-family: var(--font-mono); font-size: 11px; color: var(--accent); margin-bottom: 6px; letter-spacing: 0.08em; }
+
+.loading-row { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); padding: 20px 0; }
+.empty-hint { font-size: 13.5px; color: var(--text-mid); padding: 16px 0; }
 
 .tag-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .tag-pick {
@@ -379,12 +481,6 @@ const copyLink = () => {
 }
 .vis-opt.sel .radio { border-color: var(--accent); }
 .vis-opt.sel .radio::after { content: ''; position: absolute; inset: 3px; background: var(--accent); border-radius: 50%; }
-.link-box {
-  display: flex; align-items: center; gap: 8px; margin-top: 12px;
-  padding: 8px 10px; background: var(--bg); border: 1px solid var(--border);
-  border-radius: 8px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-mid);
-}
-.link-box code { color: var(--accent); }
 
 .form-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .form-row label { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
@@ -394,7 +490,6 @@ const copyLink = () => {
   outline: none; transition: all .15s ease; font-family: var(--font-ui); width: 100%; box-sizing: border-box;
 }
 .input:focus { border-color: var(--accent-bdr); box-shadow: 0 0 0 3px var(--accent-dim); }
-textarea.input { resize: vertical; min-height: 80px; line-height: 1.55; }
 
 .preview-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
 .preview-card__head {
@@ -403,12 +498,11 @@ textarea.input { resize: vertical; min-height: 80px; line-height: 1.55; }
   display: flex; align-items: center; gap: 6px;
 }
 .preview-card__head::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.preview-card__cover { height: 120px; display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; }
+.preview-card__cover { height: 120px; display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; overflow: hidden; }
 .preview-card__cover .t { overflow: hidden; }
 .preview-card__cover .t:first-child { grid-row: 1 / span 2; }
 .preview-card__body { padding: 12px 14px 16px; }
-.preview-card__title { font-family: var(--font-brand); font-weight: 600; font-size: 14.5px; margin: 0 0 5px; }
-.preview-card__desc { font-size: 11.5px; color: var(--text-mid); margin: 0 0 10px; line-height: 1.5; }
+.preview-card__title { font-family: var(--font-brand); font-weight: 600; font-size: 14.5px; margin: 0 0 10px; }
 .preview-card__user { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-mid); }
 .preview-card__avatar {
   width: 18px; height: 18px; border-radius: 50%;
@@ -418,25 +512,19 @@ textarea.input { resize: vertical; min-height: 80px; line-height: 1.55; }
 
 .toast {
   position: fixed; right: 24px; bottom: 24px; z-index: 50;
-  width: 340px; background: var(--surface); border: 1px solid var(--accent-bdr);
+  width: 300px; background: var(--surface); border: 1px solid var(--accent-bdr);
   border-radius: 14px; padding: 14px 16px;
   box-shadow: 0 20px 48px -16px var(--shadow);
   animation: slideIn .35s cubic-bezier(.34,1.4,.64,1) both;
 }
 @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-.toast__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.toast__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .toast__head .ico {
   width: 22px; height: 22px; border-radius: 50%;
   background: var(--accent); color: var(--accent-fg);
   display: inline-flex; align-items: center; justify-content: center;
 }
 .toast__title { font-size: 13px; font-weight: 500; }
-.toast__link {
-  display: flex; gap: 6px; align-items: center;
-  padding: 6px 10px; background: var(--surface2);
-  border-radius: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-mid); margin-bottom: 8px;
-}
-.toast__link code { color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toast__actions { display: flex; gap: 6px; }
 .toast__actions .btn { height: 30px; padding: 0 12px; font-size: 12px; flex: 1; justify-content: center; }
 

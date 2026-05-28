@@ -35,6 +35,7 @@ export interface Tag {
   id: string
   name: string
   name_i18n: Record<string, string> | null
+  item_count: number
 }
 
 export interface ItemPendingReview {
@@ -76,4 +77,34 @@ export interface CollectionCreate {
 export interface CollectionUpdate {
   title?: string
   visibility?: CollectionVisibility
+}
+
+export interface ExploreStats {
+  total_items: number
+  public_collections: number
+  weekly_new: number
+}
+
+export interface CollectionShareItem {
+  id: string
+  url: string
+  title: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+}
+
+export interface CollectionShareRead {
+  id: string
+  title: string
+  slug: string
+  fork_count: number
+  created_at: string
+  author_username: string
+  author_avatar_url: string | null
+  items: CollectionShareItem[]
+}
+
+export interface CollectionForkCreate {
+  title?: string
+  content_ids?: string[]
 }

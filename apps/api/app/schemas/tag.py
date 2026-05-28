@@ -11,6 +11,7 @@ class TagRead(BaseModel):
     id: UUID
     name: str
     name_i18n: dict[str, str] | None = None
+    item_count: int = 0
 
     model_config = {"from_attributes": True}
 
