@@ -18,12 +18,47 @@
       </div>
       <div class="nav__right">
         <template v-if="isLoggedIn">
-          <div class="nav__search">
+          <div class="nav__search" ref="searchEl">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="7"/>
               <path d="m20 20-3.5-3.5"/>
             </svg>
-            <input type="text" placeholder="搜尋你的知識庫...">
+            <input
+              type="text"
+              v-model="searchQuery"
+              :placeholder="t('nav.searchPlaceholder')"
+              @keydown.esc="closeSearch"
+            >
+            <Transition name="search-drop">
+              <div v-if="searchOpen" class="search-drop">
+                <div v-if="searchLoading" class="search-drop__state">
+                  <span class="search-drop__spinner"></span>
+                  {{ t('nav.searchLoading') }}
+                </div>
+                <template v-else-if="searchResults.length > 0">
+                  <button
+                    v-for="item in searchResults.slice(0, 8)"
+                    :key="item.id"
+                    class="search-drop__item"
+                    @click="goToSearchItem(item.id)"
+                  >
+                    <div class="search-drop__thumb">
+                      <img v-if="item.thumbnail_url" :src="item.thumbnail_url" alt="">
+                      <div v-else class="placeholder placeholder--b">
+                        <div class="placeholder__stripes"></div>
+                      </div>
+                    </div>
+                    <div class="search-drop__info">
+                      <span class="search-drop__title">{{ item.title || item.url }}</span>
+                      <span class="search-drop__meta mono">{{ searchSourceLabel(item.url) }}</span>
+                    </div>
+                  </button>
+                </template>
+                <div v-else-if="searchDone" class="search-drop__state">
+                  {{ t('nav.searchEmpty') }}
+                </div>
+              </div>
+            </Transition>
           </div>
         </template>
         <button class="nav__theme" @click="toggle" aria-label="Toggle theme">
@@ -84,6 +119,8 @@
 
     <!-- 點選外部關閉選單 -->
     <div v-if="menuOpen" class="nav__backdrop" @click="menuOpen = false" />
+    <!-- 點選外部關閉搜尋 -->
+    <div v-if="searchOpen" class="nav__backdrop" @click="closeSearch" />
 
     <!-- 新增 URL modal -->
     <Transition name="modal">
@@ -128,6 +165,8 @@
 </template>
 
 <script setup lang="ts">
+import type { Item } from '~/types/api'
+
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
@@ -136,9 +175,58 @@ const supabaseUser = useSupabaseUser()
 const client = useSupabaseClient()
 const authStore = useAuthStore()
 const itemStore = useItemStore()
+const { searchItems } = useSearch()
 
 const isLoggedIn = computed(() => !!supabaseUser.value)
 const menuOpen = ref(false)
+
+// 搜尋
+const searchEl = ref<HTMLElement | null>(null)
+const searchQuery = ref('')
+const searchResults = ref<Item[]>([])
+const searchLoading = ref(false)
+const searchDone = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+const searchOpen = computed(() => searchQuery.value.trim().length > 0)
+
+watch(searchQuery, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!q.trim()) {
+    searchResults.value = []
+    searchLoading.value = false
+    searchDone.value = false
+    return
+  }
+  searchLoading.value = true
+  searchDone.value = false
+  searchTimer = setTimeout(async () => {
+    try {
+      searchResults.value = await searchItems(q)
+    } finally {
+      searchLoading.value = false
+      searchDone.value = true
+    }
+  }, 400)
+})
+
+function closeSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  searchDone.value = false
+  searchLoading.value = false
+}
+
+function goToSearchItem(id: string) {
+  closeSearch()
+  router.push(`/app/item/${id}`)
+}
+
+function searchSourceLabel(url: string) {
+  if (/youtu/.test(url)) return 'YouTube'
+  if (/instagram\.com/.test(url)) return 'Instagram'
+  return 'Article'
+}
 
 // 新增 modal
 const addOpen = ref(false)
@@ -211,8 +299,11 @@ async function signOut() {
   navigateTo('/')
 }
 
-// 路由切換時關閉選單
-watch(() => route.path, () => { menuOpen.value = false })
+// 路由切換時關閉選單與搜尋
+watch(() => route.path, () => {
+  menuOpen.value = false
+  closeSearch()
+})
 </script>
 
 <style>

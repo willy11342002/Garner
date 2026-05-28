@@ -16,7 +16,10 @@
     "settings": "Settings",
     "security": "Security",
     "signOut": "Sign out",
-    "login": "Sign in / Try free"
+    "login": "Sign in / Try free",
+    "searchPlaceholder": "Search your knowledge base...",
+    "searchLoading": "Searching...",
+    "searchEmpty": "No results found"
   },
   "security": {
     "title": "Security",

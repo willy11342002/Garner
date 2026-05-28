@@ -16,7 +16,10 @@
     "settings": "設置",
     "security": "安全性",
     "signOut": "登出",
-    "login": "登入 / 免費試用"
+    "login": "登入 / 免費試用",
+    "searchPlaceholder": "搜尋你的知識庫...",
+    "searchLoading": "搜尋中...",
+    "searchEmpty": "找不到相關內容"
   },
   "security": {
     "title": "安全性",
