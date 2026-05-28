@@ -263,7 +263,7 @@ input, textarea { font-family: inherit; color: inherit; }
   border-color: transparent;
   font-weight: 700;
 }
-.btn--accent:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.btn--accent:hover { background: var(--accent); filter: brightness(1.08); transform: translateY(-1px); }
 .btn--danger {
   background: var(--danger-dim);
   color: var(--danger);

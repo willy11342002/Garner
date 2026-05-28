@@ -4,7 +4,7 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/vela.css'],
 
-  modules: ['@nuxtjs/supabase', '@pinia/nuxt'],
+  modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n'],
 
   routeRules: {
     '/explore/**': { ssr: true },
@@ -20,5 +20,19 @@ export default defineNuxtConfig({
 
   supabase: {
     redirect: false,
+  },
+
+  i18n: {
+    strategy: 'no_prefix',
+    defaultLocale: 'zh-TW',
+    locales: [
+      { code: 'zh-TW', name: '繁體中文', file: 'zh-TW.json' },
+      { code: 'en', name: 'English', file: 'en.json' },
+    ],
+    detectBrowserLanguage: {
+      useCookie: true,
+      cookieKey: 'vela-locale',
+      alwaysRedirect: false,
+    },
   },
 })

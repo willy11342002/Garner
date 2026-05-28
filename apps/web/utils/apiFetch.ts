@@ -8,7 +8,7 @@ export function useApiFetch() {
       const token = session.value?.access_token
       if (token) {
         options.headers = {
-          ...options.headers,
+          ...(options.headers as Record<string, string>),
           Authorization: `Bearer ${token}`,
         }
       }

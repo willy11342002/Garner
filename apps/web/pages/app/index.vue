@@ -181,7 +181,8 @@ onMounted(async () => {
             <div class="card__body">
               <h3 class="card__title">{{ item.title ?? item.url }}</h3>
               <div class="card__footer">
-                <span :class="`tag-chip tag-chip--${tagColor(i)}`">{{ group.tag.name }}</span>
+                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
+                <span v-else :class="`tag-chip tag-chip--${tagColor(i)}`">{{ group.tag.name }}</span>
                 <span class="mono">{{ relativeTime(item.saved_at) }}</span>
               </div>
             </div>
@@ -216,6 +217,7 @@ onMounted(async () => {
             <div class="card__body">
               <h3 class="card__title">{{ item.title ?? item.url }}</h3>
               <div class="card__footer">
+                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
                 <span class="mono">{{ relativeTime(item.saved_at) }}</span>
               </div>
             </div>
@@ -358,6 +360,20 @@ body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
 .tagrow__all:hover { color: var(--text); }
 .tagrow__scroll { display: flex; gap: 12px; overflow-x: auto; padding: 4px 4px 8px; scrollbar-width: none; }
 .tagrow__scroll::-webkit-scrollbar { display: none; }
+.processing-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid var(--accent-bdr);
+  border-radius: 8px;
+  padding: 1px 7px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .card--more { width: 200px; flex: 0 0 auto; border: 1px dashed var(--border2); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--text-mid); font-family: var(--font-mono); font-size: 12px; border-radius: 12px; }
 .card--more:hover { color: var(--accent); border-color: var(--accent-bdr); }
 

@@ -1,0 +1,35 @@
+{
+  "add": {
+    "label": "存入 URL",
+    "placeholder": "貼入任何 YouTube 或網頁 URL...",
+    "saving": "存入中...",
+    "save": "存入",
+    "error": "儲存失敗，請確認 URL 格式是否正確"
+  },
+  "nav": {
+    "explore": "探索",
+    "archive": "封存",
+    "add": "新增",
+    "settings": "設置",
+    "security": "安全性",
+    "signOut": "登出",
+    "login": "登入 / 免費試用"
+  },
+  "settings": {
+    "title": "設置",
+    "profile": {
+      "title": "個人資料",
+      "displayName": "顯示名稱",
+      "email": "電子郵件",
+      "provider": "登入方式",
+      "readonly_note": "個人資料由登入服務提供，如需修改請前往對應平台設定。"
+    },
+    "appearance": {
+      "title": "外觀",
+      "theme": "主題",
+      "dark": "深色",
+      "light": "淺色",
+      "language": "介面語言"
+    }
+  }
+}

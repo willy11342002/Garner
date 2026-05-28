@@ -234,7 +234,7 @@ const toggleAllItems = () => {
   }
 }
 
-const visOptions = [
+const visOptions: { value: 'private' | 'link' | 'public'; icon: string; label: string; desc: string }[] = [
   { value: 'private', icon: '🔒', label: '私人',    desc: '只有你自己看得到，連結分享也無效。' },
   { value: 'link',    icon: '🔗', label: '連結分享', desc: '知道連結的人可以查看與 Fork，但不會被搜尋到。' },
   { value: 'public',  icon: '🌐', label: '公開',    desc: '任何人都能搜尋與 Fork。會出現在 Browse、Google 結果中。' },

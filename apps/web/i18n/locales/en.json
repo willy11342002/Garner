@@ -1,0 +1,35 @@
+{
+  "add": {
+    "label": "Save URL",
+    "placeholder": "Paste any YouTube or web URL...",
+    "saving": "Saving...",
+    "save": "Save",
+    "error": "Failed to save. Please check the URL format."
+  },
+  "nav": {
+    "explore": "Explore",
+    "archive": "Archive",
+    "add": "Add",
+    "settings": "Settings",
+    "security": "Security",
+    "signOut": "Sign out",
+    "login": "Sign in / Try free"
+  },
+  "settings": {
+    "title": "Settings",
+    "profile": {
+      "title": "Profile",
+      "displayName": "Display name",
+      "email": "Email address",
+      "provider": "Sign-in method",
+      "readonly_note": "Profile information is provided by your sign-in service. To update it, visit your provider's settings."
+    },
+    "appearance": {
+      "title": "Appearance",
+      "theme": "Theme",
+      "dark": "Dark",
+      "light": "Light",
+      "language": "Interface language"
+    }
+  }
+}

@@ -7,13 +7,13 @@
           to="/app/explore"
           class="nav__tab"
           :class="{ 'nav__tab--active': route.path.startsWith('/app/explore') }"
-        >探索</NuxtLink>
+        >{{ t('nav.explore') }}</NuxtLink>
         <template v-if="isLoggedIn">
           <NuxtLink
             to="/app/archive"
             class="nav__tab"
             :class="{ 'nav__tab--active': route.path.startsWith('/app/archive') }"
-          >封存</NuxtLink>
+          >{{ t('nav.archive') }}</NuxtLink>
         </template>
       </div>
       <div class="nav__right">
@@ -38,12 +38,12 @@
           </svg>
         </button>
         <template v-if="isLoggedIn">
-          <NuxtLink to="/app/share" class="nav__add">
+          <button class="nav__add" @click="addOpen = true">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
               <path d="M12 5v14M5 12h14"/>
             </svg>
-            <span>新增</span>
-          </NuxtLink>
+            <span>{{ t('nav.add') }}</span>
+          </button>
 
           <!-- 使用者頭像 + 下拉選單 -->
           <div class="nav__user">
@@ -61,23 +61,23 @@
                 <div class="nav__menu-divider" />
                 <button class="nav__menu-item" @click="goTo('/app/settings')">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                  設置
+                  {{ t('nav.settings') }}
                 </button>
                 <button class="nav__menu-item" @click="goTo('/app/security')">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  安全性
+                  {{ t('nav.security') }}
                 </button>
                 <div class="nav__menu-divider" />
                 <button class="nav__menu-item nav__menu-item--danger" @click="signOut">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
-                  登出
+                  {{ t('nav.signOut') }}
                 </button>
               </div>
             </Transition>
           </div>
         </template>
         <template v-else>
-          <NuxtLink to="/login" class="nav__add"><span>登入 / 免費試用</span></NuxtLink>
+          <NuxtLink to="/login" class="nav__add"><span>{{ t('nav.login') }}</span></NuxtLink>
         </template>
       </div>
     </nav>
@@ -85,20 +85,81 @@
     <!-- 點選外部關閉選單 -->
     <div v-if="menuOpen" class="nav__backdrop" @click="menuOpen = false" />
 
+    <!-- 新增 URL modal -->
+    <Transition name="modal">
+      <div v-if="addOpen" class="add-overlay" @click.self="closeAdd">
+        <div class="add-modal">
+          <p class="add-modal__label">{{ t('add.label') }}</p>
+          <div class="add-modal__row">
+            <input
+              ref="addInput"
+              v-model="addUrl"
+              class="add-modal__input"
+              :placeholder="t('add.placeholder')"
+              :disabled="addSaving"
+              @keydown.enter="submitAdd"
+              @keydown.esc="closeAdd"
+            />
+            <button class="btn btn--accent" :disabled="addSaving || !addUrl.trim()" @click="submitAdd">
+              {{ addSaving ? t('add.saving') : t('add.save') }}
+            </button>
+          </div>
+          <p v-if="addError" class="add-modal__error">{{ addError }}</p>
+        </div>
+      </div>
+    </Transition>
+
     <slot />
   </div>
 </template>
 
 <script setup lang="ts">
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { isDark, toggle } = useTheme()
 const supabaseUser = useSupabaseUser()
 const client = useSupabaseClient()
 const authStore = useAuthStore()
+const itemStore = useItemStore()
 
 const isLoggedIn = computed(() => !!supabaseUser.value)
 const menuOpen = ref(false)
+
+// 新增 modal
+const addOpen = ref(false)
+const addUrl = ref('')
+const addSaving = ref(false)
+const addError = ref('')
+const addInput = ref<HTMLInputElement | null>(null)
+
+watch(addOpen, (val) => {
+  if (val) nextTick(() => addInput.value?.focus())
+  else { addUrl.value = ''; addError.value = '' }
+})
+
+function closeAdd() {
+  if (addSaving.value) return
+  addOpen.value = false
+}
+
+async function submitAdd() {
+  const url = addUrl.value.trim()
+  if (!url || addSaving.value) return
+  addSaving.value = true
+  addError.value = ''
+  try {
+    await itemStore.add({ url })
+    addOpen.value = false
+    if (!route.path.startsWith('/app') || route.path === '/app/archive') {
+      navigateTo('/app')
+    }
+  } catch {
+    addError.value = t('add.error')
+  } finally {
+    addSaving.value = false
+  }
+}
 
 const avatarUrl = computed(() => supabaseUser.value?.user_metadata?.avatar_url ?? null)
 const displayName = computed(() =>
@@ -245,6 +306,83 @@ watch(() => route.path, () => { menuOpen.value = false })
   position: fixed;
   inset: 0;
   z-index: 50;
+}
+
+/* 新增 URL modal */
+.add-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.add-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 540px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+}
+
+.add-modal__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+
+.add-modal__row {
+  display: flex;
+  gap: 8px;
+}
+
+.add-modal__input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color .15s ease;
+  min-width: 0;
+}
+.add-modal__input:focus { border-color: var(--accent-bdr); }
+.add-modal__input::placeholder { color: var(--text-dim); }
+.add-modal__input:disabled { opacity: 0.5; }
+
+.add-modal__error {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--danger);
+}
+
+.modal-enter-active, .modal-leave-active {
+  transition: opacity 0.15s ease;
+}
+.modal-enter-active .add-modal, .modal-leave-active .add-modal {
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.modal-enter-from, .modal-leave-to {
+  opacity: 0;
+}
+.modal-enter-from .add-modal, .modal-leave-to .add-modal {
+  transform: scale(0.96);
+  opacity: 0;
 }
 
 .menu-enter-active,

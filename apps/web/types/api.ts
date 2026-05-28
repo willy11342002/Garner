@@ -11,6 +11,7 @@ export interface Item {
   thumbnail_url: string | null
   saved_at: string
   deleted_at: string | null
+  parsed_at: string | null
 }
 
 export interface ItemCreate {
