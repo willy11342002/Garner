@@ -23,6 +23,8 @@ class ItemRead(BaseModel):
     saved_at: datetime
     deleted_at: datetime | None = None
     parsed_at: datetime | None = None
+    status: str | None = None
+    source_type: str | None = None
 
     model_config = {"from_attributes": True}
 

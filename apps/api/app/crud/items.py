@@ -23,6 +23,20 @@ async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
     return list(result.scalars().all())
 
 
+async def get_archived(db: AsyncSession, user_id: UUID) -> list[UserItem]:
+    result = await db.execute(
+        select(UserItem)
+        .where(
+            UserItem.user_id == user_id,
+            UserItem.deleted_at.is_(None),
+            UserItem.status == UserItemStatus.archived,
+        )
+        .options(joinedload(UserItem.content))
+        .order_by(UserItem.saved_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def get_one(db: AsyncSession, user_id: UUID, item_id: UUID) -> UserItem | None:
     result = await db.execute(
         select(UserItem)

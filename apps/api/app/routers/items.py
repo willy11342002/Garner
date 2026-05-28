@@ -2,14 +2,14 @@ import asyncio
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.core import events
 from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
-from app.schemas.item import ItemCreate, ItemRead, ItemUpdate
+from app.schemas.item import ItemCreate, ItemPendingReviewRead, ItemRead, ItemUpdate
 from app.schemas.tag import TagCreate, TagRead
 from app.services import item_service
 
@@ -29,6 +29,27 @@ async def create_item(
     db: DbSession,
 ):
     return await item_service.create_item(db, UUID(current_user["sub"]), data, background_tasks)
+
+
+@router.get("/pending-review", response_model=list[ItemPendingReviewRead])
+async def list_pending_review(current_user: CurrentUser, db: DbSession):
+    rows = await crud_tags.get_items_with_pending_tags(db, UUID(current_user["sub"]))
+    return [
+        ItemPendingReviewRead(
+            id=ui.id,
+            url=ui.content.url,
+            title=ui.content.title,
+            thumbnail_url=ui.content.thumbnail_url,
+            saved_at=ui.saved_at,
+            pending_tags=[TagRead.model_validate(t) for t in tags],
+        )
+        for ui, tags in rows
+    ]
+
+
+@router.get("/archived", response_model=list[ItemRead])
+async def list_archived(current_user: CurrentUser, db: DbSession):
+    return await item_service.list_archived_items(db, UUID(current_user["sub"]))
 
 
 @router.get("/{item_id}", response_model=ItemRead)
@@ -53,7 +74,6 @@ async def stream_item_status(item_id: UUID, current_user: CurrentUser, db: DbSes
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     async def generator():
-        # Already processed — return immediately
         if user_item.content.parsed_at is not None:
             item_data = item_service._item_to_read(user_item)
             yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
@@ -68,7 +88,6 @@ async def stream_item_status(item_id: UUID, current_user: CurrentUser, db: DbSes
             yield 'data: {"status":"timeout"}\n\n'
             return
 
-        # Re-fetch updated item after processing
         updated = await crud_items.get_one(db, UUID(current_user["sub"]), item_id)
         if updated:
             item_data = item_service._item_to_read(updated)
@@ -89,16 +108,35 @@ async def list_item_tags(item_id: UUID, current_user: CurrentUser, db: DbSession
     result = await db.execute(
         select(Tag)
         .join(ItemTag, ItemTag.tag_id == Tag.id)
-        .where(ItemTag.user_item_id == item_id, Tag.user_id == UUID(current_user["sub"]))
+        .where(
+            ItemTag.user_item_id == item_id,
+            Tag.user_id == UUID(current_user["sub"]),
+            ItemTag.confirmed == True,  # noqa: E712
+        )
     )
     return list(result.scalars().all())
 
 
-@router.post("/{item_id}/tags", status_code=status.HTTP_204_NO_CONTENT)
-async def attach_tag(item_id: UUID, data: TagCreate, current_user: CurrentUser, db: DbSession):
+@router.post("/{item_id}/tags", response_model=TagRead)
+async def attach_tag(
+    item_id: UUID,
+    data: TagCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+    pending: bool = Query(default=False),
+):
     user_id = UUID(current_user["sub"])
     tag = await crud_tags.get_or_create(db, user_id, data.name)
-    await crud_tags.attach_tag(db, item_id, tag.id)
+    await crud_tags.attach_tag(db, item_id, tag.id, confirmed=not pending)
+    await db.commit()
+    return tag
+
+
+@router.post("/{item_id}/tags/{tag_id}/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_item_tag(item_id: UUID, tag_id: UUID, current_user: CurrentUser, db: DbSession):
+    found = await crud_tags.confirm_item_tag(db, item_id, tag_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Pending tag not found")
     await db.commit()
 
 

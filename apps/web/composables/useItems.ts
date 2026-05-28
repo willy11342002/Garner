@@ -36,6 +36,10 @@ export function useItems() {
     return apiFetch(`/items/${itemId}/tags/${tagId}`, { method: 'DELETE' })
   }
 
+  function listArchivedItems(): Promise<Item[]> {
+    return apiFetch('/items/archived')
+  }
+
   function getPendingReview(): Promise<ItemPendingReview[]> {
     return apiFetch('/items/pending-review')
   }
@@ -47,6 +51,6 @@ export function useItems() {
   return {
     listItems, createItem, getItem, updateItem, deleteItem,
     getItemTags, attachTag, detachTag,
-    getPendingReview, confirmItemTag,
+    listArchivedItems, getPendingReview, confirmItemTag,
   }
 }

@@ -13,6 +13,8 @@ export interface Item {
   saved_at: string
   deleted_at: string | null
   parsed_at: string | null
+  status: string | null
+  source_type: string | null
 }
 
 export interface ItemCreate {

@@ -22,6 +22,8 @@ def _item_to_read(user_item) -> ItemRead:
         saved_at=user_item.saved_at,
         deleted_at=user_item.deleted_at,
         parsed_at=content.parsed_at,
+        status=user_item.status,
+        source_type=content.source_type,
     )
 
 
@@ -87,6 +89,11 @@ async def update_item(
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item)
+
+
+async def list_archived_items(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
+    user_items = await crud_items.get_archived(db, user_id)
+    return [_item_to_read(ui) for ui in user_items]
 
 
 async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> None:
