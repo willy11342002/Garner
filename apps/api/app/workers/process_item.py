@@ -5,7 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import events
+from app.crud import tags as crud_tags
 from app.models.content_object import ContentObject, SourceType, detect_source_type
+from app.models.item_tag import TagSource
 from app.models.whisper_usage import WhisperUsage
 from app.services import ai_service, thumbnail_service
 
@@ -30,7 +32,6 @@ async def process_item(
             db, user_id, url
         )
 
-    # Thumbnail is always fetched regardless of whether AI content is available
     thumbnail_url = await thumbnail_service.fetch_and_cache_thumbnail(str(content_id), url)
 
     result = await db.execute(select(ContentObject).where(ContentObject.id == content_id))
@@ -47,13 +48,33 @@ async def process_item(
         content.duration_sec = duration_sec
 
     if raw_content is not None:
-        content.summary = await ai_service.summarize(raw_content)
-        content.embedding = await ai_service.embed(content.summary)
+        try:
+            analysis = await ai_service.analyze_content(raw_content)
+            summary_i18n: dict[str, str] = analysis.get("summary", {})
+            content.summary_i18n = summary_i18n
+            # Keep summary as zh-TW fallback for backward compatibility
+            content.summary = summary_i18n.get("zh-TW") or summary_i18n.get("en", "")
+            # Embed the English summary for best semantic search quality
+            embed_text = summary_i18n.get("en") or content.summary
+            content.embedding = await ai_service.embed(embed_text)
+
+            # Create and attach AI-generated tags
+            tags_i18n: dict[str, list[str]] = analysis.get("tags", {})
+            zh_tags = tags_i18n.get("zh-TW", [])
+            en_tags = tags_i18n.get("en", [])
+            for zh_name, en_name in zip(zh_tags, en_tags):
+                tag = await crud_tags.get_or_create(
+                    db, user_id, name=zh_name,
+                    name_i18n={"zh-TW": zh_name, "en": en_name},
+                )
+                await crud_tags.attach_tag(db, user_item_id, tag.id, source=TagSource.ai)
+        except Exception:
+            # AI failure must not block the item from being saved
+            pass
 
         if whisper_seconds is not None:
             db.add(WhisperUsage(user_id=user_id, date=date.today(), used_seconds=whisper_seconds))
 
-    # Always mark as processed so SSE knows we're done
     content.parsed_at = datetime.now(timezone.utc)
     await db.commit()
 

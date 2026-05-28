@@ -89,22 +89,36 @@
     <Transition name="modal">
       <div v-if="addOpen" class="add-overlay" @click.self="closeAdd">
         <div class="add-modal">
-          <p class="add-modal__label">{{ t('add.label') }}</p>
-          <div class="add-modal__row">
-            <input
-              ref="addInput"
-              v-model="addUrl"
-              class="add-modal__input"
-              :placeholder="t('add.placeholder')"
-              :disabled="addSaving"
-              @keydown.enter="submitAdd"
-              @keydown.esc="closeAdd"
-            />
-            <button class="btn btn--accent" :disabled="addSaving || !addUrl.trim()" @click="submitAdd">
-              {{ addSaving ? t('add.saving') : t('add.save') }}
-            </button>
-          </div>
-          <p v-if="addError" class="add-modal__error">{{ addError }}</p>
+          <!-- Processing state -->
+          <template v-if="addProcessingItemId">
+            <div class="add-modal__processing">
+              <span class="add-modal__processing-dot"></span>
+              <p class="add-modal__processing-text">{{ t('add.processing') }}</p>
+            </div>
+            <p class="add-modal__hint">{{ t('add.processingHint') }}</p>
+            <div class="add-modal__row add-modal__row--end">
+              <button class="btn btn--ghost" @click="closeAdd">{{ t('add.close') }}</button>
+            </div>
+          </template>
+          <!-- Input state -->
+          <template v-else>
+            <p class="add-modal__label">{{ t('add.label') }}</p>
+            <div class="add-modal__row">
+              <input
+                ref="addInput"
+                v-model="addUrl"
+                class="add-modal__input"
+                :placeholder="t('add.placeholder')"
+                :disabled="addSaving"
+                @keydown.enter="submitAdd"
+                @keydown.esc="closeAdd"
+              />
+              <button class="btn btn--accent" :disabled="addSaving || !addUrl.trim()" @click="submitAdd">
+                {{ addSaving ? t('add.saving') : t('add.save') }}
+              </button>
+            </div>
+            <p v-if="addError" class="add-modal__error">{{ addError }}</p>
+          </template>
         </div>
       </div>
     </Transition>
@@ -132,10 +146,22 @@ const addUrl = ref('')
 const addSaving = ref(false)
 const addError = ref('')
 const addInput = ref<HTMLInputElement | null>(null)
+const addProcessingItemId = ref<string | null>(null)
 
 watch(addOpen, (val) => {
   if (val) nextTick(() => addInput.value?.focus())
-  else { addUrl.value = ''; addError.value = '' }
+  else {
+    addUrl.value = ''
+    addError.value = ''
+    addProcessingItemId.value = null
+  }
+})
+
+watch(() => itemStore.recentlyProcessed, (itemId) => {
+  if (itemId && itemId === addProcessingItemId.value) {
+    addProcessingItemId.value = null
+    addOpen.value = false
+  }
 })
 
 function closeAdd() {
@@ -149,8 +175,9 @@ async function submitAdd() {
   addSaving.value = true
   addError.value = ''
   try {
-    await itemStore.add({ url })
-    addOpen.value = false
+    const item = await itemStore.add({ url })
+    addUrl.value = ''
+    addProcessingItemId.value = item.id
     if (!route.path.startsWith('/app') || route.path === '/app/archive') {
       navigateTo('/app')
     }
@@ -369,6 +396,41 @@ watch(() => route.path, () => { menuOpen.value = false })
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--danger);
+}
+
+.add-modal__processing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.add-modal__processing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  flex-shrink: 0;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.add-modal__processing-text {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.add-modal__hint {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.add-modal__row--end {
+  justify-content: flex-end;
 }
 
 .modal-enter-active, .modal-leave-active {

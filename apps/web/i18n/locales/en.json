@@ -4,7 +4,10 @@
     "placeholder": "Paste any YouTube or web URL...",
     "saving": "Saving...",
     "save": "Save",
-    "error": "Failed to save. Please check the URL format."
+    "error": "Failed to save. Please check the URL format.",
+    "processing": "AI is reading the content...",
+    "processingHint": "You can close this — it'll finish in the background.",
+    "close": "Close"
   },
   "nav": {
     "explore": "Explore",
@@ -14,6 +17,37 @@
     "security": "Security",
     "signOut": "Sign out",
     "login": "Sign in / Try free"
+  },
+  "security": {
+    "title": "Security",
+    "nav": {
+      "connected": "Connected Accounts",
+      "danger": "Danger Zone"
+    },
+    "connected": {
+      "title": "Connected Accounts",
+      "description": "Your current sign-in method. Account security is managed by your provider — visit their settings to make changes.",
+      "provider_label": "Sign-in method",
+      "session": {
+        "title": "Current Session",
+        "user_id": "User ID",
+        "last_sign_in": "Last sign-in",
+        "unknown": "Unknown"
+      }
+    },
+    "danger": {
+      "title": "Danger Zone",
+      "delete_account": "Delete Account",
+      "delete_description": "Permanently delete your account and all saved items, tags, and associated data. This cannot be undone.",
+      "delete_button": "Delete my account",
+      "confirm_title": "Confirm account deletion",
+      "confirm_description": "This will permanently delete your account, all saved items, tags, and all associated data. This action cannot be undone and cannot be reversed.",
+      "confirm_prompt": "Type DELETE to confirm",
+      "confirm_placeholder": "DELETE",
+      "confirm_button": "Permanently delete",
+      "cancel": "Cancel",
+      "deleting": "Deleting..."
+    }
   },
   "settings": {
     "title": "Settings",

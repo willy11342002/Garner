@@ -7,10 +7,11 @@ export function useApiFetch() {
     onRequest({ options }) {
       const token = session.value?.access_token
       if (token) {
-        options.headers = {
-          ...(options.headers as Record<string, string>),
+        const merged: Record<string, string> = {
+          ...(options.headers as unknown as Record<string, string>),
           Authorization: `Bearer ${token}`,
         }
+        options.headers = merged as unknown as Headers
       }
     },
   })
