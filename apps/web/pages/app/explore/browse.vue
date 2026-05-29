@@ -8,12 +8,12 @@
       <div class="filter-pills">
         <button class="pill" :class="{ 'pill--active': activeTag === null }" @click="setTag(null)">All</button>
         <button
-          v-for="t in TAG_FILTERS"
-          :key="t.value"
+          v-for="t in userTags.slice(0, 4)"
+          :key="t.id"
           class="pill"
-          :class="{ 'pill--active': activeTag === t.value }"
-          @click="setTag(t.value)"
-        >{{ t.label }}</button>
+          :class="{ 'pill--active': activeTag === t.name }"
+          @click="setTag(t.name)"
+        >{{ t.name }}</button>
       </div>
     </div>
 
@@ -83,14 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import type { PublicCollectionRead } from '~/types/api'
-
-const TAG_FILTERS = [
-  { label: '旅遊', value: '旅遊' },
-  { label: '設計', value: '設計' },
-  { label: '科技', value: '科技' },
-  { label: '美食', value: '美食' },
-]
+import type { PublicCollectionRead, Tag } from '~/types/api'
 
 const PLACEHOLDER_COLORS = ['a', 'b', 'c', 'd', 'e', 'accent']
 const AVATAR_GRADIENTS = [
@@ -107,6 +100,15 @@ const searchQuery = ref('')
 const activeTag = ref<string | null>(null)
 const collections = ref<PublicCollectionRead[]>([])
 const pending = ref(false)
+const userTags = ref<Tag[]>([])
+
+async function fetchUserTags() {
+  try {
+    userTags.value = await apiFetch<Tag[]>('/tags/')
+  } catch {
+    userTags.value = []
+  }
+}
 
 let debounceTimer: ReturnType<typeof setTimeout>
 
@@ -163,7 +165,10 @@ async function forkCol(slug: string) {
   await navigateTo(`/share/${slug}`)
 }
 
-onMounted(fetchCollections)
+onMounted(() => {
+  fetchUserTags()
+  fetchCollections()
+})
 </script>
 
 <style>

@@ -11,7 +11,7 @@ from app.models.tag import Tag
 
 async def get_all(db: AsyncSession, user_id: UUID) -> list[Tag]:
     result = await db.execute(
-        select(Tag).where(Tag.user_id == user_id).order_by(Tag.name)
+        select(Tag).where(Tag.user_id == user_id).order_by(Tag.item_count.desc(), Tag.name)
     )
     return list(result.scalars().all())
 
