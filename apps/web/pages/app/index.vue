@@ -243,6 +243,15 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('click', closeMenu)
 })
+
+// share wizard modal
+const shareModalOpen = ref(false)
+const shareModalTagId = ref<string | undefined>(undefined)
+
+function openShareModal(tagId: string) {
+  shareModalTagId.value = tagId
+  shareModalOpen.value = true
+}
 </script>
 
 <template>
@@ -449,7 +458,7 @@ onUnmounted(() => {
           <span class="tagrow__dot" :style="`background:var(--tag-${tagColor(i)})`"></span>
           <span class="tagrow__name">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
           <span class="tagrow__count">{{ group.items.length }}</span>
-          <NuxtLink :to="`/app/share?tag=${group.tag.id}`" class="tagrow__share">↗ 分享這個標籤</NuxtLink>
+          <button class="tagrow__share" @click="openShareModal(group.tag.id)">↗ 分享這個標籤</button>
           <NuxtLink :to="`/app/tag/${group.tag.id}`" class="tagrow__all">查看全部 →</NuxtLink>
         </header>
         <div class="tagrow__scroll">
@@ -488,4 +497,10 @@ onUnmounted(() => {
 
     </template>
   </main>
+
+  <ShareWizardModal
+    :open="shareModalOpen"
+    :preset-tag-id="shareModalTagId"
+    @close="shareModalOpen = false"
+  />
 </template>

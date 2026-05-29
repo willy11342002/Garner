@@ -83,7 +83,13 @@
           <div v-else :class="`placeholder placeholder--${placeholderColors[i % placeholderColors.length]}`">
             <div class="placeholder__stripes"></div>
           </div>
-          <span class="source-badge">{{ sourceBadge(item.source_type) }}</span>
+          <button
+            class="add-btn"
+            @click.prevent.stop="onAddClick(item)"
+            :title="t('share.add_to_collection')"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
         </div>
         <div class="icard__body">
           <h3 class="icard__title">{{ item.title || item.url }}</h3>
@@ -122,6 +128,137 @@
       </div>
     </Transition>
 
+    <!-- add-to-collection picker -->
+    <Transition name="id-fade-t">
+      <div v-if="addPickerItem" class="id-overlay" @click.self="addPickerItem = null">
+        <div class="add-picker fadeup">
+          <button class="id-close" @click="addPickerItem = null">×</button>
+          <div class="add-picker__head">{{ t('share.add_to_collection') }}</div>
+          <div v-if="!session" class="add-picker__empty">{{ t('share.login_to_add') }}</div>
+          <div v-else-if="userCollections.length === 0" class="add-picker__empty">{{ t('share.no_collections') }}</div>
+          <ul v-else class="add-picker__list">
+            <li
+              v-for="col in userCollections"
+              :key="col.id"
+              class="add-picker__row"
+              @click="addToCollection(addPickerItem, col.id)"
+            >
+              <span class="add-picker__name">{{ col.title }}</span>
+              <span class="add-picker__count mono">{{ col.item_count ?? '' }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- fork wizard modal -->
+    <Transition name="id-fade-t">
+      <div v-if="forkModalOpen" class="id-overlay" @click.self="closeForkModal">
+        <div class="fork-modal fadeup">
+          <button class="id-close" @click="closeForkModal">×</button>
+
+          <div class="fork-modal__head">
+            <span class="eyebrow">FORK TO COLLECTION</span>
+            <!-- Stepper -->
+            <div class="fork-stepper" :data-step="forkStep">
+              <div
+                class="fork-step"
+                :class="{ 'fork-step--done': forkStep > 1, 'fork-step--current': forkStep === 1, 'fork-step--clickable': forkStep > 1 }"
+                @click="forkStep > 1 && (forkStep = 1)"
+              >
+                <span class="fork-step__circle">
+                  <svg v-if="forkStep > 1" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
+                  <template v-else>1</template>
+                </span>
+                <span class="fork-step__label">選擇集合</span>
+              </div>
+              <div class="fork-stepper__line"></div>
+              <div
+                class="fork-step"
+                :class="{ 'fork-step--current': forkStep === 2, 'fork-step--locked': forkStep < 2 }"
+              >
+                <span class="fork-step__circle">2</span>
+                <span class="fork-step__label">選擇內容</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 1 -->
+          <div v-if="forkStep === 1" class="fork-modal__body">
+            <h2 class="fork-modal__title">加入哪個集合？</h2>
+            <p class="fork-modal__desc">選擇一個你已建立的集合，下一步可以挑選要加入的內容。</p>
+            <div v-if="forkCollectionsLoading" class="fork-loading">載入集合中...</div>
+            <div v-else-if="forkCollections.length === 0" class="fork-empty">
+              你還沒有任何集合。
+            </div>
+            <div v-else class="fork-col-grid">
+              <button
+                v-for="col in forkCollections"
+                :key="col.id"
+                class="fork-col-pick"
+                :class="{ sel: forkSelectedCollectionId === col.id }"
+                @click="forkSelectedCollectionId = col.id"
+              >
+                <span class="fork-col-pick__title">{{ col.title }}</span>
+                <span class="fork-col-pick__meta mono">⑂ {{ col.fork_count }}</span>
+                <span v-if="forkSelectedCollectionId === col.id" class="fork-col-pick__check">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div v-if="forkStep === 2" class="fork-modal__body">
+            <h2 class="fork-modal__title">選擇要加入的內容</h2>
+            <p class="fork-modal__desc">預設全選，點擊取消勾選不想加入的項目。</p>
+            <div class="fork-select-all">
+              <button class="pill" @click="forkToggleAll">{{ forkSelectedIds.size === (collection?.items.length ?? 0) ? '取消全選' : '全選' }}</button>
+              <span style="flex:1;"></span>
+              <span class="mono" style="font-size:11px;color:var(--text-mid);">共 {{ collection?.items.length }} 筆 · 已選 {{ forkSelectedIds.size }}</span>
+            </div>
+            <div class="fork-clist">
+              <div
+                v-for="(item, i) in collection?.items ?? []"
+                :key="item.id"
+                class="fork-citem"
+                :class="{ unsel: !forkSelectedIds.has(item.id) }"
+                @click="forkToggleItem(item.id)"
+              >
+                <span class="fork-checkbox">
+                  <svg v-if="forkSelectedIds.has(item.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
+                </span>
+                <div class="fork-citem__thumb">
+                  <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" />
+                  <div v-else :class="`placeholder placeholder--${placeholderColors[i % placeholderColors.length]}`"><div class="placeholder__stripes"></div></div>
+                </div>
+                <div class="fork-citem__main">
+                  <h4 class="fork-citem__title">{{ item.title || item.url }}</h4>
+                  <span class="tag-chip tag-chip--a" style="font-size:10px;">{{ sourceLabel(item.source_type) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="fork-modal__foot">
+            <template v-if="forkStep === 1">
+              <span class="spacer"></span>
+              <button class="btn btn--accent" :disabled="!forkSelectedCollectionId" @click="forkStep = 2">下一步 →</button>
+            </template>
+            <template v-else>
+              <span class="mono" style="font-size:11.5px;color:var(--accent);">已選 {{ forkSelectedIds.size }} / {{ collection?.items.length }} 筆</span>
+              <span class="spacer"></span>
+              <button class="btn" @click="forkStep = 1">← 上一步</button>
+              <button class="btn btn--accent" :disabled="forkSelectedIds.size === 0 || forkAdding" @click="confirmFork">
+                {{ forkAdding ? '加入中...' : `加入 ${forkSelectedIds.size} 筆 →` }}
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <section class="rec-section">
       <header class="rec-head">
         <span class="eyebrow">{{ t('share.you_may_like') }}</span>
@@ -154,10 +291,17 @@
     <p style="color:var(--text-mid);">{{ t('share.not_found') }}</p>
     <NuxtLink to="/app/explore" class="btn" style="margin-top:16px;">{{ t('share.explore_btn') }}</NuxtLink>
   </div>
+
+  <Transition name="toast">
+    <div v-if="toast" class="add-toast">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
+      {{ toast }}
+    </div>
+  </Transition>
 </template>
 
 <script setup lang="ts">
-import type { CollectionShareItem, CollectionShareRead, PublicCollectionRead } from '~/types/api'
+import type { CollectionShareItem, CollectionShareRead, CollectionRead, PublicCollectionRead } from '~/types/api'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -222,15 +366,120 @@ function sourceLabel(sourceType: string | null): string {
 // Item detail drawer
 const activeItem = ref<CollectionShareItem | null>(null)
 
+// fork modal state
+const forkModalOpen = ref(false)
+const forkStep = ref<1 | 2>(1)
+const forkCollections = ref<CollectionRead[]>([])
+const forkCollectionsLoading = ref(false)
+const forkSelectedCollectionId = ref<string | null>(null)
+const forkSelectedIds = reactive(new Set<string>())
+const forkAdding = ref(false)
+
 function goFork() {
   if (!session.value) {
     router.push('/login')
     return
   }
-  router.push(`/app/share?from_slug=${slug}`)
+  openForkModal()
+}
+
+async function openForkModal() {
+  forkStep.value = 1
+  forkSelectedCollectionId.value = null
+  forkSelectedIds.clear()
+  collection.value?.items.forEach(i => forkSelectedIds.add(i.id))
+  forkModalOpen.value = true
+
+  if (forkCollections.value.length === 0) {
+    forkCollectionsLoading.value = true
+    const token = session.value!.access_token
+    forkCollections.value = await $fetch<CollectionRead[]>(`${config.public.apiBase}/collections/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => [])
+    forkCollectionsLoading.value = false
+  }
+}
+
+function closeForkModal() {
+  forkModalOpen.value = false
+}
+
+function forkToggleItem(id: string) {
+  if (forkSelectedIds.has(id)) forkSelectedIds.delete(id)
+  else forkSelectedIds.add(id)
+}
+
+function forkToggleAll() {
+  const items = collection.value?.items ?? []
+  if (forkSelectedIds.size === items.length) forkSelectedIds.clear()
+  else items.forEach(i => forkSelectedIds.add(i.id))
+}
+
+async function confirmFork() {
+  if (!forkSelectedCollectionId.value || forkAdding.value) return
+  forkAdding.value = true
+  const colId = forkSelectedCollectionId.value
+  try {
+    const token = session.value!.access_token
+    for (const contentId of forkSelectedIds) {
+      await $fetch(`${config.public.apiBase}/collections/${colId}/items/from-public`, {
+        method: 'POST',
+        query: { content_id: contentId },
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {})
+    }
+    closeForkModal()
+    showToast(`已加入 ${forkSelectedIds.size} 筆到集合`)
+  } finally {
+    forkAdding.value = false
+  }
 }
 
 const recs = computed(() => recsData.value ?? [])
+
+// add-to-collection
+const addPickerItem = ref<CollectionShareItem | null>(null)
+const userCollections = ref<CollectionRead[]>([])
+const toast = ref<string | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(msg: string) {
+  toast.value = msg
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toast.value = null }, 2500)
+}
+
+async function onAddClick(item: CollectionShareItem) {
+  if (!session.value) {
+    router.push('/login')
+    return
+  }
+  if (userCollections.value.length === 0) {
+    const token = session.value.access_token
+    userCollections.value = await $fetch<CollectionRead[]>(`${config.public.apiBase}/collections/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => [])
+  }
+  addPickerItem.value = item
+}
+
+async function addToCollection(item: CollectionShareItem, collectionId: string) {
+  if (!session.value) return
+  const token = session.value.access_token
+  const col = userCollections.value.find(c => c.id === collectionId)
+  try {
+    await $fetch(`${config.public.apiBase}/collections/${collectionId}/items/from-public`, {
+      method: 'POST',
+      query: { content_id: item.id },
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    addPickerItem.value = null
+    showToast(`${t('share.add_to_collection_done')} — ${col?.title ?? ''}`)
+  } catch {
+    addPickerItem.value = null
+    showToast(t('share.add_to_collection_error'))
+  }
+}
 </script>
 
 <style>
@@ -372,7 +621,79 @@ const recs = computed(() => recsData.value ?? [])
 .icard.sel .icard__check { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .icard__check svg { width: 14px; height: 14px; }
 .icard__thumb { height: 130px; position: relative; overflow: hidden; }
-.icard__thumb .source-badge { position: absolute; right: 8px; bottom: 8px; }
+.add-btn {
+  position: absolute; right: 8px; bottom: 8px;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.55);
+  border: 1.5px solid rgba(255,255,255,0.35);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s ease, background .15s ease, border-color .15s ease;
+}
+.add-btn svg { width: 14px; height: 14px; }
+.icard:hover .add-btn { opacity: 1; }
+.add-btn:hover { background: rgba(0,0,0,0.75); border-color: rgba(255,255,255,0.6); }
+
+.add-toast {
+  position: fixed;
+  bottom: 28px; right: 28px;
+  z-index: 500;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px -8px var(--shadow);
+  font-size: 13px; font-weight: 500;
+  color: var(--text);
+  pointer-events: none;
+}
+.add-toast svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+.toast-enter-active, .toast-leave-active { transition: opacity .2s ease, transform .2s ease; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(8px); }
+
+.add-picker {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 20px;
+  position: relative;
+  box-shadow: 0 20px 60px -12px var(--shadow);
+}
+.add-picker__head {
+  font-family: var(--font-brand);
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 14px;
+  padding-right: 28px;
+}
+.add-picker__empty {
+  font-size: 13px;
+  color: var(--text-mid);
+  padding: 8px 0;
+}
+.add-picker__list {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.add-picker__row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.add-picker__row:hover { background: var(--surface2); }
+.add-picker__row--done { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.add-picker__name { font-size: 13.5px; font-weight: 500; }
+.add-picker__count { font-size: 11px; color: var(--text-dim); }
 .icard__body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .icard__title {
   font-size: 13px; font-weight: 500;
@@ -479,6 +800,125 @@ const recs = computed(() => recsData.value ?? [])
 .drawer-enter-active .item-drawer__panel, .drawer-leave-active .item-drawer__panel { transition: transform .25s cubic-bezier(.32,0,.67,0); }
 .drawer-enter-from, .drawer-leave-to { opacity: 0; }
 .drawer-enter-from .item-drawer__panel, .drawer-leave-to .item-drawer__panel { transform: translateX(100%); }
+
+/* ── fork wizard modal ── */
+.fork-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 24px 64px -12px var(--shadow);
+  overflow: hidden;
+}
+.fork-modal__head {
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.fork-modal__head .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  display: block;
+  margin-bottom: 12px;
+}
+.fork-modal__body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+.fork-modal__title { font-family: var(--font-brand); font-weight: 600; font-size: 18px; margin: 0 0 5px; }
+.fork-modal__desc { font-size: 13px; color: var(--text-mid); margin: 0 0 18px; }
+.fork-modal__foot {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+}
+.fork-modal__foot .spacer { flex: 1; }
+
+.fork-stepper {
+  display: flex; align-items: center; gap: 0;
+}
+.fork-step { display: flex; align-items: center; gap: 8px; }
+.fork-step__circle {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--surface3); border: 1.5px solid var(--border2);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  color: var(--text-mid); flex-shrink: 0;
+}
+.fork-step--done .fork-step__circle { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.fork-step--current .fork-step__circle { border-color: var(--accent); color: var(--accent); background: var(--bg); box-shadow: 0 0 0 3px var(--accent-dim); }
+.fork-step__label { font-family: var(--font-mono); font-size: 11px; color: var(--text-mid); white-space: nowrap; }
+.fork-step--current .fork-step__label { color: var(--text); }
+.fork-step--clickable { cursor: pointer; }
+.fork-step--locked { opacity: 0.4; }
+.fork-stepper__line { flex: 1; height: 1.5px; background: var(--border2); margin: 0 10px; }
+
+.fork-loading { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); padding: 16px 0; }
+.fork-empty { font-size: 13px; color: var(--text-mid); padding: 12px 0; }
+
+.fork-col-grid { display: flex; flex-direction: column; gap: 7px; }
+.fork-col-pick {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; cursor: pointer;
+  transition: all .15s ease; text-align: left; width: 100%;
+}
+.fork-col-pick:hover { border-color: var(--border2); }
+.fork-col-pick.sel { background: var(--accent-dim); border-color: var(--accent-bdr); }
+.fork-col-pick__title { font-size: 13.5px; font-weight: 500; flex: 1; }
+.fork-col-pick__meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+.fork-col-pick__check {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+.fork-select-all {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+}
+.fork-select-all .pill {
+  cursor: pointer; padding: 4px 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; font-family: var(--font-mono); font-size: 11.5px;
+  transition: all .15s ease;
+}
+.fork-select-all .pill:hover { color: var(--text); }
+
+.fork-clist { display: flex; flex-direction: column; gap: 5px; max-height: 340px; overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
+.fork-citem {
+  display: grid; grid-template-columns: 20px 60px 1fr;
+  gap: 10px; align-items: center;
+  padding: 9px 10px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 9px;
+  cursor: pointer; transition: all .15s ease;
+}
+.fork-citem:hover { background: var(--surface2); }
+.fork-citem.unsel { opacity: 0.4; }
+.fork-checkbox {
+  width: 16px; height: 16px; border-radius: 4px;
+  border: 1.5px solid var(--border2); background: var(--surface);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.fork-citem:not(.unsel) .fork-checkbox { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.fork-checkbox svg { width: 10px; height: 10px; }
+.fork-citem__thumb { width: 60px; height: 38px; border-radius: 5px; overflow: hidden; flex-shrink: 0; }
+.fork-citem__main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.fork-citem__title { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+
+@media (max-width: 640px) {
+  .fork-modal { border-radius: 16px 16px 0 0; max-height: 90vh; }
+  .id-overlay { align-items: flex-end; }
+}
 
 @media (max-width: 640px) {
   .item-drawer { align-items: flex-end; justify-content: stretch; }
