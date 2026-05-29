@@ -142,6 +142,22 @@ const heroTags = computed(() =>
 )
 
 const heroPage = ref(0)
+const HERO_TOTAL = 2
+let heroTimer: ReturnType<typeof setInterval> | null = null
+
+function startHeroTimer() {
+  stopHeroTimer()
+  heroTimer = setInterval(() => {
+    if (weeklyTagGroups.value.length) heroPage.value = (heroPage.value + 1) % HERO_TOTAL
+  }, 10000)
+}
+function stopHeroTimer() {
+  if (heroTimer) { clearInterval(heroTimer); heroTimer = null }
+}
+function goHeroPage(page: number) {
+  heroPage.value = page
+  startHeroTimer()
+}
 
 const weeklyTagGroups = computed(() => {
   if (loading.value) return []
@@ -247,6 +263,7 @@ watch(() => itemStore.recentlyProcessed, async (itemId) => {
 
 onMounted(async () => {
   document.addEventListener('click', closeMenu)
+  startHeroTimer()
   await itemStore.load()
   const [, pending] = await Promise.all([
     Promise.all(
@@ -262,6 +279,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeMenu)
+  stopHeroTimer()
 })
 
 // share wizard modal
@@ -316,6 +334,23 @@ function openShareModal(tagId: string) {
     <template v-else>
       <!-- Hero Gallery -->
       <div v-if="heroItem" class="hero-wrap fadeup">
+        <div class="hero-gallery-wrap">
+        <button
+          v-if="heroPage === 1 && weeklyTagGroups.length"
+          class="hero-nav hero-nav--prev"
+          aria-label="上一頁"
+          @click="goHeroPage(0)"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="10 3 5 8 10 13"/></svg>
+        </button>
+        <button
+          v-if="heroPage === 0 && weeklyTagGroups.length"
+          class="hero-nav hero-nav--next"
+          aria-label="下一頁"
+          @click="goHeroPage(1)"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3 11 8 6 13"/></svg>
+        </button>
         <div class="hero-gallery" :class="`hero-gallery--p${heroPage}`">
           <!-- Slide 0: TODAY'S REVISIT -->
           <section class="hero-slide hero">
@@ -324,9 +359,6 @@ function openShareModal(tagId: string) {
               <div v-else class="placeholder placeholder--b">
                 <div class="placeholder__stripes"></div>
                 <div class="placeholder__label">[ 縮圖處理中 ]</div>
-              </div>
-              <div class="hero__mediaTag mono" style="color:var(--text-dim); font-size:10px; letter-spacing:.08em;">
-                TODAY'S REVISIT · {{ daysSince(heroItem.saved_at) }} DAYS AGO
               </div>
               <span class="source-badge hero__source">{{ sourceLabel(heroItem.url) }}</span>
             </div>
@@ -376,11 +408,12 @@ function openShareModal(tagId: string) {
             </article>
           </section>
         </div>
+        </div>
 
         <!-- Gallery dots -->
         <div v-if="weeklyTagGroups.length" class="hero-dots">
-          <button class="hero-dot" :class="{ 'hero-dot--active': heroPage === 0 }" @click="heroPage = 0"></button>
-          <button class="hero-dot" :class="{ 'hero-dot--active': heroPage === 1 }" @click="heroPage = 1"></button>
+          <button class="hero-dot" :class="{ 'hero-dot--active': heroPage === 0 }" @click="goHeroPage(0)"></button>
+          <button class="hero-dot" :class="{ 'hero-dot--active': heroPage === 1 }" @click="goHeroPage(1)"></button>
         </div>
       </div>
 
