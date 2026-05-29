@@ -183,7 +183,7 @@ input, textarea { font-family: inherit; color: inherit; }
   transition: transform .15s ease;
 }
 .nav__avatar:hover { transform: scale(1.05); }
-.nav__theme {
+.nav__theme, .nav__lang {
   width: 34px; height: 34px;
   border-radius: 8px;
   background: var(--surface);
@@ -191,8 +191,9 @@ input, textarea { font-family: inherit; color: inherit; }
   display: inline-flex; align-items: center; justify-content: center;
   transition: all .15s ease;
 }
-.nav__theme:hover { background: var(--surface2); }
+.nav__theme:hover, .nav__lang:hover { background: var(--surface2); }
 .nav__theme svg { width: 14px; height: 14px; color: var(--text-mid); }
+.nav__lang { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--text-mid); }
 
 /* ---------- Search dropdown ---------- */
 .search-drop {

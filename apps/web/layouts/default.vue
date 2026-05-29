@@ -61,6 +61,9 @@
             </Transition>
           </div>
         </template>
+        <button class="nav__lang" @click="switchLocale" :aria-label="locale === 'zh-TW' ? 'Switch to English' : '切換為繁體中文'">
+          {{ locale === 'zh-TW' ? 'EN' : '中' }}
+        </button>
         <button class="nav__theme" @click="toggle" aria-label="Toggle theme">
           <svg viewBox="0 0 24 24">
             <template v-if="!isDark">
@@ -167,7 +170,11 @@
 <script setup lang="ts">
 import type { Item } from '~/types/api'
 
-const { t } = useI18n()
+const { t, locale, setLocale } = useI18n()
+
+function switchLocale() {
+  setLocale(locale.value === 'zh-TW' ? 'en' : 'zh-TW')
+}
 const route = useRoute()
 const router = useRouter()
 const { isDark, toggle } = useTheme()

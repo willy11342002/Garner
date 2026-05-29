@@ -68,5 +68,106 @@
       "light": "Light",
       "language": "Interface language"
     }
+  },
+  "landing": {
+    "title": "Your Passively-Built Second Brain",
+    "sub": "Save YouTube videos and articles in one click. AI generates summaries, tags, and semantic connections automatically. Your knowledge base grows on its own.",
+    "cta_start": "Start for free",
+    "cta_explore": "Explore public collections",
+    "feat_collect_title": "One-click save",
+    "feat_collect_desc": "The Chrome Extension detects the current page. Hit the button to save — no app switching needed.",
+    "feat_ai_title": "AI auto-organise",
+    "feat_ai_desc": "Every item gets a summary, tags, and semantic embeddings — forming a queryable knowledge graph.",
+    "feat_search_title": "Natural language search",
+    "feat_search_desc": "Ask \"What did I save about remote work culture?\" and get direct answers, not a list of links.",
+    "feat_fork_title": "Share & Fork",
+    "feat_fork_desc": "Share your knowledge collection and let others fork it into their own library. Knowledge flows, not copy-paste.",
+    "pricing_link": "View plans & pricing →",
+    "page_title": "Vela — Your passively-built personal knowledge base"
+  },
+  "login": {
+    "sub": "Your passively-built personal knowledge base",
+    "google": "Sign in with Google",
+    "github": "Sign in with GitHub"
+  },
+  "confirm": {
+    "verifying": "Verifying sign-in..."
+  },
+  "pricing": {
+    "page_title": "Vela — Upgrade",
+    "eyebrow": "UPGRADE YOUR VELA",
+    "hero_title": "Let your knowledge base work its magic",
+    "hero_sub": "The free plan already laid your foundation. Upgrade for unlimited queries and full AI connections that bring it to life.",
+    "billing_monthly": "Monthly",
+    "billing_yearly": "Yearly",
+    "save_badge": "Save 20%",
+    "per_month": "/ mo",
+    "free": {
+      "tag": "Start exploring your second brain",
+      "current_plan": "Current plan",
+      "feat_queries": "{count} AI queries / month",
+      "feat_queries_hint": "{remaining} left this month",
+      "feat_unlimited_items": "Unlimited saved items",
+      "feat_ai": "AI summaries & auto-tagging",
+      "feat_relations": "Basic connections (first 50)",
+      "feat_no_semantic": "Advanced semantic search",
+      "feat_no_unlimited_rel": "Unlimited connections",
+      "feat_no_export": "Export knowledge base"
+    },
+    "pro": {
+      "badge_popular": "Most popular",
+      "tag": "Let AI truly understand your knowledge base",
+      "per_year": "/ yr (≈ $9.6/mo)",
+      "upgrade": "Upgrade to Pro →",
+      "feat_unlimited_queries": "Unlimited AI queries",
+      "feat_unlimited_items": "Unlimited saved items",
+      "feat_ai": "AI summaries & auto-tagging",
+      "feat_relations": "Full semantic connections",
+      "feat_search": "Advanced natural language search (5 dimensions)",
+      "feat_fork": "Public collections + Fork",
+      "feat_export": "Export knowledge base (Markdown / JSON)",
+      "feat_support": "Priority support"
+    },
+    "magic": {
+      "title": "Why it's worth upgrading",
+      "quote": "\"I'd been saving things for a month, then one day I casually asked 'I remember an article about remote team culture...' — the system surfaced something I'd completely forgotten I saved, and linked it to a design article I'd never thought was related. That was the moment this app came alive.\"",
+      "author": "Mei Wu · Product Manager · Vela user for 6 months",
+      "pro_badge": "Pro user"
+    },
+    "faq": {
+      "title": "Frequently asked questions",
+      "q1": "How are the 50 free queries counted?",
+      "a1": "Each time you hit \"Explore\" on the Focus (Ask your library) page counts as 1 query. Clicking connection cards from the home page or item detail pages does not count. Insights in the Surprise tab are free too. Resets on the 1st of each month UTC.",
+      "q2": "Can I cancel anytime?",
+      "a2": "Yes. After cancelling you keep Pro access until the end of your current billing period, then automatically revert to Free. All your data is preserved — only the query limit returns to 50/month.",
+      "q3": "Is my data safe?",
+      "a3": "All content is encrypted at rest (AES-256). AI summaries and tags are processed by Anthropic Claude. We don't use your content to train models, and data is purged from the LLM provider after 30 days.",
+      "q4": "Do I need to pay to fork someone's collection?",
+      "a4": "No. Browsing and forking public collections is free. Forked items enter your library with your chosen tags — they're yours from that point on.",
+      "q5": "Can I switch between monthly and yearly?",
+      "a5": "Yes. Upgrading from monthly to yearly prorates the difference. Downgrading from yearly to monthly refunds the remainder to your original payment method or as credit."
+    }
+  },
+  "share": {
+    "author_suffix": "'s Public Collection",
+    "stat_items": "{count} items",
+    "stat_forks": "{count} forks",
+    "stat_created": "Created {date}",
+    "cta_items": "{count} items",
+    "pick_mode": "Pick to Fork",
+    "pick_selected": "{count} selected",
+    "fork_selected": "Fork {count}",
+    "fork_all": "Fork all ({count})",
+    "source_link": "↗ Source",
+    "you_may_like": "You might also like",
+    "see_all": "See all →",
+    "not_found": "This collection doesn't exist or has been made private.",
+    "explore_btn": "Explore collections",
+    "date_today": "today",
+    "date_yesterday": "yesterday",
+    "date_days_ago": "{days} days ago",
+    "date_months_ago": "{months} months ago",
+    "date_years_ago": "{years} years ago",
+    "source_article": "Article"
   }
 }

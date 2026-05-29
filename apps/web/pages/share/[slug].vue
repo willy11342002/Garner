@@ -35,13 +35,13 @@
             <template v-else>{{ authorInitials }}</template>
           </span>
           <span class="ch-author__name">@{{ collection.author_username }}</span>
-          <span class="ch-author__suffix">的公開集合</span>
+          <span class="ch-author__suffix">{{ t('share.author_suffix') }}</span>
         </div>
         <h1 class="ch-title">{{ collection.title }}</h1>
         <div class="ch-stats">
-          <span class="ch-stat"><b>{{ collection.items.length }}</b> 件內容</span>
-          <span class="ch-stat"><b>{{ collection.fork_count }}</b> 次 Fork</span>
-          <span class="ch-stat">建立於 {{ createdAgo }}</span>
+          <span class="ch-stat">{{ t('share.stat_items', { count: collection.items.length }) }}</span>
+          <span class="ch-stat">{{ t('share.stat_forks', { count: collection.fork_count }) }}</span>
+          <span class="ch-stat">{{ t('share.stat_created', { date: createdAgo }) }}</span>
         </div>
       </div>
     </section>
@@ -56,11 +56,11 @@
         <template v-else>{{ authorInitials }}</template>
       </span>
       <span class="cta-bar__title">{{ collection.title }}</span>
-      <span class="cta-bar__sub">{{ collection.items.length }} 件 · @{{ collection.author_username }}</span>
+      <span class="cta-bar__sub">{{ t('share.cta_items', { count: collection.items.length }) }} · @{{ collection.author_username }}</span>
       <div class="cta-bar__actions">
         <button class="btn" @click="togglePickMode">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          {{ pickMode ? `已選 ${selectedIds.size} 件` : '挑選 Fork' }}
+          {{ pickMode ? t('share.pick_selected', { count: selectedIds.size }) : t('share.pick_mode') }}
         </button>
         <button
           v-if="pickMode && selectedIds.size > 0"
@@ -69,7 +69,7 @@
           @click="doFork(false)"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 5v6a4 4 0 0 0 4 4h6M6 13v6"/></svg>
-          Fork {{ selectedIds.size }} 件
+          {{ t('share.fork_selected', { count: selectedIds.size }) }}
         </button>
         <button
           v-else
@@ -78,7 +78,7 @@
           @click="doFork(true)"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 5v6a4 4 0 0 0 4 4h6M6 13v6"/></svg>
-          全部 Fork ({{ collection.items.length }})
+          {{ t('share.fork_all', { count: collection.items.length }) }}
         </button>
       </div>
     </div>
@@ -113,7 +113,7 @@
           <h3 class="icard__title">{{ item.title || item.url }}</h3>
           <div class="icard__foot">
             <span class="tag-chip tag-chip--a">{{ sourceLabel(item.source_type) }}</span>
-            <a :href="item.url" target="_blank" rel="noopener noreferrer" @click.stop>↗ 原文</a>
+            <a :href="item.url" target="_blank" rel="noopener noreferrer" @click.stop>{{ t('share.source_link') }}</a>
           </div>
         </div>
       </a>
@@ -121,9 +121,9 @@
 
     <section class="rec-section">
       <header class="rec-head">
-        <span class="eyebrow">你可能也喜歡</span>
+        <span class="eyebrow">{{ t('share.you_may_like') }}</span>
         <span class="line"></span>
-        <NuxtLink to="/app/explore" class="mono" style="font-size:11px; color:var(--text-mid);">查看全部 →</NuxtLink>
+        <NuxtLink to="/app/explore" class="mono" style="font-size:11px; color:var(--text-mid);">{{ t('share.see_all') }}</NuxtLink>
       </header>
       <div class="rec-scroll">
         <NuxtLink v-for="rec in recs" :key="rec.slug" class="rec-card" :to="`/share/${rec.slug}`">
@@ -141,14 +141,15 @@
   </div>
 
   <div v-else-if="error" class="empty-state" style="padding:80px 32px;text-align:center;">
-    <p style="color:var(--text-mid);">找不到這個集合，可能已被刪除或設為私人。</p>
-    <NuxtLink to="/app/explore" class="btn" style="margin-top:16px;">探索其他集合</NuxtLink>
+    <p style="color:var(--text-mid);">{{ t('share.not_found') }}</p>
+    <NuxtLink to="/app/explore" class="btn" style="margin-top:16px;">{{ t('share.explore_btn') }}</NuxtLink>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { CollectionForkCreate, CollectionShareRead } from '~/types/api'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const config = useRuntimeConfig()
@@ -181,11 +182,11 @@ const createdAgo = computed(() => {
   if (!collection.value) return ''
   const diff = Date.now() - new Date(collection.value.created_at).getTime()
   const days = Math.floor(diff / 86400000)
-  if (days === 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 30) return `${days} 天前`
-  if (days < 365) return `${Math.floor(days / 30)} 個月前`
-  return `${Math.floor(days / 365)} 年前`
+  if (days === 0) return t('share.date_today')
+  if (days === 1) return t('share.date_yesterday')
+  if (days < 30) return t('share.date_days_ago', { days })
+  if (days < 365) return t('share.date_months_ago', { months: Math.floor(days / 30) })
+  return t('share.date_years_ago', { years: Math.floor(days / 365) })
 })
 
 function sourceBadge(sourceType: string | null): string {
@@ -197,7 +198,7 @@ function sourceBadge(sourceType: string | null): string {
 function sourceLabel(sourceType: string | null): string {
   if (sourceType === 'youtube') return 'YouTube'
   if (sourceType === 'ig') return 'Instagram'
-  return '文章'
+  return t('share.source_article')
 }
 
 // Pick / fork

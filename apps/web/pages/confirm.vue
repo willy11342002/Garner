@@ -1,7 +1,7 @@
 <template>
   <main class="login">
     <div class="login__card">
-      <p class="login__sub">正在驗證登入...</p>
+      <p class="login__sub">{{ t('confirm.verifying') }}</p>
     </div>
   </main>
 </template>
@@ -9,6 +9,7 @@
 <script setup lang="ts">
 definePageMeta({ layout: false })
 
+const { t } = useI18n()
 const route = useRoute()
 const client = useSupabaseClient()
 

@@ -2,48 +2,47 @@
   <main class="landing">
     <section class="landing__hero">
       <span class="eyebrow">PERSONAL KNOWLEDGE BASE</span>
-      <h1 class="landing__title">被動建立的<br>第二大腦</h1>
-      <p class="landing__sub">
-        一鍵收集 YouTube 影片與網頁文章，AI 自動產生摘要、標籤、語意關聯。<br>
-        讓知識庫隨時間自動成長。
-      </p>
+      <h1 class="landing__title">{{ t('landing.title') }}</h1>
+      <p class="landing__sub">{{ t('landing.sub') }}</p>
       <div class="landing__cta">
-        <NuxtLink to="/app" class="btn btn--accent btn--lg">免費開始使用</NuxtLink>
-        <NuxtLink to="/app/explore" class="btn btn--lg">探索公開集合</NuxtLink>
+        <NuxtLink to="/app" class="btn btn--accent btn--lg">{{ t('landing.cta_start') }}</NuxtLink>
+        <NuxtLink to="/app/explore" class="btn btn--lg">{{ t('landing.cta_explore') }}</NuxtLink>
       </div>
     </section>
 
     <section class="landing__features">
       <div class="feat-card">
         <span class="feat-card__icon">⚡</span>
-        <h3>一鍵收集</h3>
-        <p>Chrome Extension 偵測目前頁面，按下按鈕即儲存，無需切換 app。</p>
+        <h3>{{ t('landing.feat_collect_title') }}</h3>
+        <p>{{ t('landing.feat_collect_desc') }}</p>
       </div>
       <div class="feat-card">
         <span class="feat-card__icon">🧠</span>
-        <h3>AI 自動整理</h3>
-        <p>每筆內容自動產生摘要、標籤與語意 embedding，形成可查詢的知識圖譜。</p>
+        <h3>{{ t('landing.feat_ai_title') }}</h3>
+        <p>{{ t('landing.feat_ai_desc') }}</p>
       </div>
       <div class="feat-card">
         <span class="feat-card__icon">🔍</span>
-        <h3>自然語言搜尋</h3>
-        <p>問「我存過哪些關於遠端工作文化的？」直接拿到答案，不是搜尋結果列表。</p>
+        <h3>{{ t('landing.feat_search_title') }}</h3>
+        <p>{{ t('landing.feat_search_desc') }}</p>
       </div>
       <div class="feat-card">
         <span class="feat-card__icon">⑂</span>
-        <h3>公開 & Fork</h3>
-        <p>分享你的知識集合，讓他人 Fork 進自己的庫。知識傳遞，而非複製貼上。</p>
+        <h3>{{ t('landing.feat_fork_title') }}</h3>
+        <p>{{ t('landing.feat_fork_desc') }}</p>
       </div>
     </section>
 
     <div class="landing__bottom">
-      <NuxtLink to="/pricing" class="mono" style="color:var(--text-mid); font-size:13px;">查看方案與定價 →</NuxtLink>
+      <NuxtLink to="/pricing" class="mono" style="color:var(--text-mid); font-size:13px;">{{ t('landing.pricing_link') }}</NuxtLink>
     </div>
   </main>
 </template>
 
 <script setup lang="ts">
-useHead({ title: 'Vela — 被動建立的個人知識庫' })
+const { t } = useI18n()
+
+useHead({ title: t('landing.page_title') })
 
 const user = useSupabaseUser()
 if (user.value) {
