@@ -141,6 +141,26 @@ const heroTags = computed(() =>
   heroItem.value ? (itemTagsMap.value[heroItem.value.id] ?? []) : []
 )
 
+const heroPage = ref(0)
+
+const weeklyTagGroups = computed(() => {
+  if (loading.value) return []
+  const weekAgo = Date.now() - 7 * 86400000
+  const groups = new Map<string, { tag: Tag; count: number }>()
+  for (const item of itemStore.items) {
+    if (new Date(item.saved_at).getTime() < weekAgo) continue
+    for (const tag of itemTagsMap.value[item.id] ?? []) {
+      if (!groups.has(tag.id)) groups.set(tag.id, { tag, count: 0 })
+      groups.get(tag.id)!.count++
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 4)
+})
+
+const totalWeeklyCount = computed(() =>
+  weeklyTagGroups.value.reduce((s, g) => s + g.count, 0) || 1
+)
+
 const TAGROWS_PER_PAGE = 3
 const visibleTagCount = ref(TAGROWS_PER_PAGE)
 
@@ -294,35 +314,75 @@ function openShareModal(tagId: string) {
 
     <!-- Populated -->
     <template v-else>
-      <!-- Hero -->
-      <section v-if="heroItem" class="hero fadeup">
-        <div class="hero__media">
-          <img v-if="heroItem.thumbnail_url" :src="heroItem.thumbnail_url" class="hero__img" alt="" />
-          <div v-else class="placeholder placeholder--b">
-            <div class="placeholder__stripes"></div>
-            <div class="placeholder__label">[ 縮圖處理中 ]</div>
-          </div>
-          <div class="hero__mediaTag mono" style="color:var(--text-dim); font-size:10px; letter-spacing:.08em;">
-            TODAY'S REVISIT · {{ daysSince(heroItem.saved_at) }} DAYS AGO
-          </div>
-          <span class="source-badge hero__source">{{ sourceLabel(heroItem.url) }}</span>
+      <!-- Hero Gallery -->
+      <div v-if="heroItem" class="hero-wrap fadeup">
+        <div class="hero-gallery" :class="`hero-gallery--p${heroPage}`">
+          <!-- Slide 0: TODAY'S REVISIT -->
+          <section class="hero-slide hero">
+            <div class="hero__media">
+              <img v-if="heroItem.thumbnail_url" :src="heroItem.thumbnail_url" class="hero__img" alt="" />
+              <div v-else class="placeholder placeholder--b">
+                <div class="placeholder__stripes"></div>
+                <div class="placeholder__label">[ 縮圖處理中 ]</div>
+              </div>
+              <div class="hero__mediaTag mono" style="color:var(--text-dim); font-size:10px; letter-spacing:.08em;">
+                TODAY'S REVISIT · {{ daysSince(heroItem.saved_at) }} DAYS AGO
+              </div>
+              <span class="source-badge hero__source">{{ sourceLabel(heroItem.url) }}</span>
+            </div>
+            <div class="hero__body">
+              <span class="hero__eyebrow">TODAY'S REVISIT</span>
+              <h1 class="hero__title">{{ cardTitle(heroItem.url, heroItem.title) }}</h1>
+              <p v-if="heroItem.summary || heroItem.summary_i18n" class="hero__summary">{{ localize(heroItem.summary_i18n, heroItem.summary) }}</p>
+              <div v-if="heroTags.length > 0" class="hero__chips">
+                <span v-for="(tag, i) in heroTags" :key="tag.id" :class="`tag-chip tag-chip--${tagColor(i)}`">
+                  {{ localize(tag.name_i18n, tag.name) }}
+                </span>
+              </div>
+              <div class="hero__actions">
+                <NuxtLink :to="`/app/item/${heroItem.id}`" class="btn btn--accent">開啟閱讀 →</NuxtLink>
+              </div>
+            </div>
+          </section>
+
+          <!-- Slide 1: 本週趨勢 -->
+          <section class="hero-slide hero-slide--trend">
+            <article class="insight insight--trend">
+              <header class="insight__head">
+                <span class="ins-badge ins-badge--a">◈ 主題趨勢</span>
+                <span class="insight__when">本週</span>
+              </header>
+              <h3 v-if="weeklyTagGroups.length" class="insight__title">
+                本週你最關注「{{ localize(weeklyTagGroups[0].tag.name_i18n, weeklyTagGroups[0].tag.name) }}」
+              </h3>
+              <h3 v-else class="insight__title">本週還沒有新內容</h3>
+              <div v-if="weeklyTagGroups.length" class="topic-bars">
+                <div v-for="(g, i) in weeklyTagGroups" :key="g.tag.id" class="topic-bar">
+                  <div
+                    class="topic-bar__col"
+                    :data-pct="Math.round(g.count / totalWeeklyCount * 100)"
+                    :style="{ height: Math.max(16, g.count / totalWeeklyCount * 100) + '%', background: `var(--tag-${tagColor(i)})` }"
+                  ></div>
+                  <div class="topic-bar__label">{{ localize(g.tag.name_i18n, g.tag.name) }}</div>
+                </div>
+              </div>
+              <div v-if="weeklyTagGroups.length" class="insight__foot">
+                <span
+                  v-for="(g, i) in weeklyTagGroups"
+                  :key="g.tag.id"
+                  :class="`tag-chip tag-chip--${tagColor(i)}`"
+                >{{ localize(g.tag.name_i18n, g.tag.name) }}</span>
+              </div>
+            </article>
+          </section>
         </div>
-        <div class="hero__body">
-          <span class="hero__eyebrow">TODAY'S REVISIT</span>
-          <h1 class="hero__title">{{ cardTitle(heroItem.url, heroItem.title) }}</h1>
-          <p v-if="heroItem.summary || heroItem.summary_i18n" class="hero__summary">{{ localize(heroItem.summary_i18n, heroItem.summary) }}</p>
-          <div v-if="heroTags.length > 0" class="hero__chips">
-            <span
-              v-for="(tag, i) in heroTags"
-              :key="tag.id"
-              :class="`tag-chip tag-chip--${tagColor(i)}`"
-            >{{ localize(tag.name_i18n, tag.name) }}</span>
-          </div>
-          <div class="hero__actions">
-            <NuxtLink :to="`/app/item/${heroItem.id}`" class="btn btn--accent">開啟閱讀 →</NuxtLink>
-          </div>
+
+        <!-- Gallery dots -->
+        <div v-if="weeklyTagGroups.length" class="hero-dots">
+          <button class="hero-dot" :class="{ 'hero-dot--active': heroPage === 0 }" @click="heroPage = 0"></button>
+          <button class="hero-dot" :class="{ 'hero-dot--active': heroPage === 1 }" @click="heroPage = 1"></button>
         </div>
-      </section>
+      </div>
 
       <!-- 新知識 pending list -->
       <section v-if="pendingItems.length > 0" class="pending-section fadeup">

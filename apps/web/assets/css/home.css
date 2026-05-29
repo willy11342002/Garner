@@ -295,6 +295,71 @@ body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
 .hero__chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .hero__actions { display: flex; gap: 10px; margin-top: 4px; }
 
+/* Hero Gallery */
+.hero-wrap { margin: 28px 0 16px; }
+.hero-gallery {
+  display: flex;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  transition: none;
+}
+.hero-slide {
+  flex: 0 0 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  transition: transform .42s cubic-bezier(.4,0,.2,1);
+}
+.hero-gallery--p0 .hero-slide { transform: translateX(0); }
+.hero-gallery--p1 .hero-slide { transform: translateX(-100%); }
+
+/* Dots */
+.hero-dots {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 0 4px;
+}
+.hero-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border2);
+  cursor: pointer;
+  transition: all .2s ease;
+  padding: 0;
+}
+.hero-dot--active {
+  background: var(--accent);
+  width: 20px;
+  border-radius: 4px;
+}
+
+/* Trend slide — insight card style */
+.hero-slide--trend {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  min-height: 300px;
+}
+.hero-slide--trend .insight {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 28px 32px;
+  pointer-events: none;
+  transform: none !important;
+}
+.hero-slide--trend .insight__title {
+  font-size: 22px;
+}
+.hero-slide--trend .topic-bars {
+  height: 90px;
+  margin: 16px 0;
+}
+
 /* Tag rows */
 .tagrow { margin-bottom: 36px; }
 .tagrow__head { display: flex; align-items: center; padding: 0 4px 10px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
@@ -331,7 +396,7 @@ body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
   .hero { grid-template-columns: 1fr; min-height: 0; }
   .hero__media { height: 200px; min-height: 0; }
   .hero__media::after { background: linear-gradient(180deg, transparent 0%, var(--surface) 90%); }
-  .hero__body { padding: 20px 22px 24px; }
+.hero__body { padding: 20px 22px 24px; }
   .hero__title { font-size: 22px; }
   .card { width: 168px; }
   .card__thumb { height: 96px; }

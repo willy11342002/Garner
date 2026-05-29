@@ -132,3 +132,70 @@ export interface PublicCollectionRead {
   source_tag_name: string | null
   cover_thumbnails: (string | null)[]
 }
+
+// Focus (AI synthesis search)
+export interface FocusSource {
+  id: string
+  url: string
+  title: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+  saved_at: string
+}
+
+export interface FocusResult {
+  synthesis: string
+  sources: FocusSource[]
+}
+
+// Surprise (AI insights)
+export type InsightType = 'connection' | 'forgotten' | 'trend'
+
+export interface InsightItem {
+  id: string
+  url: string
+  title: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+}
+
+export interface TrendBar {
+  label: string
+  pct: number
+}
+
+export interface Insight {
+  type: InsightType
+  badge: string
+  title: string
+  body: string
+  when: string
+  items: InsightItem[]
+  trend_bars: TrendBar[]
+}
+
+export interface SurpriseResult {
+  insights: Insight[]
+}
+
+// Chain exploration
+export interface ChainItem {
+  id: string
+  url: string
+  title: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+  saved_at: string
+}
+
+export interface ChainHopAnalysis {
+  connection: string
+  ideation: string
+  question: string
+}
+
+export interface ChainHop {
+  item: ChainItem
+  analysis: ChainHopAnalysis | null  // null for starting node
+  candidates: ChainItem[]            // next hop options at this node
+}

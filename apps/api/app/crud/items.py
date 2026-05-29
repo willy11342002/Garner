@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.content_object import ContentObject
+from app.models.item_tag import ItemTag
+from app.models.tag import Tag
 from app.models.user_item import UserItem, UserItemStatus
 
 
@@ -102,3 +104,132 @@ async def count_weekly_new(db: AsyncSession, user_id: UUID) -> int:
         )
     )
     return result.scalar_one()
+
+
+_NON_DELETED = (UserItem.deleted_at.is_(None),)
+
+
+async def semantic_search(
+    db: AsyncSession,
+    user_id: UUID,
+    embedding: list[float],
+    limit: int = 8,
+    saved_before: datetime | None = None,
+    saved_after: datetime | None = None,
+    exclude_ids: list[UUID] | None = None,
+) -> list[tuple[UserItem, float]]:
+    """向量搜尋，回傳 (UserItem, cosine_distance) 清單。可由多個 service 複用。"""
+    filters = [
+        UserItem.user_id == user_id,
+        *_NON_DELETED,
+        ContentObject.embedding.is_not(None),
+    ]
+    if saved_before:
+        filters.append(UserItem.saved_at < saved_before)
+    if saved_after:
+        filters.append(UserItem.saved_at >= saved_after)
+    if exclude_ids:
+        filters.append(UserItem.id.not_in(exclude_ids))
+
+    distance_col = ContentObject.embedding.cosine_distance(embedding).label("distance")
+    result = await db.execute(
+        select(UserItem, distance_col)
+        .options(joinedload(UserItem.content))
+        .join(UserItem.content)
+        .where(*filters)
+        .order_by(distance_col)
+        .limit(limit)
+    )
+    return [(row.UserItem, row.distance) for row in result.all()]
+
+
+async def get_forgotten(db: AsyncSession, user_id: UUID, limit: int = 3) -> list[UserItem]:
+    """回傳 90 天以上未開啟、且有 embedding 的 items（供 Surprise 洞察使用）。"""
+    threshold = datetime.now(timezone.utc) - timedelta(days=90)
+    result = await db.execute(
+        select(UserItem)
+        .options(joinedload(UserItem.content))
+        .join(UserItem.content)
+        .where(
+            UserItem.user_id == user_id,
+            *_NON_DELETED,
+            ContentObject.embedding.is_not(None),
+            (UserItem.last_opened_at.is_(None)) | (UserItem.last_opened_at < threshold),
+            UserItem.saved_at < threshold,
+        )
+        .order_by(UserItem.saved_at.asc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_recent_with_embedding(
+    db: AsyncSession, user_id: UUID, limit: int = 3
+) -> list[UserItem]:
+    """回傳最近 14 天存入、有 embedding 的 items。"""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    result = await db.execute(
+        select(UserItem)
+        .options(joinedload(UserItem.content))
+        .join(UserItem.content)
+        .where(
+            UserItem.user_id == user_id,
+            *_NON_DELETED,
+            ContentObject.embedding.is_not(None),
+            UserItem.saved_at >= cutoff,
+        )
+        .order_by(UserItem.saved_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_tag_trends(
+    db: AsyncSession, user_id: UUID
+) -> list[tuple[str, int, int]]:
+    """回傳 (tag_name, count_last30d, count_prev30d)，按 count_last30d desc。"""
+    now = datetime.now(timezone.utc)
+    last30_start = now - timedelta(days=30)
+    prev30_start = now - timedelta(days=60)
+
+    last30_q = (
+        select(Tag.name, func.count().label("cnt"))
+        .select_from(UserItem)
+        .join(ItemTag, ItemTag.user_item_id == UserItem.id)
+        .join(Tag, Tag.id == ItemTag.tag_id)
+        .where(
+            UserItem.user_id == user_id,
+            *_NON_DELETED,
+            UserItem.saved_at >= last30_start,
+        )
+        .group_by(Tag.name)
+        .order_by(func.count().desc())
+        .limit(5)
+    )
+    last30_rows = (await db.execute(last30_q)).all()
+    if not last30_rows:
+        return []
+
+    tag_names = [r.name for r in last30_rows]
+    prev30_q = (
+        select(Tag.name, func.count().label("cnt"))
+        .select_from(UserItem)
+        .join(ItemTag, ItemTag.user_item_id == UserItem.id)
+        .join(Tag, Tag.id == ItemTag.tag_id)
+        .where(
+            UserItem.user_id == user_id,
+            *_NON_DELETED,
+            UserItem.saved_at >= prev30_start,
+            UserItem.saved_at < last30_start,
+            Tag.name.in_(tag_names),
+        )
+        .group_by(Tag.name)
+    )
+    prev30_map = {r.name: r.cnt for r in (await db.execute(prev30_q)).all()}
+
+    total = sum(r.cnt for r in last30_rows) or 1
+    return [
+        (r.name, r.cnt, prev30_map.get(r.name, 0))
+        for r in last30_rows
+        if r.cnt * 100 // total >= 5  # 至少佔 5% 才顯示
+    ]
