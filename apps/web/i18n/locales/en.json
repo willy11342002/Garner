@@ -178,6 +178,11 @@
     "date_days_ago": "{days} days ago",
     "date_months_ago": "{months} months ago",
     "date_years_ago": "{years} years ago",
-    "source_article": "Article"
+    "source_article": "Article",
+    "add_to_collection": "Add to collection",
+    "add_to_collection_done": "Added",
+    "add_to_collection_error": "Failed to add",
+    "no_collections": "You have no collections",
+    "login_to_add": "Log in to add to a collection"
   }
 }

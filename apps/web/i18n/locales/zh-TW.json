@@ -178,6 +178,11 @@
     "date_days_ago": "{days} 天前",
     "date_months_ago": "{months} 個月前",
     "date_years_ago": "{years} 年前",
-    "source_article": "文章"
+    "source_article": "文章",
+    "add_to_collection": "加入集合",
+    "add_to_collection_done": "已加入",
+    "add_to_collection_error": "加入失敗",
+    "no_collections": "你還沒有集合",
+    "login_to_add": "登入後才能加入集合"
   }
 }

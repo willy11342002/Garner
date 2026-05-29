@@ -86,6 +86,15 @@ export interface ExploreStats {
   weekly_new: number
 }
 
+export interface CollectionRead {
+  id: string
+  title: string
+  visibility: string
+  slug: string
+  fork_count: number
+  created_at: string
+}
+
 export interface CollectionShareItem {
   id: string
   url: string

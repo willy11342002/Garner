@@ -1,10 +1,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
+from sqlalchemy import select
 
 from app.crud import collections as crud_collections
 from app.crud import items as crud_items
 from app.dependencies import CurrentUser, DbSession
+from app.models.content_object import ContentObject
 from app.schemas.collection import (
     CollectionCreate,
     CollectionForkCreate,
@@ -92,6 +94,20 @@ async def add_item_to_collection(
     user_item = await crud_items.get_by_content_id(db, UUID(current_user["sub"]), content_id)
     if user_item is None:
         raise HTTPException(status_code=404, detail="Item not found")
+    await crud_collections.add_item(db, collection_id, content_id)
+    await db.commit()
+
+
+@router.post("/{collection_id}/items/from-public", status_code=status.HTTP_204_NO_CONTENT)
+async def add_public_item_to_collection(
+    collection_id: UUID, content_id: UUID, current_user: CurrentUser, db: DbSession
+):
+    collection = await crud_collections.get_one(db, UUID(current_user["sub"]), collection_id)
+    if collection is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    result = await db.execute(select(ContentObject).where(ContentObject.id == content_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Content not found")
     await crud_collections.add_item(db, collection_id, content_id)
     await db.commit()
 
