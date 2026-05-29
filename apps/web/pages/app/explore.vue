@@ -3,19 +3,19 @@
     <header class="ex-head">
       <div class="ex-head__top">
         <div>
-          <span class="eyebrow">EXPLORE</span>
-          <h1 class="page-title" style="margin-top:4px;">探索 · 漫遊</h1>
+          <span class="eyebrow">{{ $t('explore.eyebrow') }}</span>
+          <h1 class="page-title" style="margin-top:4px;">{{ $t('explore.title') }}</h1>
         </div>
         <div class="ex-head__stats">
-          <div class="stat"><b>{{ stats ? stats.total_items.toLocaleString() : '—' }}</b>知識庫總量</div>
-          <div class="stat"><b>{{ stats ? stats.public_collections : '—' }}</b>公開集合</div>
-          <div class="stat"><b>{{ stats ? '+' + stats.weekly_new : '—' }}</b>本週新增</div>
+          <div class="stat"><b>{{ stats ? stats.total_items.toLocaleString() : '—' }}</b>{{ $t('explore.stat_total') }}</div>
+          <div class="stat"><b>{{ stats ? stats.public_collections : '—' }}</b>{{ $t('explore.stat_public') }}</div>
+          <div class="stat"><b>{{ stats ? '+' + stats.weekly_new : '—' }}</b>{{ $t('explore.stat_weekly') }}</div>
         </div>
       </div>
       <nav class="ex-tabs">
-        <NuxtLink class="ex-tab" to="/app/explore/focus" active-class="ex-tab--active">Focus<span class="mono">問知識庫</span></NuxtLink>
-        <NuxtLink class="ex-tab" to="/app/explore/surprise" active-class="ex-tab--active">Surprise<span class="mono">隨機驚喜</span></NuxtLink>
-        <NuxtLink class="ex-tab" to="/app/explore/browse" active-class="ex-tab--active">Browse<span class="mono">公開集合</span></NuxtLink>
+        <NuxtLink class="ex-tab" to="/app/explore/focus" active-class="ex-tab--active">{{ $t('explore.tab_focus') }}</NuxtLink>
+        <NuxtLink class="ex-tab" to="/app/explore/surprise" active-class="ex-tab--active">{{ $t('explore.tab_surprise') }}</NuxtLink>
+        <NuxtLink class="ex-tab" to="/app/explore/browse" active-class="ex-tab--active">{{ $t('explore.tab_browse') }}</NuxtLink>
       </nav>
     </header>
 
@@ -47,8 +47,6 @@ onMounted(async () => {
 .ex-tab { padding: 12px 18px 14px; border-bottom: 2px solid transparent; font-family: var(--font-ui); font-size: 13.5px; font-weight: 500; color: var(--text-mid); transition: all .15s ease; }
 .ex-tab:hover { color: var(--text); }
 .ex-tab--active { color: var(--accent); border-bottom-color: var(--accent); }
-.ex-tab .mono { margin-left: 6px; font-size: 10.5px; color: var(--text-dim); }
-.ex-tab--active .mono { color: var(--accent); opacity: 0.7; }
 .ex-pane { max-width: 1400px; margin: 0 auto; padding: 28px 32px 80px; }
 
 @media (max-width: 980px) { .ex-head { padding: 18px 16px 0; } .ex-pane { padding: 20px 16px 60px; } }

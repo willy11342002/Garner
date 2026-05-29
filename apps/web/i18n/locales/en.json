@@ -1,4 +1,14 @@
 {
+  "explore": {
+    "eyebrow": "EXPLORE",
+    "title": "Explore · Discover",
+    "stat_total": "Total items",
+    "stat_public": "Public collections",
+    "stat_weekly": "New this week",
+    "tab_focus": "Focus",
+    "tab_surprise": "Surprise",
+    "tab_browse": "Browse"
+  },
   "add": {
     "label": "Save URL",
     "placeholder": "Paste any YouTube or web URL...",

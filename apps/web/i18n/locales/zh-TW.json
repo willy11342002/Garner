@@ -1,4 +1,14 @@
 {
+  "explore": {
+    "eyebrow": "EXPLORE",
+    "title": "探索 · 漫遊",
+    "stat_total": "知識庫總量",
+    "stat_public": "公開集合",
+    "stat_weekly": "本週新增",
+    "tab_focus": "問知識庫",
+    "tab_surprise": "隨機驚喜",
+    "tab_browse": "公開集合"
+  },
   "add": {
     "label": "存入 URL",
     "placeholder": "貼入任何 YouTube 或網頁 URL...",
