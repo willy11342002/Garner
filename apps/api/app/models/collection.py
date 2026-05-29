@@ -40,4 +40,6 @@ class Collection(Base):
     fork_source: Mapped["Collection | None"] = relationship(
         "Collection", remote_side="Collection.id", foreign_keys=[fork_from_collection_id]
     )
-    collection_items: Mapped[list["CollectionItem"]] = relationship(back_populates="collection")
+    collection_items: Mapped[list["CollectionItem"]] = relationship(
+        back_populates="collection", cascade="all, delete-orphan"
+    )

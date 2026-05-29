@@ -37,6 +37,7 @@ class CollectionShareItemRead(BaseModel):
     id: UUID
     url: str
     title: str | None
+    summary: str | None
     thumbnail_url: str | None
     source_type: str | None
 
@@ -57,3 +58,4 @@ class CollectionShareRead(BaseModel):
 class CollectionForkCreate(BaseModel):
     title: str | None = None
     content_ids: list[UUID] = []
+    visibility: CollectionVisibility = CollectionVisibility.link

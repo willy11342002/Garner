@@ -1,7 +1,7 @@
 <template>
-  <div v-if="collection" :class="{ 'pick-mode': pickMode }">
+  <div v-if="collection">
     <section class="ch-wrap">
-      <div class="ch-mosaic">
+      <div class="ch-mosaic" :class="`ch-mosaic--n${mosaicItems.length}`">
         <div
           v-for="(item, i) in mosaicItems"
           :key="item.id"
@@ -14,11 +14,6 @@
             style="width:100%;height:100%;object-fit:cover;"
           />
           <div v-else :class="`placeholder placeholder--${placeholderColors[i % placeholderColors.length]}`">
-            <div class="placeholder__stripes"></div>
-          </div>
-        </div>
-        <div v-for="i in Math.max(0, 5 - mosaicItems.length)" :key="`fill-${i}`" class="tile">
-          <div :class="`placeholder placeholder--${placeholderColors[(mosaicItems.length + i - 1) % placeholderColors.length]}`">
             <div class="placeholder__stripes"></div>
           </div>
         </div>
@@ -58,25 +53,7 @@
       <span class="cta-bar__title">{{ collection.title }}</span>
       <span class="cta-bar__sub">{{ t('share.cta_items', { count: collection.items.length }) }} · @{{ collection.author_username }}</span>
       <div class="cta-bar__actions">
-        <button class="btn" @click="togglePickMode">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          {{ pickMode ? t('share.pick_selected', { count: selectedIds.size }) : t('share.pick_mode') }}
-        </button>
-        <button
-          v-if="pickMode && selectedIds.size > 0"
-          class="btn btn--accent"
-          :disabled="forking"
-          @click="doFork(false)"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 5v6a4 4 0 0 0 4 4h6M6 13v6"/></svg>
-          {{ t('share.fork_selected', { count: selectedIds.size }) }}
-        </button>
-        <button
-          v-else
-          class="btn btn--accent"
-          :disabled="forking"
-          @click="doFork(true)"
-        >
+        <button class="btn btn--accent" @click="goFork">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 5v6a4 4 0 0 0 4 4h6M6 13v6"/></svg>
           {{ t('share.fork_all', { count: collection.items.length }) }}
         </button>
@@ -88,11 +65,10 @@
         v-for="(item, i) in collection.items"
         :key="item.id"
         class="icard"
-        :class="{ sel: selectedIds.has(item.id) }"
         :href="item.url"
         target="_blank"
         rel="noopener noreferrer"
-        @click.prevent="handleItemClick($event, item)"
+        @click.prevent="activeItem = item"
       >
         <span class="icard__check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
@@ -119,6 +95,33 @@
       </a>
     </section>
 
+    <!-- item detail modal -->
+    <Transition name="id-fade-t">
+      <div v-if="activeItem" class="id-overlay" @click.self="activeItem = null">
+        <div class="id-panel fadeup">
+          <button class="id-close" @click="activeItem = null">×</button>
+          <div class="id-media">
+            <img v-if="activeItem.thumbnail_url" :src="activeItem.thumbnail_url" class="id-media__img" :alt="activeItem.title ?? ''" />
+            <div v-else :class="`placeholder placeholder--${placeholderColors[0]} id-media__ph`">
+              <div class="placeholder__stripes"></div>
+            </div>
+            <span class="source-badge id-media__badge">{{ sourceBadge(activeItem.source_type) }}</span>
+          </div>
+          <div class="id-body">
+            <div class="id-body__meta mono">{{ sourceLabel(activeItem.source_type) }}</div>
+            <h1 class="id-body__title">{{ activeItem.title || activeItem.url }}</h1>
+            <div v-if="activeItem.summary" class="id-body__summary">
+              <div class="id-body__summary-label mono">SUMMARY</div>
+              <p class="id-body__summary-text">{{ activeItem.summary }}</p>
+            </div>
+            <div class="id-body__actions">
+              <a :href="activeItem.url" target="_blank" rel="noopener noreferrer" class="btn btn--accent">開啟原文 →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <section class="rec-section">
       <header class="rec-head">
         <span class="eyebrow">{{ t('share.you_may_like') }}</span>
@@ -126,16 +129,23 @@
         <NuxtLink to="/app/explore" class="mono" style="font-size:11px; color:var(--text-mid);">{{ t('share.see_all') }}</NuxtLink>
       </header>
       <div class="rec-scroll">
-        <NuxtLink v-for="rec in recs" :key="rec.slug" class="rec-card" :to="`/share/${rec.slug}`">
+        <NuxtLink v-for="(rec, ri) in recs" :key="rec.slug" class="rec-card" :to="`/share/${rec.slug}`">
           <div class="rec-card__cover">
-            <div class="t"><div :class="`placeholder placeholder--${rec.c1}`"><div class="placeholder__stripes"></div></div></div>
-            <div class="t"><div :class="`placeholder placeholder--${rec.c2}`"><div class="placeholder__stripes"></div></div></div>
+            <div class="t">
+              <img v-if="rec.cover_thumbnails[0]" :src="rec.cover_thumbnails[0]" :alt="rec.title" style="width:100%;height:100%;object-fit:cover;">
+              <div v-else :class="`placeholder placeholder--${placeholderColors[ri % placeholderColors.length]}`"><div class="placeholder__stripes"></div></div>
+            </div>
+            <div class="t">
+              <img v-if="rec.cover_thumbnails[1]" :src="rec.cover_thumbnails[1]" :alt="rec.title" style="width:100%;height:100%;object-fit:cover;">
+              <div v-else :class="`placeholder placeholder--${placeholderColors[(ri + 2) % placeholderColors.length]}`"><div class="placeholder__stripes"></div></div>
+            </div>
           </div>
           <div class="rec-card__body">
             <h4 class="rec-card__title">{{ rec.title }}</h4>
-            <div class="rec-card__meta">{{ rec.meta }}</div>
+            <div class="rec-card__meta">@{{ rec.author_username }} · {{ rec.item_count }} items · ⑂ {{ rec.fork_count }}</div>
           </div>
         </NuxtLink>
+        <div v-if="!recs.length" class="rec-empty">暫無推薦集合</div>
       </div>
     </section>
   </div>
@@ -147,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import type { CollectionForkCreate, CollectionShareRead } from '~/types/api'
+import type { CollectionShareItem, CollectionShareRead, PublicCollectionRead } from '~/types/api'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -161,12 +171,20 @@ const { data: collection, error } = await useAsyncData<CollectionShareRead>(
   () => $fetch(`${config.public.apiBase}/share/${slug}`)
 )
 
+const { data: recsData } = await useAsyncData<PublicCollectionRead[]>(
+  `share-recs-${slug}`,
+  () => ($fetch(`${config.public.apiBase}/share/recommendations`, {
+    query: { exclude_slug: slug, limit: 8 }
+  }) as Promise<PublicCollectionRead[]>).catch(() => [])
+)
+
 useHead({
   title: collection.value ? `${collection.value.title} — Vela` : 'Vela',
 })
 
 const placeholderColors = ['a', 'b', 'c', 'd', 'e']
 
+// 最多取 5 張做 mosaic；若 items 超過 5 張仍只顯示前 5
 const mosaicItems = computed(() => (collection.value?.items ?? []).slice(0, 5))
 
 const authorInitials = computed(() => {
@@ -201,62 +219,22 @@ function sourceLabel(sourceType: string | null): string {
   return t('share.source_article')
 }
 
-// Pick / fork
-const pickMode = ref(false)
-const selectedIds = reactive(new Set<string>())
-const forking = ref(false)
+// Item detail drawer
+const activeItem = ref<CollectionShareItem | null>(null)
 
-function togglePickMode() {
-  pickMode.value = !pickMode.value
-  if (!pickMode.value) selectedIds.clear()
-}
-
-function handleItemClick(e: MouseEvent, item: { id: string; url: string }) {
-  if (!pickMode.value) {
-    window.open(item.url, '_blank', 'noopener,noreferrer')
-    return
-  }
-  e.preventDefault()
-  if (selectedIds.has(item.id)) {
-    selectedIds.delete(item.id)
-  } else {
-    selectedIds.add(item.id)
-  }
-}
-
-async function doFork(all: boolean) {
+function goFork() {
   if (!session.value) {
     router.push('/login')
     return
   }
-  if (!collection.value) return
-  forking.value = true
-  try {
-    const apiFetch = useApiFetch()
-    const body: CollectionForkCreate = {
-      content_ids: all ? [] : Array.from(selectedIds),
-    }
-    const newCol = await apiFetch<{ id: string }>(`/collections/${collection.value.id}/fork`, {
-      method: 'POST',
-      body,
-    })
-    router.push(`/app/collection/${newCol.id}`)
-  } finally {
-    forking.value = false
-  }
+  router.push(`/app/share?from_slug=${slug}`)
 }
 
-// Static recs (placeholder until recommendation engine is built)
-const recs = [
-  { slug: 'tokyo-local',  title: '東京 7 天 — 在地人路線',      c1: 'a', c2: 'b', meta: '@tk_local · 28 items · ⑂ 256' },
-  { slug: 'okinawa',      title: '沖繩離島跳島 9 天',            c1: 'c', c2: 'e', meta: '@ocean_runner · 36 items · ⑂ 142' },
-  { slug: 'kanazawa',     title: '北陸新幹線開通後的金澤行程',   c1: 'd', c2: 'a', meta: '@yuki_travels · 22 items · ⑂ 89' },
-  { slug: 'kyoto-hidden', title: '京都祕境 — 不在 Google Maps 的 12 個地點', c1: 'b', c2: 'c', meta: '@hiddenkyoto · 18 items · ⑂ 67' },
-]
+const recs = computed(() => recsData.value ?? [])
 </script>
 
 <style>
-/* Shares the same CSS as app/collection/[id].vue — kept local to avoid flash */
+/* styles moved to assets/css/collection-view.css */
 .ch-wrap {
   position: relative;
   height: 320px;
@@ -266,13 +244,42 @@ const recs = [
 .ch-mosaic {
   position: absolute; inset: 0;
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 2fr;
-  grid-template-rows: 1fr 1fr;
   gap: 2px;
 }
 .ch-mosaic .tile { overflow: hidden; }
-.ch-mosaic .tile:nth-child(1) { grid-row: 1 / span 2; }
-.ch-mosaic .tile:nth-child(4) { grid-column: 4; grid-row: 1 / span 2; }
+
+/* 1 item: full area */
+.ch-mosaic--n1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 items: side by side */
+.ch-mosaic--n2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 3 items: 1 large left + 2 stacked right */
+.ch-mosaic--n3 {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.ch-mosaic--n3 .tile:nth-child(1) { grid-row: 1 / span 2; }
+
+/* 4 items: 2x2 */
+.ch-mosaic--n4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* 5 items: original layout */
+.ch-mosaic--n5 {
+  grid-template-columns: 2fr 1fr 1fr 2fr;
+  grid-template-rows: 1fr 1fr;
+}
+.ch-mosaic--n5 .tile:nth-child(1) { grid-row: 1 / span 2; }
+.ch-mosaic--n5 .tile:nth-child(4) { grid-column: 4; grid-row: 1 / span 2; }
 .ch-mosaic::after {
   content: '';
   position: absolute; inset: 0;
@@ -392,6 +399,92 @@ const recs = [
 .rec-card__body { padding: 12px 14px 14px; }
 .rec-card__title { font-family: var(--font-brand); font-weight: 600; font-size: 14px; margin: 0 0 6px; line-height: 1.3; }
 .rec-card__meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-mid); }
+.rec-empty { font-size: 13px; color: var(--text-dim); padding: 20px 0; }
+
+/* ── item detail drawer ── */
+.item-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  justify-content: flex-end;
+}
+.item-drawer__panel {
+  width: 440px;
+  max-width: 100vw;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: -16px 0 48px rgba(0,0,0,0.18);
+}
+.item-drawer__close {
+  position: absolute;
+  top: 14px; right: 14px;
+  z-index: 2;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: var(--text-mid);
+  transition: background .12s, color .12s;
+}
+.item-drawer__close:hover { background: var(--bg); color: var(--text); }
+.item-drawer__thumb {
+  height: 240px;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface2);
+}
+.item-drawer__badge { bottom: 12px; right: 12px; }
+.item-drawer__body {
+  padding: 22px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+.item-drawer__title {
+  font-family: var(--font-brand);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.item-drawer__summary {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text-mid);
+  margin: 0;
+  flex: 1;
+}
+.item-drawer__cta {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+}
+
+/* drawer transition */
+.drawer-enter-active, .drawer-leave-active { transition: opacity .2s ease; }
+.drawer-enter-active .item-drawer__panel, .drawer-leave-active .item-drawer__panel { transition: transform .25s cubic-bezier(.32,0,.67,0); }
+.drawer-enter-from, .drawer-leave-to { opacity: 0; }
+.drawer-enter-from .item-drawer__panel, .drawer-leave-to .item-drawer__panel { transform: translateX(100%); }
+
+@media (max-width: 640px) {
+  .item-drawer { align-items: flex-end; justify-content: stretch; }
+  .item-drawer__panel { width: 100%; height: 85vh; border-left: none; border-top: 1px solid var(--border); border-radius: 16px 16px 0 0; }
+  .item-drawer__thumb { height: 180px; }
+}
 @media (max-width: 768px) {
   .ch-content { left: 18px; right: 18px; bottom: 18px; }
   .ch-title { font-size: 24px; }

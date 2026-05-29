@@ -84,29 +84,26 @@ async def delete_collection(collection_id: UUID, current_user: CurrentUser, db: 
 
 @router.post("/{collection_id}/items", status_code=status.HTTP_204_NO_CONTENT)
 async def add_item_to_collection(
-    collection_id: UUID, item_id: UUID, current_user: CurrentUser, db: DbSession
+    collection_id: UUID, content_id: UUID, current_user: CurrentUser, db: DbSession
 ):
     collection = await crud_collections.get_one(db, UUID(current_user["sub"]), collection_id)
     if collection is None:
         raise HTTPException(status_code=404, detail="Collection not found")
-    user_item = await crud_items.get_one(db, UUID(current_user["sub"]), item_id)
+    user_item = await crud_items.get_by_content_id(db, UUID(current_user["sub"]), content_id)
     if user_item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    await crud_collections.add_item(db, collection_id, user_item.content_id)
+    await crud_collections.add_item(db, collection_id, content_id)
     await db.commit()
 
 
-@router.delete("/{collection_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{collection_id}/items/{content_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_item_from_collection(
-    collection_id: UUID, item_id: UUID, current_user: CurrentUser, db: DbSession
+    collection_id: UUID, content_id: UUID, current_user: CurrentUser, db: DbSession
 ):
     collection = await crud_collections.get_one(db, UUID(current_user["sub"]), collection_id)
     if collection is None:
         raise HTTPException(status_code=404, detail="Collection not found")
-    user_item = await crud_items.get_one(db, UUID(current_user["sub"]), item_id)
-    if user_item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-    await crud_collections.remove_item(db, collection_id, user_item.content_id)
+    await crud_collections.remove_item(db, collection_id, content_id)
     await db.commit()
 
 
@@ -119,7 +116,7 @@ async def fork_collection(
         raise HTTPException(status_code=404, detail="Collection not found")
     title = data.title or source.title
     new_collection = await crud_collections.fork_collection(
-        db, source, UUID(current_user["sub"]), title, data.content_ids
+        db, source, UUID(current_user["sub"]), title, data.content_ids, data.visibility
     )
     await db.commit()
     return new_collection

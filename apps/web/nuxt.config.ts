@@ -9,6 +9,7 @@ export default defineNuxtConfig({
     '~/assets/css/archive.css',
     '~/assets/css/item-detail.css',
     '~/assets/css/tag.css',
+    '~/assets/css/collection-view.css',
   ],
 
   modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n'],

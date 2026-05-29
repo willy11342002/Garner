@@ -5,9 +5,9 @@
 
     <!-- Stepper -->
     <div class="stepper" :data-step="currentStep">
-      <div class="step" :class="{ 'step--done': currentStep > 1, 'step--current': currentStep === 1, 'step--clickable': true }" @click="goToStep(1)">
+      <div class="step" :class="{ 'step--done': currentStep > 1 || forkSourceId, 'step--current': currentStep === 1 && !forkSourceId, 'step--clickable': !forkSourceId, 'step--locked': !!forkSourceId }" @click="!forkSourceId && goToStep(1)">
         <span class="step__circle">
-          <template v-if="currentStep > 1">
+          <template v-if="currentStep > 1 || forkSourceId">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
           </template>
           <template v-else>1</template>
@@ -68,7 +68,8 @@
     <section v-if="currentStep === 2" class="step-section">
       <span class="step-section__num">STEP 2 · 進行中</span>
       <h2>選擇要包含哪些內容</h2>
-      <p class="desc">預設全選，點擊取消勾選你不想公開的項目。</p>
+      <p v-if="forkSourceTitle" class="desc">來源集合：<strong>{{ forkSourceTitle }}</strong>，預設全選，點擊取消勾選不想加入的項目。</p>
+      <p v-else class="desc">預設全選，點擊取消勾選你不想公開的項目。</p>
 
       <div v-if="itemsLoading" class="loading-row">載入內容中...</div>
       <template v-else>
@@ -97,7 +98,7 @@
               <h4 class="citem__title">{{ item.title || item.url }}</h4>
               <div class="citem__meta">
                 <span class="tag-chip tag-chip--a">{{ sourceLabel(item.source_type) }}</span>
-                <span>{{ timeAgo(item.saved_at) }}</span>
+                <span v-if="item.saved_at">{{ timeAgo(item.saved_at) }}</span>
               </div>
             </div>
             <span class="citem__src">{{ sourceBadge(item.source_type) }}</span>
@@ -185,12 +186,17 @@
 </template>
 
 <script setup lang="ts">
-import type { Collection, Item, Tag } from '~/types/api'
+import type { Collection, CollectionShareRead, Item, Tag } from '~/types/api'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const apiFetch = useApiFetch()
+const config = useRuntimeConfig()
+
+// ── Fork mode (from_slug) ─────────────────────────────────────────
+const forkSourceId = ref<string | null>(null)
+const forkSourceTitle = ref<string | null>(null)
 
 // ── Tags (step 1) ─────────────────────────────────────────────────
 const tags = ref<Tag[]>([])
@@ -199,6 +205,37 @@ const selectedTagId = ref<string | null>(null)
 const selectedTagName = ref('')
 
 onMounted(async () => {
+  const fromSlug = route.query.from_slug as string | undefined
+
+  if (fromSlug) {
+    tagsLoading.value = false
+    itemsLoading.value = true
+    try {
+      const col = await $fetch<CollectionShareRead>(`${config.public.apiBase}/share/${fromSlug}`)
+      forkSourceId.value = col.id
+      forkSourceTitle.value = col.title
+      collectionTitle.value = col.title
+      tagItems.value = col.items.map(ci => ({
+        id: ci.id,
+        content_id: ci.id,
+        url: ci.url,
+        title: ci.title,
+        summary: ci.summary,
+        thumbnail_url: ci.thumbnail_url,
+        source_type: ci.source_type,
+        saved_at: '',
+        status: 'active',
+        tags: [],
+      } as unknown as Item))
+      tagItems.value.forEach(i => selectedItemIds.add(i.id))
+      maxReachedStep.value = 2
+      currentStep.value = 2
+    } finally {
+      itemsLoading.value = false
+    }
+    return
+  }
+
   try {
     const all = await apiFetch<Tag[]>('/tags/')
     tags.value = all.filter(t => t.item_count > 0)
@@ -321,24 +358,38 @@ async function publish() {
   if (!collectionTitle.value || publishing.value) return
   publishing.value = true
   try {
-    const slug = collectionTitle.value
-      .toLowerCase()
-      .replace(/[^a-z0-9一-鿿]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 40) + '-' + Math.random().toString(36).slice(2, 8)
+    let colId: string
 
-    const col = await apiFetch<Collection>('/collections/', {
-      method: 'POST',
-      body: { title: collectionTitle.value, visibility: visibility.value, slug },
-    })
+    if (forkSourceId.value) {
+      const forked = await apiFetch<{ id: string; slug: string }>(`/collections/${forkSourceId.value}/fork`, {
+        method: 'POST',
+        body: {
+          title: collectionTitle.value,
+          content_ids: Array.from(selectedItemIds),
+          visibility: visibility.value,
+        },
+      })
+      colId = forked.id
+    } else {
+      const slug = collectionTitle.value
+        .toLowerCase()
+        .replace(/[^a-z0-9一-鿿]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) + '-' + Math.random().toString(36).slice(2, 8)
 
-    // Add selected items sequentially
-    const ids = Array.from(selectedItemIds)
-    for (const itemId of ids) {
-      await apiFetch(`/collections/${col.id}/items?item_id=${itemId}`, { method: 'POST' })
+      const col = await apiFetch<Collection>('/collections/', {
+        method: 'POST',
+        body: { title: collectionTitle.value, visibility: visibility.value, slug },
+      })
+
+      const ids = Array.from(selectedItemIds)
+      for (const itemId of ids) {
+        await apiFetch(`/collections/${col.id}/items?item_id=${itemId}`, { method: 'POST' })
+      }
+      colId = col.id
     }
 
-    newCollectionId.value = col.id
+    newCollectionId.value = colId
     showToast.value = true
   } finally {
     publishing.value = false
