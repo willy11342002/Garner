@@ -15,6 +15,7 @@ def _item_to_read(user_item) -> ItemRead:
     content = user_item.content
     return ItemRead(
         id=user_item.id,
+        content_id=content.id,
         url=content.url,
         title=content.title,
         summary=content.summary,

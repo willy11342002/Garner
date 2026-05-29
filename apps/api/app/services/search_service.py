@@ -20,6 +20,7 @@ _ACTIVE_FILTERS = (
 def _to_item_read(ui: UserItem) -> ItemRead:
     return ItemRead(
         id=ui.id,
+        content_id=ui.content.id,
         url=ui.content.url,
         title=ui.content.title,
         summary=ui.content.summary,

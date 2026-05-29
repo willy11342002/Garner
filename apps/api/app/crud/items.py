@@ -50,6 +50,18 @@ async def get_one(db: AsyncSession, user_id: UUID, item_id: UUID) -> UserItem | 
     return result.scalar_one_or_none()
 
 
+async def get_by_content_id(db: AsyncSession, user_id: UUID, content_id: UUID) -> UserItem | None:
+    result = await db.execute(
+        select(UserItem)
+        .where(
+            UserItem.content_id == content_id,
+            UserItem.user_id == user_id,
+            UserItem.deleted_at.is_(None),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def create(db: AsyncSession, user_id: UUID, content: ContentObject) -> UserItem:
     user_item = UserItem(user_id=user_id, content_id=content.id)
     db.add(user_item)

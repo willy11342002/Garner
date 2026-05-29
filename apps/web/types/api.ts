@@ -6,6 +6,7 @@ export interface User {
 
 export interface Item {
   id: string
+  content_id: string | null
   url: string
   title: string | null
   summary: string | null
@@ -89,6 +90,7 @@ export interface CollectionShareItem {
   id: string
   url: string
   title: string | null
+  summary: string | null
   thumbnail_url: string | null
   source_type: string | null
 }
@@ -107,4 +109,17 @@ export interface CollectionShareRead {
 export interface CollectionForkCreate {
   title?: string
   content_ids?: string[]
+}
+
+export interface PublicCollectionRead {
+  id: string
+  title: string
+  slug: string
+  fork_count: number
+  created_at: string
+  item_count: number
+  author_username: string
+  author_avatar_url: string | null
+  source_tag_name: string | null
+  cover_thumbnails: (string | null)[]
 }

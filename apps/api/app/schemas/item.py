@@ -15,6 +15,7 @@ class ItemCreate(BaseModel):
 
 class ItemRead(BaseModel):
     id: UUID
+    content_id: UUID | None = None
     url: str
     title: str | None
     summary: str | None
