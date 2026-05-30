@@ -13,7 +13,6 @@
         </div>
       </div>
       <nav class="ex-tabs">
-        <NuxtLink class="ex-tab" to="/app/explore/focus" active-class="ex-tab--active">{{ $t('explore.tab_focus') }}</NuxtLink>
         <NuxtLink class="ex-tab" to="/app/explore/surprise" active-class="ex-tab--active">{{ $t('explore.tab_surprise') }}</NuxtLink>
         <NuxtLink class="ex-tab" to="/app/explore/browse" active-class="ex-tab--active">{{ $t('explore.tab_browse') }}</NuxtLink>
       </nav>

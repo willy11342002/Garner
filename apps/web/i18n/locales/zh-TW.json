@@ -5,7 +5,6 @@
     "stat_total": "知識庫總量",
     "stat_public": "公開集合",
     "stat_weekly": "本週新增",
-    "tab_focus": "問知識庫",
     "tab_surprise": "隨機驚喜",
     "tab_browse": "公開集合"
   },
@@ -21,6 +20,7 @@
   },
   "nav": {
     "explore": "探索",
+    "chat": "對話",
     "archive": "封存",
     "add": "新增",
     "settings": "設置",
@@ -30,6 +30,24 @@
     "searchPlaceholder": "搜尋你的知識庫...",
     "searchLoading": "搜尋中...",
     "searchEmpty": "找不到相關內容"
+  },
+  "chat": {
+    "title": "AI Chat",
+    "new": "新對話",
+    "empty_list": "還沒有對話。\n點右上角 + 開始吧。",
+    "welcome_title": "問你的知識庫",
+    "welcome_desc": "AI 會從你存過的所有文章和影片中找到相關內容，合成回答。",
+    "start": "開始新對話",
+    "untitled": "新對話",
+    "placeholder": "問你的知識庫...",
+    "hint": "Enter 送出 · Shift+Enter 換行",
+    "error": "AI 服務暫時無法使用，請稍後再試。",
+    "rename": "重新命名",
+    "delete": "刪除",
+    "rename_placeholder": "對話名稱...",
+    "thinking": "推理過程",
+    "tool_call": "搜尋知識庫",
+    "tool_result": "找到 {count} 筆相關內容"
   },
   "security": {
     "title": "安全性",

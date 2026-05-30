@@ -1,3 +1,4 @@
+from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
 from app.models.collection import Collection, CollectionVisibility
 from app.models.collection_item import CollectionItem
 from app.models.content_object import ContentObject, SourceType
@@ -26,4 +27,8 @@ __all__ = [
     "CollectionVisibility",
     "CollectionItem",
     "WhisperUsage",
+    "ChatFolder",
+    "ChatSession",
+    "ChatMessage",
+    "MessageRole",
 ]

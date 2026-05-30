@@ -5,7 +5,6 @@
     "stat_total": "Total items",
     "stat_public": "Public collections",
     "stat_weekly": "New this week",
-    "tab_focus": "Focus",
     "tab_surprise": "Surprise",
     "tab_browse": "Browse"
   },
@@ -21,6 +20,7 @@
   },
   "nav": {
     "explore": "Explore",
+    "chat": "Chat",
     "archive": "Archive",
     "add": "Add",
     "settings": "Settings",
@@ -30,6 +30,24 @@
     "searchPlaceholder": "Search your knowledge base...",
     "searchLoading": "Searching...",
     "searchEmpty": "No results found"
+  },
+  "chat": {
+    "title": "AI Chat",
+    "new": "New chat",
+    "empty_list": "No conversations yet.\nClick + to start.",
+    "welcome_title": "Ask your knowledge base",
+    "welcome_desc": "AI finds relevant content from everything you've saved and synthesises an answer.",
+    "start": "Start new chat",
+    "untitled": "New chat",
+    "placeholder": "Ask your knowledge base...",
+    "hint": "Enter to send · Shift+Enter for new line",
+    "error": "AI service unavailable. Please try again later.",
+    "rename": "Rename",
+    "delete": "Delete",
+    "rename_placeholder": "Conversation name...",
+    "thinking": "Reasoning",
+    "tool_call": "Searching knowledge base",
+    "tool_result": "Found {count} relevant items"
   },
   "security": {
     "title": "Security",

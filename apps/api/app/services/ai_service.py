@@ -197,6 +197,157 @@ async def analyze_full_chain(items: list[dict]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+_THINK_SYSTEM = """\
+你是 Vela 知識助理的推理引擎。用戶提出了一個問題，你需要：
+1. 分析問題的核心意圖
+2. 決定最佳的搜尋策略
+以 JSON 回傳，格式如下（只回傳 JSON，不要 markdown fences）：
+{
+  "reasoning": "2-3 句分析用戶問題的推理過程，用繁體中文",
+  "search_query": "最適合向量搜尋的查詢字串（可以跟原問題不同）"
+}
+"""
+
+async def analyze_query(query: str, history: list[dict]) -> dict:
+    """分析用戶問題，回傳 reasoning + search_query。"""
+    history_text = "\n".join(
+        f"{'用戶' if m['role'] == 'user' else '助理'}：{m['content']}"
+        for m in history[-4:]
+    ) if history else ""
+    prompt = f"對話脈絡：\n{history_text}\n\n用戶最新問題：{query}" if history_text else f"用戶問題：{query}"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json={
+                "model": "anthropic/claude-3-5-haiku",
+                "messages": [
+                    {"role": "system", "content": _THINK_SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
+            },
+            timeout=30,
+        )
+        if resp.status_code == 401:
+            raise RuntimeError("OpenRouter service unavailable")
+        resp.raise_for_status()
+    raw = resp.json()["choices"][0]["message"]["content"].strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1].lstrip("json").strip()
+    return json.loads(raw)
+
+
+_CHAT_SYSTEM = """\
+你是 Vela 知識助理。用戶存了很多網頁文章和 YouTube 影片在知識庫裡。
+你的工作是根據用戶的問題，從他們存過的內容中找到相關資訊，給出具體有洞察力的回答。
+用繁體中文回答。回答自然、簡潔，不要過度列舉。
+如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造。
+"""
+
+_CHAT_CONTEXT_TEMPLATE = """\
+【用戶長期記憶】
+{memory}
+
+【相關知識庫內容】
+{items}
+
+【對話歷史】
+{history}
+
+用戶：{query}
+"""
+
+_COMPRESS_SYSTEM = """\
+將以下對話摘要成 3-5 句話的長期記憶，記住用戶感興趣的主題、關心的問題和思考模式。
+只保留對未來對話有用的資訊，用繁體中文輸出。
+"""
+
+
+async def chat_stream(
+    query: str,
+    history: list[dict],
+    retrieved_items: list[dict],
+    memory_summary: str | None,
+):
+    """Yield text chunks from OpenRouter streaming response."""
+    items_text = "\n".join(
+        f"[{i+1}] 標題：{it['title'] or '(無標題)'}\n    摘要：{it['summary'] or '(無摘要)'}"
+        for i, it in enumerate(retrieved_items)
+    ) if retrieved_items else "（未找到相關內容）"
+
+    history_text = "\n".join(
+        f"{'用戶' if m['role'] == 'user' else '助理'}：{m['content']}"
+        for m in history[-8:]
+    ) if history else "（無）"
+
+    user_content = _CHAT_CONTEXT_TEMPLATE.format(
+        memory=memory_summary or "（無）",
+        items=items_text,
+        history=history_text,
+        query=query,
+    )
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        async with client.stream(
+            "POST",
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json={
+                "model": "anthropic/claude-3-5-haiku",
+                "stream": True,
+                "messages": [
+                    {"role": "system", "content": _CHAT_SYSTEM},
+                    {"role": "user", "content": user_content},
+                ],
+            },
+        ) as resp:
+            if resp.status_code == 401:
+                raise RuntimeError("OpenRouter service unavailable")
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data == "[DONE]":
+                    break
+                import json as _json
+                try:
+                    chunk = _json.loads(data)
+                    delta = chunk["choices"][0]["delta"].get("content", "")
+                    if delta:
+                        yield delta
+                except Exception:
+                    continue
+
+
+async def compress_memory(
+    current_summary: str | None,
+    recent_messages: list[dict],
+) -> str:
+    conversation = "\n".join(
+        f"{'用戶' if m['role'] == 'user' else '助理'}：{m['content']}"
+        for m in recent_messages
+    )
+    prompt = f"現有摘要：\n{current_summary or '（無）'}\n\n新對話：\n{conversation}"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json={
+                "model": "anthropic/claude-3-5-haiku",
+                "messages": [
+                    {"role": "system", "content": _COMPRESS_SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
+            },
+            timeout=60,
+        )
+        if resp.status_code == 401:
+            raise RuntimeError("OpenRouter service unavailable")
+        resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
 async def embed(text: str) -> list[float]:
     from openai import AsyncOpenAI
 

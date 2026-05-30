@@ -18,7 +18,7 @@ export default defineNuxtConfig({
     '/explore/**': { ssr: true },
     '/share/**': { ssr: true },
     '/app/**': { ssr: false },
-    '/app/explore': { redirect: '/app/explore/focus' },
+    '/app/explore': { redirect: '/app/explore/surprise' },
   },
 
   runtimeConfig: {

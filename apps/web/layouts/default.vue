@@ -8,6 +8,11 @@
           class="nav__tab"
           :class="{ 'nav__tab--active': route.path.startsWith('/app/explore') }"
         >{{ t('nav.explore') }}</NuxtLink>
+        <NuxtLink
+          to="/app/chat"
+          class="nav__tab"
+          :class="{ 'nav__tab--active': route.path.startsWith('/app/chat') }"
+        >{{ t('nav.chat') }}</NuxtLink>
       </div>
       <div class="nav__right">
         <template v-if="isLoggedIn">

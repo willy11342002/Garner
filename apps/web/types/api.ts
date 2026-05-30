@@ -199,3 +199,38 @@ export interface ChainHop {
   analysis: ChainHopAnalysis | null  // null for starting node
   candidates: ChainItem[]            // next hop options at this node
 }
+
+// AI Chat
+export interface ChatFolder {
+  id: string
+  name: string
+  created_at: string
+}
+
+export interface ChatSession {
+  id: string
+  folder_id: string | null
+  title: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  cited_item_ids: string[] | null
+  created_at: string
+}
+
+export interface ChatSessionDetail extends ChatSession {
+  messages: ChatMessage[]
+}
+
+export interface ChatSource {
+  id: string
+  url: string
+  title: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+}
