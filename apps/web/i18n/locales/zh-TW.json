@@ -92,7 +92,17 @@
       "displayName": "顯示名稱",
       "email": "電子郵件",
       "provider": "登入方式",
-      "readonly_note": "個人資料由登入服務提供，如需修改請前往對應平台設定。"
+      "readonly_note": "個人資料由登入服務提供，如需修改請前往對應平台設定。",
+      "username_label": "顯示名稱",
+      "username_placeholder": "輸入顯示名稱",
+      "avatar_label": "頭像",
+      "avatar_change": "更換頭像",
+      "avatar_uploading": "上傳中...",
+      "avatar_hint": "支援 JPG、PNG、WebP，最大 5 MB",
+      "save": "儲存",
+      "saving": "儲存中...",
+      "save_success": "已儲存",
+      "save_error": "儲存失敗，請稍後再試"
     },
     "appearance": {
       "title": "外觀",

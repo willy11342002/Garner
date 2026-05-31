@@ -18,3 +18,17 @@ async def get_or_create(db: AsyncSession, user_id: UUID, email: str | None, user
         db.add(user)
         await db.flush()
     return user
+
+
+async def update_user(db: AsyncSession, user: User, username: str | None = None, avatar_url: str | None = None) -> User:
+    if username is not None:
+        user.username = username
+    if avatar_url is not None:
+        user.avatar_url = avatar_url
+    await db.flush()
+    return user
+
+
+async def delete_user(db: AsyncSession, user: User) -> None:
+    await db.delete(user)
+    await db.flush()

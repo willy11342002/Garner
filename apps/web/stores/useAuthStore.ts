@@ -12,9 +12,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function updateProfile(data: { username?: string; avatar_url?: string }) {
+    const apiFetch = useApiFetch()
+    user.value = await apiFetch<User>('/auth/me', { method: 'PUT', body: data })
+  }
+
+  async function uploadAvatar(file: File) {
+    const apiFetch = useApiFetch()
+    const form = new FormData()
+    form.append('file', file)
+    user.value = await apiFetch<User>('/auth/me/avatar', { method: 'POST', body: form })
+  }
+
   function clear() {
     user.value = null
   }
 
-  return { user, init, clear }
+  return { user, init, clear, updateProfile, uploadAvatar }
 })

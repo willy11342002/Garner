@@ -92,7 +92,17 @@
       "displayName": "Display name",
       "email": "Email address",
       "provider": "Sign-in method",
-      "readonly_note": "Profile information is provided by your sign-in service. To update it, visit your provider's settings."
+      "readonly_note": "Profile information is provided by your sign-in service. To update it, visit your provider's settings.",
+      "username_label": "Display name",
+      "username_placeholder": "Enter display name",
+      "avatar_label": "Avatar",
+      "avatar_change": "Change avatar",
+      "avatar_uploading": "Uploading...",
+      "avatar_hint": "JPG, PNG, or WebP up to 5 MB",
+      "save": "Save",
+      "saving": "Saving...",
+      "save_success": "Saved",
+      "save_error": "Failed to save, please try again"
     },
     "appearance": {
       "title": "Appearance",

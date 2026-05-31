@@ -18,7 +18,13 @@ if settings.sentry_dsn:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.services.ai_service import load_model_configs
+    from app.services.thumbnail_service import _get_supabase
     await load_model_configs()
+    try:
+        supabase = await _get_supabase()
+        await supabase.storage.create_bucket("avatars", options={"public": True})
+    except Exception:
+        pass  # bucket 已存在
     yield
 
 

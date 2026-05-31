@@ -2,6 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "uv sync (API)",
+      "type": "shell",
+      "command": "uv sync --active",
+      "options": {
+        "cwd": "${workspaceFolder}/apps/api"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "dependsOn": "Start DB"
+    },
+    {
       "label": "Start DB",
       "type": "shell",
       "command": "docker compose up db -d",

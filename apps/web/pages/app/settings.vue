@@ -2,23 +2,16 @@
 const { t, locale, setLocale } = useI18n()
 const { isDark, toggle } = useTheme()
 const supabaseUser = useSupabaseUser()
+const authStore = useAuthStore()
 
 const activeSection = ref<'profile' | 'appearance'>('profile')
 
-const displayName = computed(() =>
-  supabaseUser.value?.user_metadata?.full_name
-  ?? supabaseUser.value?.user_metadata?.name
-  ?? supabaseUser.value?.email?.split('@')[0]
-  ?? '—'
-)
-const authStore = useAuthStore()
 const avatarUrl = computed(() =>
   authStore.user?.avatar_url
   ?? supabaseUser.value?.user_metadata?.avatar_url
   ?? null
 )
-const initials = computed(() => displayName.value.slice(0, 2).toUpperCase())
-const email = computed(() => supabaseUser.value?.email ?? '—')
+const email = computed(() => authStore.user?.email ?? supabaseUser.value?.email ?? '—')
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -29,6 +22,57 @@ const providerName = computed(() => {
   const meta = supabaseUser.value?.app_metadata
   const providers: string[] = meta?.providers ?? (meta?.provider ? [meta.provider] : [])
   return providers.map(p => PROVIDER_LABELS[p] ?? p).join(' · ') || '—'
+})
+
+// ── Profile edit ──
+const editUsername = ref('')
+const isSaving = ref(false)
+const saveStatus = ref<'' | 'success' | 'error'>('')
+const isUploadingAvatar = ref(false)
+const avatarInput = ref<HTMLInputElement | null>(null)
+
+watch(
+  () => authStore.user?.username,
+  (val) => { if (val) editUsername.value = val },
+  { immediate: true },
+)
+
+async function saveProfile() {
+  if (isSaving.value) return
+  isSaving.value = true
+  saveStatus.value = ''
+  try {
+    await authStore.updateProfile({ username: editUsername.value.trim() })
+    saveStatus.value = 'success'
+    setTimeout(() => { saveStatus.value = '' }, 2500)
+  } catch {
+    saveStatus.value = 'error'
+  } finally {
+    isSaving.value = false
+  }
+}
+
+function triggerAvatarPick() {
+  avatarInput.value?.click()
+}
+
+async function onAvatarSelected(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  isUploadingAvatar.value = true
+  try {
+    await authStore.uploadAvatar(file)
+  } catch {
+    // silently ignore — avatar is non-critical
+  } finally {
+    isUploadingAvatar.value = false
+    if (avatarInput.value) avatarInput.value.value = ''
+  }
+}
+
+const initials = computed(() => {
+  const name = authStore.user?.username ?? editUsername.value ?? '?'
+  return name.slice(0, 2).toUpperCase()
 })
 
 function setTheme(dark: boolean) {
@@ -76,31 +120,75 @@ function setTheme(dark: boolean) {
               <h2 class="settings-card__title">{{ t('settings.profile.title') }}</h2>
             </div>
             <div class="settings-card__body">
-              <div class="profile-row">
-                <div class="profile-avatar">
-                  <img v-if="avatarUrl" :src="avatarUrl" :alt="displayName" referrerpolicy="no-referrer" />
-                  <span v-else>{{ initials }}</span>
+
+              <!-- Avatar -->
+              <div class="profile-avatar-row">
+                <div class="profile-avatar profile-avatar--lg">
+                  <img v-if="avatarUrl && !isUploadingAvatar" :src="avatarUrl" :alt="editUsername" referrerpolicy="no-referrer" />
+                  <span v-else-if="!isUploadingAvatar">{{ initials }}</span>
+                  <div v-else class="avatar-uploading-spinner"></div>
                 </div>
-                <div>
-                  <p class="profile-name">{{ displayName }}</p>
-                  <p class="profile-email">{{ email }}</p>
+                <div class="profile-avatar-meta">
+                  <p class="profile-email-sm">{{ email }}</p>
+                  <p class="profile-provider-sm">{{ providerName }}</p>
+                  <button class="btn-avatar-change" :disabled="isUploadingAvatar" @click="triggerAvatarPick">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="17 8 12 3 7 8"/>
+                      <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    {{ isUploadingAvatar ? t('settings.profile.avatar_uploading') : t('settings.profile.avatar_change') }}
+                  </button>
+                  <p class="avatar-hint">{{ t('settings.profile.avatar_hint') }}</p>
                 </div>
+                <input
+                  ref="avatarInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  style="display:none"
+                  @change="onAvatarSelected"
+                />
               </div>
 
-              <div class="settings-field">
-                <span class="settings-field__label">{{ t('settings.profile.displayName') }}</span>
-                <span class="settings-field__value">{{ displayName }}</span>
+              <!-- Username field -->
+              <div class="settings-field settings-field--edit">
+                <span class="settings-field__label">{{ t('settings.profile.username_label') }}</span>
+                <input
+                  v-model="editUsername"
+                  class="settings-field__input"
+                  :placeholder="t('settings.profile.username_placeholder')"
+                  maxlength="50"
+                  @keydown.enter="saveProfile"
+                />
               </div>
-              <div class="settings-field">
+
+              <!-- Email (readonly) -->
+              <div class="settings-field settings-field--last">
                 <span class="settings-field__label">{{ t('settings.profile.email') }}</span>
                 <span class="settings-field__value">{{ email }}</span>
               </div>
-              <div class="settings-field settings-field--last">
-                <span class="settings-field__label">{{ t('settings.profile.provider') }}</span>
-                <span class="settings-field__value">{{ providerName }}</span>
+
+              <!-- Save button -->
+              <div class="profile-actions">
+                <button
+                  class="btn-save"
+                  :class="{ 'btn-save--success': saveStatus === 'success' }"
+                  :disabled="isSaving || !editUsername.trim()"
+                  @click="saveProfile"
+                >
+                  <template v-if="saveStatus === 'success'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    {{ t('settings.profile.save_success') }}
+                  </template>
+                  <template v-else>
+                    {{ isSaving ? t('settings.profile.saving') : t('settings.profile.save') }}
+                  </template>
+                </button>
+                <p v-if="saveStatus === 'error'" class="save-error">{{ t('settings.profile.save_error') }}</p>
               </div>
 
-              <p class="profile-note">{{ t('settings.profile.readonly_note') }}</p>
             </div>
           </div>
         </section>
@@ -261,8 +349,8 @@ function setTheme(dark: boolean) {
 }
 .settings-card__body { padding: 20px 22px; }
 
-/* Profile */
-.profile-row {
+/* Avatar row */
+.profile-avatar-row {
   display: flex;
   align-items: center;
   gap: 18px;
@@ -270,28 +358,74 @@ function setTheme(dark: boolean) {
   margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
 }
+
 .profile-avatar {
-  width: 60px; height: 60px;
   border-radius: 50%;
   overflow: hidden;
   background: linear-gradient(135deg, var(--tag-d), var(--tag-b));
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono);
-  font-size: 18px; font-weight: 600;
+  font-weight: 600;
   color: #fff;
   border: 2px solid var(--border2);
   flex-shrink: 0;
 }
+.profile-avatar--lg { width: 64px; height: 64px; font-size: 20px; }
 .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.profile-name {
-  font-family: var(--font-brand);
-  font-size: 18px; font-weight: 600;
-  letter-spacing: -0.01em;
-  margin: 0 0 3px;
-  color: var(--text);
-}
-.profile-email { font-size: 12.5px; color: var(--text-mid); margin: 0; }
 
+.avatar-uploading-spinner {
+  width: 20px; height: 20px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.profile-avatar-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.profile-email-sm {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0;
+}
+.profile-provider-sm {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 6px;
+}
+
+.btn-avatar-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: all .12s;
+  width: fit-content;
+}
+.btn-avatar-change:hover:not(:disabled) { border-color: var(--border2); color: var(--text); }
+.btn-avatar-change:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.avatar-hint {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin: 2px 0 0;
+}
+
+/* Fields */
 .settings-field {
   display: flex;
   align-items: center;
@@ -312,15 +446,58 @@ function setTheme(dark: boolean) {
   font-weight: 500;
 }
 
-.profile-note {
+.settings-field--edit { align-items: center; }
+
+.settings-field__input {
+  flex: 1;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  font-family: var(--font-ui);
+  color: var(--text);
+  outline: none;
+  transition: border-color .12s;
+}
+.settings-field__input:focus { border-color: var(--accent-bdr); }
+.settings-field__input::placeholder { color: var(--text-dim); }
+
+/* Save */
+.profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.btn-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  background: var(--accent);
+  color: #000;
+  border: none;
+  cursor: pointer;
+  transition: all .12s;
+}
+.btn-save:hover:not(:disabled) { opacity: 0.88; }
+.btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-save--success {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-bdr);
+}
+
+.save-error {
   font-size: 12px;
-  color: var(--text-dim);
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 16px 0 0;
-  line-height: 1.65;
+  color: var(--danger, #e85555);
+  margin: 0;
 }
 
 /* Appearance rows */

@@ -11,7 +11,7 @@
       "cwd": "${workspaceFolder}/apps/api",
       "envFile": "${workspaceFolder}/apps/api/.env",
       "console": "integratedTerminal",
-      "preLaunchTask": "Start DB"
+      "preLaunchTask": "uv sync (API)"
     },
     {
       "name": "Web (Nuxt)",
