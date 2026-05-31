@@ -60,10 +60,135 @@
           <!-- 歷史訊息 -->
           <template v-for="msg in messages" :key="msg.id">
             <div class="msg" :class="`msg--${msg.role}`">
-              <div class="msg__bubble">{{ msg.content }}</div>
-              <div v-if="msg.role === 'assistant' && sourcesMap[msg.id]?.length" class="msg__sources">
+              <!-- assistant 訊息：顯示永久保存的 process log -->
+              <template v-if="msg.role === 'assistant' && processMap[msg.id]">
+                <div class="process-block">
+                  <button class="process-block__toggle" @click="toggleThinking(msg.id)">
+                    <span class="process-block__icon">💭</span>
+                    <span class="process-block__label">{{ t('chat.thinking') }}</span>
+                    <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openThinking.has(msg.id) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                  <Transition name="thinking">
+                  <div v-if="openThinking.has(msg.id)" class="process-block__body">
+                    <p v-if="processMap[msg.id].thinking" class="process-body__reasoning">{{ processMap[msg.id].thinking }}</p>
+                    <div v-for="(step, i) in processMap[msg.id].steps" :key="i" class="process-body__step">
+                      <div class="process-body__tool-call">
+                        <span class="process-body__step-icon">🔍</span>
+                        <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
+                        <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
+                        <template v-if="step.toolCall.name === 'structured_filter'">
+                          <span v-if="step.toolCall.tags?.length" class="process-body__param">tags: {{ step.toolCall.tags.join(', ') }}</span>
+                          <span v-if="step.toolCall.source_type" class="process-body__param">source: {{ step.toolCall.source_type }}</span>
+                          <span v-if="step.toolCall.start_date || step.toolCall.end_date" class="process-body__param">date: {{ step.toolCall.start_date ?? '…' }} ～ {{ step.toolCall.end_date ?? '…' }}</span>
+                        </template>
+                      </div>
+                      <div v-if="step.toolResult" class="process-body__tool-result">
+                        <span class="process-body__step-icon">✓</span>
+                        <span>找到 {{ step.toolResult.count }} 筆</span>
+                        <span v-if="step.toolResult.titles?.length" class="process-body__result-titles">{{ step.toolResult.titles.join('、') }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  </Transition>
+                </div>
+              </template>
+
+              <div
+                class="msg__bubble"
+                :class="{ 'msg__bubble--has-sources': msg.role === 'assistant' && sourcesMap[msg.id]?.length }"
+              >
+                {{ msg.content }}
+                <button
+                  v-if="msg.role === 'assistant' && sourcesMap[msg.id]?.length"
+                  class="src-badge"
+                  :class="{ 'src-badge--open': openSources.has(msg.id) }"
+                  @click.stop="toggleSources(msg.id)"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+              </div>
+              <Transition name="sources">
+                <div v-if="msg.role === 'assistant' && openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
+                  <NuxtLink
+                    v-for="src in sourcesMap[msg.id]"
+                    :key="src.id"
+                    class="src-card"
+                    :to="`/app/item/${src.id}`"
+                  >
+                    <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
+                    <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                    <div class="src-card__body">
+                      <span class="src-card__title">{{ src.title || src.url }}</span>
+                      <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
+                    </div>
+                  </NuxtLink>
+                </div>
+              </Transition>
+            </div>
+          </template>
+
+          <!-- 進行中的 agentic process -->
+          <div v-if="loading || streamingText" class="msg msg--assistant">
+            <!-- 思考過程 + tool steps（可收合，進行中） -->
+            <div v-if="liveProcess.thinking || liveProcess.steps.length" class="process-block">
+              <button class="process-block__toggle" @click="toggleThinking('live')">
+                <span class="process-block__icon">💭</span>
+                <span class="process-block__label">{{ t('chat.thinking') }}</span>
+                <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openThinking.has('live') }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <Transition name="thinking">
+              <div v-if="openThinking.has('live')" class="process-block__body">
+                <p v-if="liveProcess.thinking" class="process-body__reasoning">{{ liveProcess.thinking }}</p>
+                <div v-for="(step, i) in liveProcess.steps" :key="i" class="process-body__step">
+                  <div class="process-body__tool-call">
+                    <span class="process-body__step-icon">🔍</span>
+                    <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
+                    <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
+                    <template v-if="step.toolCall.name === 'structured_filter'">
+                      <span v-if="step.toolCall.tags?.length" class="process-body__param">tags: {{ step.toolCall.tags.join(', ') }}</span>
+                      <span v-if="step.toolCall.source_type" class="process-body__param">source: {{ step.toolCall.source_type }}</span>
+                      <span v-if="step.toolCall.start_date || step.toolCall.end_date" class="process-body__param">date: {{ step.toolCall.start_date ?? '…' }} ～ {{ step.toolCall.end_date ?? '…' }}</span>
+                    </template>
+                  </div>
+                  <div v-if="step.toolResult" class="process-body__tool-result">
+                    <span class="process-body__step-icon">✓</span>
+                    <span>找到 {{ step.toolResult.count }} 筆</span>
+                    <span v-if="step.toolResult.titles?.length" class="process-body__result-titles">{{ step.toolResult.titles.join('、') }}</span>
+                  </div>
+                  <div v-else class="process-body__tool-result process-body__tool-result--pending">
+                    <span class="process-body__step-icon">⋯</span>
+                    <span>搜尋中</span>
+                  </div>
+                </div>
+              </div>
+              </Transition>
+            </div>
+
+            <!-- 等待開始串流 -->
+            <div v-if="loading && !streamingText" class="msg-thinking">
+              <span></span><span></span><span></span>
+            </div>
+
+            <!-- 串流中的回覆 -->
+            <div
+              v-if="streamingText"
+              class="msg__bubble msg__bubble--streaming"
+              :class="{ 'msg__bubble--has-sources': liveProcess.sources.length }"
+            >
+              {{ streamingText }}<span class="cursor">▍</span>
+              <button
+                v-if="liveProcess.sources.length"
+                class="src-badge"
+                :class="{ 'src-badge--open': openSources.has('live') }"
+                @click.stop="toggleSources('live')"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+            <Transition name="sources">
+              <div v-if="openSources.has('live') && liveProcess.sources.length" class="sources-list">
                 <NuxtLink
-                  v-for="src in sourcesMap[msg.id]"
+                  v-for="src in liveProcess.sources"
                   :key="src.id"
                   class="src-card"
                   :to="`/app/item/${src.id}`"
@@ -76,63 +201,7 @@
                   </div>
                 </NuxtLink>
               </div>
-            </div>
-          </template>
-
-          <!-- 進行中的 agentic process -->
-          <div v-if="loading || streamingText" class="msg msg--assistant">
-            <!-- 思考過程（可收合） -->
-            <div v-if="process.thinking" class="process-block">
-              <button class="process-block__toggle" @click="thinkingOpen = !thinkingOpen">
-                <span class="process-block__icon">💭</span>
-                <span class="process-block__label">{{ t('chat.thinking') }}</span>
-                <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': thinkingOpen }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <div v-if="thinkingOpen" class="process-block__body">{{ process.thinking }}</div>
-            </div>
-
-            <!-- Tool call -->
-            <div v-if="process.toolCall" class="process-step process-step--tool">
-              <span class="process-step__icon">🔍</span>
-              <span class="process-step__label">{{ t('chat.tool_call') }}</span>
-              <code class="process-step__query">{{ process.toolCall.query }}</code>
-            </div>
-
-            <!-- Tool result -->
-            <div v-if="process.toolResult" class="process-step process-step--result">
-              <span class="process-step__icon">✓</span>
-              <span class="process-step__label">{{ t('chat.tool_result', { count: process.toolResult.count }) }}</span>
-              <span v-if="process.toolResult.titles.length" class="process-step__titles">
-                {{ process.toolResult.titles.join('、') }}
-              </span>
-            </div>
-
-            <!-- 等待開始串流 -->
-            <div v-if="loading && !streamingText" class="msg-thinking">
-              <span></span><span></span><span></span>
-            </div>
-
-            <!-- 串流中的回覆 -->
-            <div v-if="streamingText" class="msg__bubble msg__bubble--streaming">
-              {{ streamingText }}<span class="cursor">▍</span>
-            </div>
-
-            <!-- 串流完成的 sources -->
-            <div v-if="process.sources.length" class="msg__sources">
-              <NuxtLink
-                v-for="src in process.sources"
-                :key="src.id"
-                class="src-card"
-                :to="`/app/item/${src.id}`"
-              >
-                <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
-                <div v-else class="src-card__thumb src-card__thumb--empty"></div>
-                <div class="src-card__body">
-                  <span class="src-card__title">{{ src.title || src.url }}</span>
-                  <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
-                </div>
-              </NuxtLink>
-            </div>
+            </Transition>
           </div>
         </div>
 
@@ -176,15 +245,19 @@ const sourcesMap = ref<Record<string, ChatSource[]>>({})
 const inputText = ref('')
 const loading = ref(false)
 const streamingText = ref('')
-const thinkingOpen = ref(true)
 
-// 進行中的 agentic process 狀態
-const process = ref<{
-  thinking: string
-  toolCall: { name: string; query: string } | null
-  toolResult: { count: number; titles: string[] } | null
-  sources: ChatSource[]
-}>({ thinking: '', toolCall: null, toolResult: null, sources: [] })
+// 哪些訊息的 thinking 是展開的（'live' = 進行中）
+const openThinking = ref<Set<string>>(new Set(['live']))
+// 哪些訊息的 sources 是展開的
+const openSources = ref<Set<string>>(new Set())
+
+// 進行中的 agentic process（每次 send 重置）
+type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }
+type ProcessLog = { thinking: string; steps: ProcessStep[] }
+const liveProcess = ref<ProcessLog & { sources: ChatSource[] }>({ thinking: '', steps: [], sources: [] })
+
+// 每則 assistant 訊息永久保存的 process log
+const processMap = ref<Record<string, ProcessLog>>({})
 
 const messagesEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -224,7 +297,23 @@ async function openSession(id: string) {
     activeSession.value = detail
     messages.value = detail.messages
     sourcesMap.value = {}
+    processMap.value = {}
+    // 只展開最新一則有來源的 assistant 訊息
+    const lastWithSources = [...detail.messages].reverse().find(m => m.role === 'assistant' && m.cited_item_ids?.length)
+    openSources.value = lastWithSources ? new Set([lastWithSources.id]) : new Set()
     resetProcess()
+
+    // 從訊息的 process_log 重建 processMap
+    for (const msg of detail.messages) {
+      if (msg.role === 'assistant' && msg.process_log) {
+        processMap.value[msg.id] = msg.process_log as ProcessLog
+        // 預設展開最新一則，其餘收合
+        openThinking.value.delete(msg.id)
+      }
+    }
+    // 最新一則 assistant 訊息預設展開
+    const lastAssistant = [...detail.messages].reverse().find(m => m.role === 'assistant' && m.process_log)
+    if (lastAssistant) openThinking.value.add(lastAssistant.id)
 
     const assistantMsgs = detail.messages.filter(m => m.role === 'assistant' && m.cited_item_ids?.length)
     const allIds = [...new Set(assistantMsgs.flatMap(m => m.cited_item_ids!))]
@@ -270,10 +359,24 @@ async function deleteSession(id: string) {
 
 // ── Send message ──────────────────────────────────────────────────────────────
 function resetProcess() {
-  process.value = { thinking: '', toolCall: null, toolResult: null, sources: [] }
+  liveProcess.value = { thinking: '', steps: [], sources: [] }
   streamingText.value = ''
-  thinkingOpen.value = true
+  openThinking.value = new Set(['live'])
+  openSources.value.delete('live')
 }
+
+function toggleThinking(id: string) {
+  const s = openThinking.value
+  if (s.has(id)) { s.delete(id) } else { s.add(id) }
+  openThinking.value = new Set(s)
+}
+
+function toggleSources(id: string) {
+  const s = openSources.value
+  if (s.has(id)) { s.delete(id) } else { s.add(id) }
+  openSources.value = new Set(s)
+}
+
 
 async function send() {
   if (!inputText.value.trim() || loading.value || !activeSessionId.value) return
@@ -331,26 +434,36 @@ async function send() {
         const data = JSON.parse(lines[1].replace('data: ', ''))
 
         if (event === 'thinking') {
-          process.value.thinking = data.text
+          liveProcess.value.thinking = data.text
           await nextTick(); scrollBottom()
 
         } else if (event === 'tool_call') {
-          process.value.toolCall = { name: data.name, query: data.query }
+          liveProcess.value.steps.push({ toolCall: data, toolResult: null })
           await nextTick(); scrollBottom()
 
         } else if (event === 'tool_result') {
-          process.value.toolResult = { count: data.count, titles: data.titles }
+          const steps = liveProcess.value.steps
+          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
           await nextTick(); scrollBottom()
 
         } else if (event === 'sources') {
           pendingSources = data as ChatSource[]
-          process.value.sources = pendingSources
+          liveProcess.value.sources = pendingSources
 
         } else if (event === 'delta') {
           streamingText.value += data.text
           await nextTick(); scrollBottom()
 
         } else if (event === 'done') {
+          // 把 process log 永久存到 processMap
+          processMap.value[assistantId] = {
+            thinking: liveProcess.value.thinking,
+            steps: liveProcess.value.steps,
+          }
+          // thinking 預設收合（已完成），保留展開狀態
+          openThinking.value.delete('live')
+          openThinking.value.add(assistantId)
+
           const assistantMsg: ChatMessage = {
             id: assistantId,
             role: 'assistant',
@@ -359,7 +472,10 @@ async function send() {
             created_at: new Date().toISOString(),
           }
           messages.value.push(assistantMsg)
-          if (pendingSources.length) sourcesMap.value[assistantId] = pendingSources
+          if (pendingSources.length) {
+            sourcesMap.value[assistantId] = pendingSources
+            openSources.value = new Set([...openSources.value, assistantId]) // 新回覆預設展開
+          }
 
           if (isFirstMessage && !activeSession.value?.title) {
             const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
@@ -444,15 +560,16 @@ function sourceLabel(type: string | null) {
 .msg { display: flex; flex-direction: column; gap: 8px; }
 .msg--user { align-items: flex-end; }
 .msg--assistant { align-items: flex-start; }
-.msg__bubble { max-width: 68%; padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
-.msg--user .msg__bubble { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-bdr); border-bottom-right-radius: 4px; }
-.msg--assistant .msg__bubble { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 4px; }
-.msg__bubble--streaming { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 4px; max-width: 68%; padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.msg__bubble { padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.msg--user .msg__bubble { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-bdr); }
+.msg--assistant .msg__bubble { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.msg__bubble--streaming { position: relative; max-width: 68%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
 .cursor { display: inline-block; animation: blink 1s infinite; color: var(--accent); margin-left: 2px; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* Agentic process blocks */
 .process-block {
+  width: 68%;
   max-width: 68%;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -484,29 +601,120 @@ function sourceLabel(type: string | null) {
   color: var(--text-mid);
   font-size: 12.5px;
   line-height: 1.65;
-  font-style: italic;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.process-step {
+/* 推理文字 */
+.process-body__reasoning {
+  margin: 0;
+  font-style: italic;
+  color: var(--text-mid);
+}
+
+/* 每個 tool step 區塊 */
+.process-body__step {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* tool call 那一行 */
+.process-body__tool-call {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  max-width: 68%;
 }
-.process-step--tool { background: color-mix(in oklab, var(--tag-b) 10%, transparent); border: 1px solid color-mix(in oklab, var(--tag-b) 25%, transparent); color: var(--tag-b); }
-.process-step--result { background: color-mix(in oklab, var(--accent) 8%, transparent); border: 1px solid var(--accent-bdr); color: var(--accent); }
-.process-step__icon { font-size: 13px; }
-.process-step__label { font-weight: 500; }
-.process-step__query { background: color-mix(in oklab, var(--tag-b) 18%, transparent); padding: 1px 7px; border-radius: 5px; font-size: 11px; }
-.process-step__titles { color: var(--text-dim); font-size: 10.5px; }
+.process-body__step-icon { font-size: 12px; flex-shrink: 0; }
+.process-body__tool-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tag-b);
+  background: color-mix(in oklab, var(--tag-b) 10%, transparent);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.process-body__param {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  background: var(--surface2);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
 
-/* Source cards */
-.msg__sources { display: flex; flex-direction: column; gap: 6px; max-width: 68%; }
+/* tool result 那一行 */
+.process-body__tool-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  padding-left: 2px;
+}
+.process-body__tool-result--pending { color: var(--text-dim); }
+.process-body__result-titles {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* Bubble with sources gets extra bottom padding for badge */
+.msg__bubble { position: relative; max-width: 68%; }
+.msg__bubble--has-sources { padding-bottom: 26px; }
+
+/* Source badge — inside bubble, bottom-right, matches process-block chevron style */
+.src-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 0;
+  transition: color .15s ease;
+}
+.src-badge svg { transition: transform .2s ease; }
+.src-badge:hover { color: var(--text-mid); }
+.src-badge--open { color: var(--text-dim); }
+.src-badge--open svg { transform: rotate(180deg); }
+
+/* Expanded source list */
+.sources-list { display: flex; flex-direction: column; gap: 6px; max-width: 68%; }
+
+/* Sources transition */
+.sources-enter-active { animation: sources-drop .2s ease; }
+.sources-leave-active { animation: sources-drop .15s ease reverse; }
+@keyframes sources-drop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Thinking body transition */
+.thinking-enter-active,
+.thinking-leave-active {
+  overflow: hidden;
+  transition: max-height .25s ease, opacity .2s ease;
+}
+.thinking-enter-from,
+.thinking-leave-to { max-height: 0; opacity: 0; }
+.thinking-enter-to,
+.thinking-leave-from { max-height: 600px; opacity: 1; }
+
 .src-card { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; transition: all .15s ease; }
 .src-card:hover { border-color: var(--accent-bdr); }
 .src-card__thumb { width: 48px; height: 34px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
@@ -535,6 +743,6 @@ function sourceLabel(type: string | null) {
 @media (max-width: 768px) {
   .chat-page { grid-template-columns: 1fr; }
   .chat-list { display: none; }
-  .msg__bubble, .msg__sources, .process-block, .process-step, .msg__bubble--streaming { max-width: 92%; }
+  .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block { max-width: 92%; }
 }
 </style>

@@ -220,6 +220,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   cited_item_ids: string[] | null
+  process_log: { thinking: string; steps: Array<{ toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }> } | null
   created_at: string
 }
 

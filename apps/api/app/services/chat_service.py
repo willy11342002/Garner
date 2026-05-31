@@ -2,47 +2,91 @@
 chat_service：AI Chat 對話式 RAG 服務。
 
 流程：
-  用戶訊息 → RAG 搜尋 → streaming 回覆 → 儲存訊息
+  用戶訊息 → plan_tools → 執行各 tool → merge 結果 → streaming 回覆 → 儲存訊息
   每 10 則訊息 → background task 壓縮 memory_summary
 """
 
-import asyncio
 import json
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import chat as crud_chat
+from app.crud import items as crud_items
 from app.models.chat import MessageRole
+from app.models.user_item import UserItem
 from app.schemas.chat import ChatSource
 from app.services import ai_service
 from app.services.explore_service import rag_retrieve
 
 
-async def get_sources_for_session(
-    db: AsyncSession,
-    session_id: UUID,
-    user_id: UUID,
-    query: str,
-) -> tuple[list[dict], list[ChatSource]]:
-    """RAG 搜尋，回傳 (llm_items, source_cards)。"""
-    hits = await rag_retrieve(db, user_id, query, limit=5)
-    llm_items = [
-        {"title": ui.content.title, "summary": ui.content.summary}
-        for ui, _ in hits
-    ]
-    sources = [
-        ChatSource(
-            id=ui.id,
-            url=ui.content.url,
-            title=ui.content.title,
-            thumbnail_url=ui.content.thumbnail_url,
-            source_type=ui.content.source_type.value if ui.content.source_type else None,
-        )
-        for ui, _ in hits
-    ]
-    return llm_items, sources
+# ---------------------------------------------------------------------------
+# Tool 執行層
+# ---------------------------------------------------------------------------
+
+
+def _parse_date(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+async def _exec_semantic_search(
+    db: AsyncSession, user_id: UUID, tool: dict
+) -> list[UserItem]:
+    query = tool.get("query", "")
+    if not query:
+        return []
+    hits = await rag_retrieve(db, user_id, query, limit=6)
+    return [ui for ui, _ in hits]
+
+
+async def _exec_structured_filter(
+    db: AsyncSession, user_id: UUID, tool: dict
+) -> list[UserItem]:
+    tags = tool.get("tags") or None
+    source_type = tool.get("source_type") or None
+    saved_after = _parse_date(tool.get("start_date"))
+    saved_before = _parse_date(tool.get("end_date"))
+
+    # 所有維度都空白就跳過
+    if not any([tags, source_type, saved_after, saved_before]):
+        return []
+
+    return await crud_items.structured_filter(
+        db, user_id,
+        tags=tags,
+        source_type=source_type,
+        saved_after=saved_after,
+        saved_before=saved_before,
+        limit=8,
+    )
+
+
+_TOOL_HANDLERS = {
+    "semantic_search": _exec_semantic_search,
+    "structured_filter": _exec_structured_filter,
+}
+
+
+def _to_chat_source(ui: UserItem) -> ChatSource:
+    return ChatSource(
+        id=ui.id,
+        url=ui.content.url,
+        title=ui.content.title,
+        thumbnail_url=ui.content.thumbnail_url,
+        source_type=ui.content.source_type.value if ui.content.source_type else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stream reply
+# ---------------------------------------------------------------------------
 
 
 async def stream_reply(
@@ -54,7 +98,7 @@ async def stream_reply(
 ):
     """
     Agentic SSE stream：
-      thinking → tool_call → tool_result → sources → delta* → done
+      thinking → tool_call(s) → tool_result(s) → sources → delta* → done
     """
     session = await crud_chat.get_session_with_messages(db, session_id, user_id)
     if not session:
@@ -67,35 +111,70 @@ async def stream_reply(
 
     history = [{"role": m.role.value, "content": m.content} for m in session.messages]
     memory_summary = await crud_chat.get_memory_summary(db, user_id)
+    today = datetime.now(timezone.utc).date().isoformat()
 
-    # ── Step 1：分析問題、決定搜尋策略 ───────────────────────────────────
+    # ── Step 1：規劃工具 ──────────────────────────────────────────────────────
     try:
-        analysis = await ai_service.analyze_query(user_content, history)
-        reasoning = analysis.get("reasoning", "分析問題中...")
-        search_query = analysis.get("search_query", user_content)
+        plan = await ai_service.plan_tools(user_content, history, today)
+        reasoning = plan.get("reasoning", "分析問題中...")
+        tools = plan.get("tools") or []
     except Exception:
         reasoning = "分析問題中..."
-        search_query = user_content
+        tools = [{"name": "semantic_search", "query": user_content}]
 
     yield _sse("thinking", {"text": reasoning})
 
-    # ── Step 2：呼叫 search_knowledge_base 工具 ──────────────────────────
-    yield _sse("tool_call", {"name": "search_knowledge_base", "query": search_query})
+    # ── Step 2：執行各 tool ──────────────────────────────────────────────────
+    if not tools:
+        tools = [{"name": "semantic_search", "query": user_content}]
 
-    llm_items, sources = await get_sources_for_session(db, session_id, user_id, search_query)
+    all_items: list[UserItem] = []
+    seen_ids: set[UUID] = set()
+    # 累積 process log 供儲存到 DB
+    process_steps: list[dict] = []
+
+    for tool in tools:
+        name = tool.get("name", "")
+        handler = _TOOL_HANDLERS.get(name)
+        if not handler:
+            continue
+
+        tool_payload = {k: v for k, v in tool.items()}
+        yield _sse("tool_call", tool_payload)
+
+        try:
+            items = await handler(db, user_id, tool)
+        except Exception:
+            items = []
+
+        new_items = [ui for ui in items if ui.id not in seen_ids]
+        for ui in new_items:
+            seen_ids.add(ui.id)
+            all_items.append(ui)
+
+        tool_result = {
+            "tool": name,
+            "count": len(new_items),
+            "titles": [ui.content.title or ui.content.url for ui in new_items[:3]],
+        }
+        process_steps.append({"toolCall": tool_payload, "toolResult": tool_result})
+        yield _sse("tool_result", tool_result)
+
+    # 最多取 10 筆
+    all_items = all_items[:10]
+    sources = [_to_chat_source(ui) for ui in all_items]
     cited_ids = [s.id for s in sources]
-
-    yield _sse("tool_result", {
-        "count": len(sources),
-        "titles": [s.title or s.url for s in sources[:3]],
-    })
 
     yield _sse("sources", [s.model_dump(mode="json") for s in sources])
 
     # 儲存用戶訊息
     await crud_chat.add_message(db, session_id, MessageRole.user, user_content)
 
-    # ── Step 3：Streaming 回覆 ────────────────────────────────────────────
+    # ── Step 3：Streaming 回覆 ────────────────────────────────────────────────
+    llm_items = [
+        {"title": ui.content.title, "summary": ui.content.summary}
+        for ui in all_items
+    ]
     full_reply = []
     async for chunk in ai_service.chat_stream(user_content, history, llm_items, memory_summary):
         full_reply.append(chunk)
@@ -103,7 +182,11 @@ async def stream_reply(
 
     reply_text = "".join(full_reply)
 
-    await crud_chat.add_message(db, session_id, MessageRole.assistant, reply_text, cited_ids or None)
+    await crud_chat.add_message(
+        db, session_id, MessageRole.assistant, reply_text,
+        cited_ids or None,
+        process_log={"thinking": reasoning, "steps": process_steps},
+    )
     await crud_chat.touch_session(db, session_id)
 
     msg_count = await crud_chat.count_messages(db, session_id)

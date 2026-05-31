@@ -133,6 +133,7 @@ async def add_message(
     role: MessageRole,
     content: str,
     cited_item_ids: list[UUID] | None = None,
+    process_log: dict | None = None,
 ) -> ChatMessage:
     msg = ChatMessage(
         id=uuid4(),
@@ -140,6 +141,7 @@ async def add_message(
         role=role,
         content=content,
         cited_item_ids=cited_item_ids,
+        process_log=process_log,
     )
     db.add(msg)
     await db.commit()

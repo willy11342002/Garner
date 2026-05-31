@@ -184,6 +184,52 @@ async def get_recent_with_embedding(
     return list(result.scalars().all())
 
 
+async def structured_filter(
+    db: AsyncSession,
+    user_id: UUID,
+    tags: list[str] | None = None,
+    source_type: str | None = None,
+    saved_after: datetime | None = None,
+    saved_before: datetime | None = None,
+    limit: int = 8,
+) -> list[UserItem]:
+    """結構化篩選：tag / source_type / 日期範圍，可自由組合。"""
+    from app.models.content_object import SourceType
+
+    filters = [
+        UserItem.user_id == user_id,
+        *_NON_DELETED,
+    ]
+    if saved_after:
+        filters.append(UserItem.saved_at >= saved_after)
+    if saved_before:
+        filters.append(UserItem.saved_at < saved_before)
+    if source_type:
+        try:
+            filters.append(ContentObject.source_type == SourceType(source_type))
+        except ValueError:
+            pass
+
+    q = (
+        select(UserItem)
+        .options(joinedload(UserItem.content))
+        .join(UserItem.content)
+        .where(*filters)
+    )
+
+    if tags:
+        q = (
+            q.join(ItemTag, ItemTag.user_item_id == UserItem.id)
+            .join(Tag, Tag.id == ItemTag.tag_id)
+            .where(Tag.name.in_(tags))
+            .distinct()
+        )
+
+    q = q.order_by(UserItem.saved_at.desc()).limit(limit)
+    result = await db.execute(q)
+    return list(result.scalars().unique().all())
+
+
 async def get_tag_trends(
     db: AsyncSession, user_id: UUID
 ) -> list[tuple[str, int, int]]:

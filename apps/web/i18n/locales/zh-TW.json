@@ -47,7 +47,8 @@
     "rename_placeholder": "對話名稱...",
     "thinking": "推理過程",
     "tool_call": "搜尋知識庫",
-    "tool_result": "找到 {count} 筆相關內容"
+    "tool_result": "找到 {count} 筆相關內容",
+    "sources": "{count} 筆來源"
   },
   "security": {
     "title": "安全性",

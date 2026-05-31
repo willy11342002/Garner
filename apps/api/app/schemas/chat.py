@@ -50,6 +50,7 @@ class ChatMessageRead(BaseModel):
     role: str
     content: str
     cited_item_ids: list[UUID] | None
+    process_log: dict | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

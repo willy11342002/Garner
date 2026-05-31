@@ -197,24 +197,49 @@ async def analyze_full_chain(items: list[dict]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-_THINK_SYSTEM = """\
-你是 Vela 知識助理的推理引擎。用戶提出了一個問題，你需要：
-1. 分析問題的核心意圖
-2. 決定最佳的搜尋策略
-以 JSON 回傳，格式如下（只回傳 JSON，不要 markdown fences）：
-{
-  "reasoning": "2-3 句分析用戶問題的推理過程，用繁體中文",
-  "search_query": "最適合向量搜尋的查詢字串（可以跟原問題不同）"
-}
+_PLAN_SYSTEM = """\
+你是 Vela 知識助理的規劃引擎。分析用戶問題，決定要呼叫哪些工具來查詢個人知識庫。
+
+可用工具：
+
+1. semantic_search
+   語意向量搜尋，適合概念性／主題性問題。
+   參數：{{"name": "semantic_search", "query": "搜尋字串"}}
+
+2. structured_filter
+   結構化篩選，所有參數皆選填，可自由組合：
+   - tags（list[str]）：按標籤篩選，OR 邏輯，符合任一標籤即回傳
+   - source_type（str）：按來源類型，值為 "youtube" / "article" / "ig"
+   - start_date（str）：儲存日期下限，格式 YYYY-MM-DD
+   - end_date（str）：儲存日期上限，格式 YYYY-MM-DD
+   參數：{{"name": "structured_filter", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "..."}}
+
+規則：
+- 兩個工具可以同時呼叫，結果自動合併去重
+- structured_filter 省略的參數代表不篩選該維度，不需要全填
+- 如果問題同時有語意需求又有篩選條件，兩個工具一起用效果最好
+- 只輸出 JSON，不要 markdown fences
+
+今天日期：{today}
+
+輸出格式：
+{{
+  "reasoning": "2-3 句分析推理，繁體中文",
+  "tools": [
+    {{"name": "工具名稱", ...其他參數}}
+  ]
+}}
 """
 
-async def analyze_query(query: str, history: list[dict]) -> dict:
-    """分析用戶問題，回傳 reasoning + search_query。"""
+
+async def plan_tools(query: str, history: list[dict], today: str) -> dict:
+    """分析用戶問題，回傳 reasoning + tool 清單。"""
     history_text = "\n".join(
         f"{'用戶' if m['role'] == 'user' else '助理'}：{m['content']}"
         for m in history[-4:]
     ) if history else ""
     prompt = f"對話脈絡：\n{history_text}\n\n用戶最新問題：{query}" if history_text else f"用戶問題：{query}"
+    system = _PLAN_SYSTEM.format(today=today)
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             OPENROUTER_URL,
@@ -222,7 +247,7 @@ async def analyze_query(query: str, history: list[dict]) -> dict:
             json={
                 "model": "anthropic/claude-3-5-haiku",
                 "messages": [
-                    {"role": "system", "content": _THINK_SYSTEM},
+                    {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
             },

@@ -47,7 +47,8 @@
     "rename_placeholder": "Conversation name...",
     "thinking": "Reasoning",
     "tool_call": "Searching knowledge base",
-    "tool_result": "Found {count} relevant items"
+    "tool_result": "Found {count} relevant items",
+    "sources": "{count} sources"
   },
   "security": {
     "title": "Security",
