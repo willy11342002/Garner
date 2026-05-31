@@ -3,11 +3,24 @@
     <nav class="nav">
       <NuxtLink :to="isLoggedIn ? '/app' : '/'" class="nav__logo">Vela</NuxtLink>
       <div class="nav__tabs">
-        <NuxtLink
-          to="/app/explore"
-          class="nav__tab"
-          :class="{ 'nav__tab--active': route.path.startsWith('/app/explore') }"
-        >{{ t('nav.explore') }}</NuxtLink>
+        <div class="nav__tab-group">
+          <span
+            class="nav__tab"
+            :class="{ 'nav__tab--active': route.path.startsWith('/app/explore') }"
+          >{{ t('nav.explore') }}</span>
+          <div class="nav__explore-menu">
+            <div class="nav__explore-menu-inner">
+              <NuxtLink to="/app/explore/surprise" class="nav__explore-item" active-class="nav__explore-item--active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                {{ t('explore.tab_surprise') }}
+              </NuxtLink>
+              <NuxtLink to="/app/explore/browse" class="nav__explore-item" active-class="nav__explore-item--active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                {{ t('explore.tab_browse') }}
+              </NuxtLink>
+            </div>
+          </div>
+        </div>
         <NuxtLink
           to="/app/chat"
           class="nav__tab"
@@ -325,6 +338,70 @@ watch(() => route.path, () => {
 </script>
 
 <style>
+.nav__tab-group {
+  position: relative;
+  display: inline-flex;
+}
+
+.nav__tab-group:hover .nav__explore-menu {
+  pointer-events: auto;
+}
+
+.nav__tab-group:hover .nav__explore-menu-inner {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.nav__explore-menu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-top: 6px;
+  width: 160px;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.nav__explore-menu-inner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: 4px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.nav__explore-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  color: var(--text-mid);
+  border-radius: 7px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.nav__explore-item:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.nav__explore-item--active {
+  color: var(--accent);
+}
+
+.nav__explore-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
 .nav__user {
   position: relative;
 }

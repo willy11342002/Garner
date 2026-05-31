@@ -12,10 +12,6 @@
           <div class="stat"><b>{{ stats ? '+' + stats.weekly_new : '—' }}</b>{{ $t('explore.stat_weekly') }}</div>
         </div>
       </div>
-      <nav class="ex-tabs">
-        <NuxtLink class="ex-tab" to="/app/explore/surprise" active-class="ex-tab--active">{{ $t('explore.tab_surprise') }}</NuxtLink>
-        <NuxtLink class="ex-tab" to="/app/explore/browse" active-class="ex-tab--active">{{ $t('explore.tab_browse') }}</NuxtLink>
-      </nav>
     </header>
 
     <NuxtPage />
@@ -38,14 +34,10 @@ onMounted(async () => {
 </script>
 
 <style>
-.ex-head { padding: 24px 32px 0; border-bottom: 1px solid var(--border); max-width: 1400px; margin: 0 auto; }
-.ex-head__top { display: flex; align-items: flex-end; gap: 24px; padding-bottom: 14px; }
+.ex-head { padding: 24px 32px 20px; border-bottom: 1px solid var(--border); max-width: 1400px; margin: 0 auto; }
+.ex-head__top { display: flex; align-items: flex-end; gap: 24px; }
 .ex-head__stats { margin-left: auto; display: flex; gap: 18px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
 .stat b { display: block; color: var(--text); font-size: 16px; font-weight: 500; margin-bottom: 1px; }
-.ex-tabs { display: flex; gap: 0; margin-bottom: -1px; }
-.ex-tab { padding: 12px 18px 14px; border-bottom: 2px solid transparent; font-family: var(--font-ui); font-size: 13.5px; font-weight: 500; color: var(--text-mid); transition: all .15s ease; }
-.ex-tab:hover { color: var(--text); }
-.ex-tab--active { color: var(--accent); border-bottom-color: var(--accent); }
 .ex-pane { max-width: 1400px; margin: 0 auto; padding: 28px 32px 80px; }
 
 @media (max-width: 980px) { .ex-head { padding: 18px 16px 0; } .ex-pane { padding: 20px 16px 60px; } }
