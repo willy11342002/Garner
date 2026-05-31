@@ -10,8 +10,7 @@
     "chain": {
       "eyebrow": "連鎖探索",
       "desc": "從一張卡跳到下一張，每跳一次 AI 分析關聯與創意發想",
-      "start_forgotten": "從遺忘內容開始",
-      "start_recent": "從最近關注開始",
+      "start_lucky": "好手氣",
       "pick_label": "選擇起點：",
       "no_title": "（無標題）",
       "reset": "重新開始",
@@ -19,6 +18,9 @@
       "ideation_label": "✦ 創意發想",
       "question_label": "? 引出的問題",
       "start_hint": "這是起點，選擇下方的卡片開始探索吧。",
+      "label_start": "起點",
+      "label_current": "第 {n} 站",
+      "detail_open": "開啟完整內容",
       "loading_hop": "AI 正在分析關聯...",
       "full_btn": "✦ 分析整條探索路徑（{n} 個節點）",
       "loading_full": "AI 正在分析整條路徑...",
@@ -138,6 +140,12 @@
       "light": "淺色",
       "system": "隨系統",
       "language": "介面語言"
+    },
+    "explore": {
+      "title": "探索設定",
+      "public_chain_label": "從公開集合探索",
+      "public_chain_desc": "知識庫內容不足時，自動補入公開集合的知識點，讓連鎖探索更豐富。",
+      "public_chain_badge": "公開知識"
     },
     "danger": {
       "title": "危險區域",

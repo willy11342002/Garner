@@ -3,6 +3,7 @@ export interface User {
   email: string | null
   username: string
   avatar_url: string | null
+  allow_public_chain: boolean
 }
 
 export interface Item {
@@ -187,6 +188,7 @@ export interface ChainItem {
   thumbnail_url: string | null
   source_type: string | null
   saved_at: string
+  is_public?: boolean
 }
 
 export interface ChainHopAnalysis {

@@ -88,6 +88,7 @@ class ChainItem(BaseModel):
     thumbnail_url: str | None
     source_type: str | None
     saved_at: datetime
+    is_public: bool = False
 
 
 class ChainHopAnalysis(BaseModel):

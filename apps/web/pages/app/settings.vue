@@ -25,6 +25,7 @@ const providerName = computed(() => {
 const editUsername = ref('')
 const isSaving = ref(false)
 const saveStatus = ref<'' | 'success' | 'error'>('')
+const isProfileChanged = computed(() => editUsername.value.trim() !== (authStore.user?.username ?? ''))
 const isUploadingAvatar = ref(false)
 const avatarInput = ref<HTMLInputElement | null>(null)
 
@@ -72,6 +73,33 @@ const initials = computed(() => {
   return name.slice(0, 2).toUpperCase()
 })
 
+// ── Explore settings ──
+const editAllowPublicChain = ref(false)
+const isExploreChanged = computed(() => editAllowPublicChain.value !== (authStore.user?.allow_public_chain ?? false))
+const isSavingExplore = ref(false)
+const exploreStatus = ref<'' | 'success' | 'error'>('')
+
+watch(
+  () => authStore.user?.allow_public_chain,
+  (val) => { editAllowPublicChain.value = val ?? false },
+  { immediate: true },
+)
+
+async function saveExplore() {
+  if (isSavingExplore.value) return
+  isSavingExplore.value = true
+  exploreStatus.value = ''
+  try {
+    await authStore.updateProfile({ allow_public_chain: editAllowPublicChain.value })
+    exploreStatus.value = 'success'
+    setTimeout(() => { exploreStatus.value = '' }, 2500)
+  } catch {
+    exploreStatus.value = 'error'
+  } finally {
+    isSavingExplore.value = false
+  }
+}
+
 // ── Delete account ──
 const showDeleteDialog = ref(false)
 const deleteConfirmInput = ref('')
@@ -108,6 +136,25 @@ function openDeleteDialog() {
           <div class="settings-card">
             <div class="settings-card__head">
               <h2 class="settings-card__title">{{ t('settings.profile.title') }}</h2>
+              <div class="settings-card__head-actions">
+                <p v-if="saveStatus === 'error'" class="save-error">{{ t('settings.profile.save_error') }}</p>
+                <button
+                  class="btn-save"
+                  :class="{ 'btn-save--success': saveStatus === 'success' }"
+                  :disabled="isSaving || !editUsername.trim() || !isProfileChanged"
+                  @click="saveProfile"
+                >
+                  <template v-if="saveStatus === 'success'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    {{ t('settings.profile.save_success') }}
+                  </template>
+                  <template v-else>
+                    {{ isSaving ? t('settings.profile.saving') : t('settings.profile.save') }}
+                  </template>
+                </button>
+              </div>
             </div>
             <div class="settings-card__body">
 
@@ -158,27 +205,50 @@ function openDeleteDialog() {
                 <span class="settings-field__value">{{ email }}</span>
               </div>
 
-              <!-- Save button -->
-              <div class="profile-actions">
+            </div>
+          </div>
+        </section>
+
+        <!-- Explore section -->
+        <section class="settings-section">
+          <div class="settings-card">
+            <div class="settings-card__head">
+              <h2 class="settings-card__title">{{ t('settings.explore.title') }}</h2>
+              <div class="settings-card__head-actions">
+                <p v-if="exploreStatus === 'error'" class="save-error">{{ t('settings.profile.save_error') }}</p>
                 <button
                   class="btn-save"
-                  :class="{ 'btn-save--success': saveStatus === 'success' }"
-                  :disabled="isSaving || !editUsername.trim()"
-                  @click="saveProfile"
+                  :class="{ 'btn-save--success': exploreStatus === 'success' }"
+                  :disabled="isSavingExplore || !isExploreChanged"
+                  @click="saveExplore"
                 >
-                  <template v-if="saveStatus === 'success'">
+                  <template v-if="exploreStatus === 'success'">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
                     {{ t('settings.profile.save_success') }}
                   </template>
                   <template v-else>
-                    {{ isSaving ? t('settings.profile.saving') : t('settings.profile.save') }}
+                    {{ isSavingExplore ? t('settings.profile.saving') : t('settings.profile.save') }}
                   </template>
                 </button>
-                <p v-if="saveStatus === 'error'" class="save-error">{{ t('settings.profile.save_error') }}</p>
               </div>
-
+            </div>
+            <div class="settings-card__body">
+              <div class="settings-toggle-row settings-field settings-field--last">
+                <div class="settings-toggle-info">
+                  <span class="settings-field__label">{{ t('settings.explore.public_chain_label') }}</span>
+                  <span class="settings-toggle-desc">{{ t('settings.explore.public_chain_desc') }}</span>
+                </div>
+                <button
+                  class="toggle-btn"
+                  :class="{ 'toggle-btn--on': editAllowPublicChain }"
+                  :disabled="isSavingExplore"
+                  @click="editAllowPublicChain = !editAllowPublicChain"
+                >
+                  <span class="toggle-thumb" />
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -256,6 +326,15 @@ function openDeleteDialog() {
 .settings-card__head {
   padding: 16px 22px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.settings-card__head-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .settings-card__title {
   font-family: var(--font-ui);
@@ -415,6 +494,52 @@ function openDeleteDialog() {
   font-size: 12px;
   color: var(--danger, #e85555);
   margin: 0;
+}
+
+/* Toggle row */
+.settings-toggle-row {
+  align-items: flex-start !important;
+}
+.settings-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+.settings-toggle-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.toggle-btn {
+  position: relative;
+  width: 38px;
+  height: 21px;
+  border-radius: 11px;
+  background: var(--border2);
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .18s ease, border-color .18s ease;
+  margin-top: 1px;
+}
+.toggle-btn--on { background: var(--accent); border-color: var(--accent); }
+.toggle-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform .18s ease, background .18s ease;
+  display: block;
+}
+.toggle-btn--on .toggle-thumb {
+  transform: translateX(17px);
+  background: #000;
 }
 
 /* Danger Zone */

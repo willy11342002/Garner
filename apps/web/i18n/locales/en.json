@@ -10,8 +10,7 @@
     "chain": {
       "eyebrow": "Chain Explorer",
       "desc": "Jump from card to card — AI analyzes the connection and sparks ideas each hop",
-      "start_forgotten": "Start from forgotten items",
-      "start_recent": "Start from recent favorites",
+      "start_lucky": "I'm feeling lucky",
       "pick_label": "Choose a starting point:",
       "no_title": "(No title)",
       "reset": "Start over",
@@ -19,6 +18,9 @@
       "ideation_label": "✦ Ideas",
       "question_label": "? Question raised",
       "start_hint": "This is the starting point — pick a card below to begin exploring.",
+      "label_start": "Start",
+      "label_current": "Stop {n}",
+      "detail_open": "Open full item",
       "loading_hop": "AI is analyzing the connection...",
       "full_btn": "✦ Analyze full path ({n} nodes)",
       "loading_full": "AI is analyzing the full path...",
@@ -138,6 +140,12 @@
       "light": "Light",
       "system": "Use device theme",
       "language": "Interface language"
+    },
+    "explore": {
+      "title": "Explore Settings",
+      "public_chain_label": "Draw from public collections",
+      "public_chain_desc": "When your library is sparse, supplement chain exploration with knowledge from public collections.",
+      "public_chain_badge": "Public knowledge"
     },
     "danger": {
       "title": "Danger Zone",

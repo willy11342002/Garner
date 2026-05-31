@@ -56,7 +56,7 @@ async def get_surprise(current_user: CurrentUser, db: DbSession):
 async def chain_start(
     current_user: CurrentUser,
     db: DbSession,
-    type: str = Query(default="recent", pattern="^(forgotten|recent)$"),
+    type: str = Query(default="random", pattern="^(forgotten|recent|random)$"),
 ):
     return await explore_service.get_chain_start_items(db, UUID(current_user["sub"]), type)
 

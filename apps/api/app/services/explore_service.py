@@ -319,14 +319,140 @@ def _to_chain_item(ui: "UserItem") -> ChainItem:
     )
 
 
+async def _get_public_chain_items(
+    db: AsyncSession,
+    embedding: list[float] | None,
+    limit: int,
+    exclude_content_ids: list[UUID] | None = None,
+) -> list[ChainItem]:
+    """從所有 ContentObjects 做向量搜尋，排除用戶自己已有的，視為公開知識。"""
+    from sqlalchemy import select
+    from app.models.content_object import ContentObject
+
+    filters = [ContentObject.embedding.is_not(None)]
+    if exclude_content_ids:
+        filters.append(ContentObject.id.not_in(exclude_content_ids))
+
+    if embedding is not None:
+        distance_col = ContentObject.embedding.cosine_distance(embedding).label("distance")
+        result = await db.execute(
+            select(ContentObject, distance_col)
+            .where(*filters, distance_col <= 0.45)
+            .order_by(distance_col)
+            .limit(limit)
+        )
+        contents = [row.ContentObject for row in result.all()]
+    else:
+        result = await db.execute(
+            select(ContentObject)
+            .where(*filters)
+            .order_by(ContentObject.parsed_at.desc())
+            .limit(limit)
+        )
+        contents = list(result.scalars().all())
+
+    return [
+        ChainItem(
+            id=co.id,
+            url=co.url,
+            title=co.title,
+            thumbnail_url=co.thumbnail_url,
+            source_type=co.source_type.value if co.source_type else None,
+            saved_at=co.parsed_at or dt.now(timezone.utc),
+            is_public=True,
+        )
+        for co in contents
+    ]
+
+
+async def _get_user_allow_public_chain(db: AsyncSession, user_id: UUID) -> bool:
+    from sqlalchemy import select
+    from app.models.user import User
+    result = await db.execute(select(User.allow_public_chain).where(User.id == user_id))
+    val = result.scalar_one_or_none()
+    return bool(val)
+
+
 async def get_chain_start_items(
     db: AsyncSession, user_id: UUID, start_type: str
 ) -> list[ChainItem]:
-    if start_type == "forgotten":
-        items = await crud_items.get_forgotten(db, user_id, limit=3)
+    allow_public = await _get_user_allow_public_chain(db, user_id)
+    own_limit = 2 if allow_public else 3
+
+    if start_type == "random":
+        items = await crud_items.get_random_with_embedding(db, user_id, limit=own_limit)
+    elif start_type == "forgotten":
+        items = await crud_items.get_forgotten(db, user_id, limit=own_limit)
     else:
-        items = await crud_items.get_recent_with_embedding(db, user_id, limit=3)
-    return [_to_chain_item(ui) for ui in items]
+        items = await crud_items.get_recent_with_embedding(db, user_id, limit=own_limit)
+
+    result = [_to_chain_item(ui) for ui in items]
+
+    if allow_public:
+        needed = 3 - len(result)
+        exclude_content_ids = [ui.content_id for ui in items if ui.content_id]
+        public_items = await _get_public_chain_items(db, None, needed, exclude_content_ids)
+        result.extend(public_items)
+
+    return result
+
+
+async def _fetch_content_for_chain(
+    db: AsyncSession,
+    item_id: UUID,
+    user_id: UUID,
+) -> tuple[str | None, str | None, list[float] | None]:
+    """嘗試先以 UserItem.id 查找，再以 ContentObject.id 查找（公開 items）。
+    回傳 (title, summary, embedding)。
+    """
+    from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
+    from app.models.content_object import ContentObject
+
+    r = await db.execute(
+        select(UserItem)
+        .options(joinedload(UserItem.content))
+        .where(UserItem.id == item_id, UserItem.user_id == user_id)
+    )
+    ui = r.scalar_one_or_none()
+    if ui:
+        return ui.content.title, ui.content.summary, ui.content.embedding
+
+    r2 = await db.execute(
+        select(ContentObject).where(ContentObject.id == item_id)
+    )
+    co = r2.scalar_one_or_none()
+    if co:
+        return co.title, co.summary, co.embedding
+
+    return None, None, None
+
+
+async def _get_chain_cutoff(db: AsyncSession) -> float:
+    from sqlalchemy import select
+    from app.models.app_setting import AppSetting
+    result = await db.execute(select(AppSetting.value).where(AppSetting.key == "chain_distance_cutoff"))
+    val = result.scalar_one_or_none()
+    try:
+        return float(val) if val is not None else 0.45
+    except (TypeError, ValueError):
+        return 0.45
+
+
+async def _resolve_content_ids(
+    db: AsyncSession, user_id: UUID, item_ids: list[UUID]
+) -> list[UUID]:
+    """將 UserItem.id 清單轉換為對應的 ContentObject.id 清單（公開 item 直接視為 content_id）。"""
+    from sqlalchemy import select
+    content_ids: list[UUID] = []
+    for iid in item_ids:
+        r = await db.execute(
+            select(UserItem.content_id)
+            .where(UserItem.id == iid, UserItem.user_id == user_id)
+        )
+        cid = r.scalar_one_or_none()
+        content_ids.append(cid if cid is not None else iid)
+    return content_ids
 
 
 async def get_chain_candidates(
@@ -339,6 +465,7 @@ async def get_chain_candidates(
     from sqlalchemy.orm import joinedload
     from app.models.content_object import ContentObject
 
+    # 先嘗試當作 UserItem.id 查
     result = await db.execute(
         select(UserItem)
         .options(joinedload(UserItem.content))
@@ -346,17 +473,45 @@ async def get_chain_candidates(
         .where(UserItem.id == item_id, UserItem.user_id == user_id)
     )
     current = result.scalar_one_or_none()
-    if not current or not current.content.embedding:
+
+    if current:
+        embedding = current.content.embedding
+        current_content_id = current.content_id
+    else:
+        # 可能是公開 item（ContentObject.id）
+        r2 = await db.execute(select(ContentObject).where(ContentObject.id == item_id))
+        co = r2.scalar_one_or_none()
+        embedding = co.embedding if co else None
+        current_content_id = item_id
+
+    if embedding is None:
         return []
 
-    hits = await crud_items.semantic_search(
+    cutoff = await _get_chain_cutoff(db)
+    allow_public = await _get_user_allow_public_chain(db, user_id)
+    own_limit = 3 if allow_public else 4
+
+    # 解析所有 chain item 的 content_id，用於排除相同內容（即使 UserItem.id 不同）
+    chain_content_ids = await _resolve_content_ids(db, user_id, [item_id, *exclude_ids])
+    exclude_content_ids = list({cid for cid in chain_content_ids if cid is not None})
+
+    own_hits = await crud_items.semantic_search(
         db,
         user_id,
-        embedding=current.content.embedding,
-        limit=4,
+        embedding=embedding,
+        limit=own_limit,
         exclude_ids=[item_id, *exclude_ids],
+        exclude_content_ids=exclude_content_ids,
+        cutoff=cutoff,
     )
-    return [_to_chain_item(ui) for ui, _ in hits]
+    candidates = [_to_chain_item(ui) for ui, _ in own_hits]
+
+    if allow_public:
+        needed = 4 - len(candidates)
+        public_items = await _get_public_chain_items(db, embedding, needed, exclude_content_ids)
+        candidates.extend(public_items)
+
+    return candidates
 
 
 async def analyze_hop(
@@ -365,25 +520,14 @@ async def analyze_hop(
     from_item_id: UUID,
     to_item_id: UUID,
 ) -> ChainHopAnalysis:
-    from sqlalchemy import select
-    from sqlalchemy.orm import joinedload
-
-    async def _fetch(iid: UUID) -> "UserItem":
-        r = await db.execute(
-            select(UserItem)
-            .options(joinedload(UserItem.content))
-            .where(UserItem.id == iid, UserItem.user_id == user_id)
-        )
-        return r.scalar_one()
-
-    from_item = await _fetch(from_item_id)
-    to_item = await _fetch(to_item_id)
+    title_a, summary_a, _ = await _fetch_content_for_chain(db, from_item_id, user_id)
+    title_b, summary_b, _ = await _fetch_content_for_chain(db, to_item_id, user_id)
 
     raw = await ai_service.analyze_chain_hop(
-        title_a=from_item.content.title,
-        summary_a=from_item.content.summary,
-        title_b=to_item.content.title,
-        summary_b=to_item.content.summary,
+        title_a=title_a,
+        summary_a=summary_a,
+        title_b=title_b,
+        summary_b=summary_b,
     )
     return ChainHopAnalysis(
         connection=raw.get("connection", ""),
@@ -397,19 +541,11 @@ async def analyze_full_chain(
     user_id: UUID,
     item_ids: list[UUID],
 ) -> ChainFullAnalysis:
-    from sqlalchemy import select
-    from sqlalchemy.orm import joinedload
-
     items = []
     for iid in item_ids:
-        r = await db.execute(
-            select(UserItem)
-            .options(joinedload(UserItem.content))
-            .where(UserItem.id == iid, UserItem.user_id == user_id)
-        )
-        ui = r.scalar_one_or_none()
-        if ui:
-            items.append({"title": ui.content.title, "summary": ui.content.summary})
+        title, summary, _ = await _fetch_content_for_chain(db, iid, user_id)
+        if title or summary:
+            items.append({"title": title, "summary": summary})
 
     text = await ai_service.analyze_full_chain(items)
     return ChainFullAnalysis(analysis=text)

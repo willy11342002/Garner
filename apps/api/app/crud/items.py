@@ -120,6 +120,7 @@ async def semantic_search(
     saved_before: datetime | None = None,
     saved_after: datetime | None = None,
     exclude_ids: list[UUID] | None = None,
+    exclude_content_ids: list[UUID] | None = None,
     cutoff: float = DISTANCE_CUTOFF,
 ) -> list[tuple[UserItem, float]]:
     """向量搜尋，回傳 (UserItem, cosine_distance) 清單。可由多個 service 複用。"""
@@ -134,6 +135,8 @@ async def semantic_search(
         filters.append(UserItem.saved_at >= saved_after)
     if exclude_ids:
         filters.append(UserItem.id.not_in(exclude_ids))
+    if exclude_content_ids:
+        filters.append(UserItem.content_id.not_in(exclude_content_ids))
 
     distance_col = ContentObject.embedding.cosine_distance(embedding).label("distance")
     result = await db.execute(
@@ -183,6 +186,25 @@ async def get_recent_with_embedding(
             UserItem.saved_at >= cutoff,
         )
         .order_by(UserItem.saved_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_random_with_embedding(
+    db: AsyncSession, user_id: UUID, limit: int = 3
+) -> list[UserItem]:
+    """從所有有 embedding 的 items 中隨機取樣（DB 層 ORDER BY RANDOM()）。"""
+    result = await db.execute(
+        select(UserItem)
+        .options(joinedload(UserItem.content))
+        .join(UserItem.content)
+        .where(
+            UserItem.user_id == user_id,
+            *_NON_DELETED,
+            ContentObject.embedding.is_not(None),
+        )
+        .order_by(func.random())
         .limit(limit)
     )
     return list(result.scalars().all())

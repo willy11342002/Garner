@@ -12,7 +12,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function updateProfile(data: { username?: string; avatar_url?: string }) {
+  async function updateProfile(data: { username?: string; avatar_url?: string; allow_public_chain?: boolean }) {
     const apiFetch = useApiFetch()
     user.value = await apiFetch<User>('/auth/me', { method: 'PUT', body: data })
   }

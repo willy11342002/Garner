@@ -8,6 +8,7 @@ class UserRead(BaseModel):
     email: EmailStr | None = None
     username: str
     avatar_url: str | None = None
+    allow_public_chain: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -15,3 +16,4 @@ class UserRead(BaseModel):
 class UserUpdate(BaseModel):
     username: str | None = None
     avatar_url: str | None = None
+    allow_public_chain: bool | None = None

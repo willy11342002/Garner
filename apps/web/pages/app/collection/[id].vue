@@ -89,31 +89,7 @@
       </a>
     </section>
 
-    <Transition name="id-fade-t">
-      <div v-if="activeItem" class="id-overlay" @click.self="activeItem = null">
-        <div class="id-panel fadeup">
-          <button class="id-close" @click="activeItem = null">×</button>
-          <div class="id-media">
-            <img v-if="activeItem.thumbnail_url" :src="activeItem.thumbnail_url" class="id-media__img" :alt="activeItem.title ?? ''" />
-            <div v-else :class="`placeholder placeholder--${colors[0]} id-media__ph`">
-              <div class="placeholder__stripes"></div>
-            </div>
-            <span class="source-badge id-media__badge">{{ sourceBadge(activeItem.source_type) }}</span>
-          </div>
-          <div class="id-body">
-            <div class="id-body__meta mono">{{ sourceLabel(activeItem.source_type) }}</div>
-            <h1 class="id-body__title">{{ activeItem.title || activeItem.url }}</h1>
-            <div v-if="activeItem.summary" class="id-body__summary">
-              <div class="id-body__summary-label mono">SUMMARY</div>
-              <p class="id-body__summary-text">{{ activeItem.summary }}</p>
-            </div>
-            <div class="id-body__actions">
-              <a :href="activeItem.url" target="_blank" rel="noopener noreferrer" class="btn btn--accent">開啟原文 →</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <ItemDetailModal :item="activeItem" @close="activeItem = null" />
   </div>
 
   <div v-else-if="error" class="empty-state" style="padding:80px 32px;text-align:center;">

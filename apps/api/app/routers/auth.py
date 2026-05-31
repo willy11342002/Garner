@@ -74,7 +74,12 @@ async def update_me(body: UserUpdate, current_user: CurrentUser, db: DbSession):
         if not username or len(username) > 50:
             raise HTTPException(status_code=422, detail="Username must be 1–50 characters")
 
-    await crud_users.update_user(db, user, username=username, avatar_url=body.avatar_url)
+    await crud_users.update_user(
+        db, user,
+        username=username,
+        avatar_url=body.avatar_url,
+        allow_public_chain=body.allow_public_chain,
+    )
     await db.commit()
     await db.refresh(user)
     return user

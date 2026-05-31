@@ -9,13 +9,12 @@
 
       <!-- 起點選擇 -->
       <div v-if="!chain.length" class="chain-start">
-        <button class="chain-start__btn" :disabled="chainLoading" @click="startChain('forgotten')">
-          <span class="chain-start__icon">◌</span>
-          <span>{{ $t('explore.chain.start_forgotten') }}</span>
-        </button>
-        <button class="chain-start__btn" :disabled="chainLoading" @click="startChain('recent')">
-          <span class="chain-start__icon">◈</span>
-          <span>{{ $t('explore.chain.start_recent') }}</span>
+        <button class="chain-start__lucky" :disabled="chainLoading" @click="startChain">
+          <span class="chain-start__lucky-icon">{{ chainLoading ? '' : '◎' }}</span>
+          <span v-if="chainLoading" class="chain-start__lucky-pulse">
+            <span></span><span></span><span></span>
+          </span>
+          <span>{{ $t('explore.chain.start_lucky') }}</span>
         </button>
       </div>
 
@@ -26,14 +25,21 @@
           <button
             v-for="item in startCandidates"
             :key="item.id"
-            class="cand-card"
+            class="card chain-cand-card"
             @click="pickStart(item)"
           >
-            <div class="cand-card__thumb">
-              <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" style="width:100%;height:100%;object-fit:cover;">
+            <div class="card__thumb">
+              <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="card__img">
               <div v-else class="placeholder placeholder--b"><div class="placeholder__stripes"></div></div>
+              <span class="source-badge">{{ sourceLabel(item.source_type) }}</span>
+              <span v-if="item.is_public" class="chain-public-badge chain-public-badge--thumb">公開</span>
             </div>
-            <div class="cand-card__title">{{ item.title || item.url }}</div>
+            <div class="card__body">
+              <h3 class="card__title">{{ item.title || item.url }}</h3>
+              <div class="card__footer">
+                <span class="mono">{{ timeAgo(item.saved_at) }}</span>
+              </div>
+            </div>
           </button>
         </div>
       </div>
@@ -46,7 +52,7 @@
             <button
               class="chain-node"
               :class="{ 'chain-node--active': i === activeHopIdx }"
-              @click="activeHopIdx = i"
+              @click="i === activeHopIdx ? openDetail(hop.item) : activeHopIdx = i"
             >
               <img v-if="hop.item.thumbnail_url" :src="hop.item.thumbnail_url" :alt="hop.item.title || ''" class="chain-node__thumb">
               <div v-else class="chain-node__thumb chain-node__thumb--empty"></div>
@@ -59,18 +65,6 @@
 
         <!-- 當前節點詳情 -->
         <div class="chain-detail">
-          <!-- 當前 item 卡 -->
-          <NuxtLink class="chain-item-card" :to="`/app/item/${activeHop.item.id}`">
-            <div class="chain-item-card__thumb">
-              <img v-if="activeHop.item.thumbnail_url" :src="activeHop.item.thumbnail_url" :alt="activeHop.item.title || ''" style="width:100%;height:100%;object-fit:cover;">
-              <div v-else class="placeholder placeholder--c"><div class="placeholder__stripes"></div></div>
-            </div>
-            <div class="chain-item-card__body">
-              <div class="chain-item-card__title">{{ activeHop.item.title || activeHop.item.url }}</div>
-              <div class="chain-item-card__meta">{{ timeAgo(activeHop.item.saved_at) }} · {{ sourceLabel(activeHop.item.source_type) }}</div>
-            </div>
-          </NuxtLink>
-
           <!-- AI 分析（這一跳） -->
           <template v-if="activeHop.analysis">
             <div class="hop-analysis fadeup">
@@ -89,7 +83,7 @@
               </div>
             </div>
           </template>
-          <div v-else-if="activeHopIdx === 0" class="hop-start-hint">{{ $t('explore.chain.start_hint') }}</div>
+          <div v-else-if="activeHopIdx === 0 && chain.length === 1" class="hop-start-hint">{{ $t('explore.chain.start_hint') }}</div>
 
           <!-- 分析 loading -->
           <div v-if="chainLoading && activeHopIdx === chain.length - 1 && !activeHop.analysis" class="hop-loading">
@@ -118,34 +112,52 @@
         <div v-if="activeHopIdx === chain.length - 1" class="chain-next">
           <p class="chain-next__label">{{ $t('explore.chain.next_label') }}</p>
           <div v-if="nextLoading" class="chain-cand-grid">
-            <div v-for="n in 4" :key="n" class="cand-card cand-card--skel">
-              <div class="cand-card__thumb"></div>
-              <div class="skel-line" style="width:80%; height:12px; margin:8px auto;"></div>
+            <div v-for="n in 4" :key="n" class="card chain-cand-card chain-cand-card--skel">
+              <div class="card__thumb"></div>
+              <div class="card__body">
+                <div class="skel-line" style="width:85%; height:12px;"></div>
+                <div class="skel-line" style="width:50%; height:10px; margin-top:6px;"></div>
+              </div>
             </div>
           </div>
           <div v-else-if="activeHop.candidates.length" class="chain-cand-grid">
             <button
               v-for="item in activeHop.candidates"
               :key="item.id"
-              class="cand-card"
+              class="card chain-cand-card"
               @click="jumpTo(item)"
             >
-              <div class="cand-card__thumb">
-                <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" style="width:100%;height:100%;object-fit:cover;">
+              <div class="card__thumb">
+                <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="card__img">
                 <div v-else class="placeholder placeholder--d"><div class="placeholder__stripes"></div></div>
+                <span class="source-badge">{{ sourceLabel(item.source_type) }}</span>
+                <span v-if="item.is_public" class="chain-public-badge chain-public-badge--thumb">公開</span>
               </div>
-              <div class="cand-card__title">{{ item.title || item.url }}</div>
+              <div class="card__body">
+                <h3 class="card__title">{{ item.title || item.url }}</h3>
+                <div class="card__footer">
+                  <span class="mono">{{ timeAgo(item.saved_at) }}</span>
+                </div>
+              </div>
             </button>
           </div>
           <p v-else class="chain-empty">{{ $t('explore.chain.empty') }}</p>
         </div>
       </template>
     </section>
+  <ItemDetailModal :itemId="detailItemId" @close="detailItemId = null" />
   </main>
 </template>
 
 <script setup lang="ts">
 import type { ChainHop, ChainItem } from '~/types/api'
+
+// ── Detail Modal ──────────────────────────────
+const detailItemId = ref<string | null>(null)
+function openDetail(item: ChainItem) {
+  if (item.is_public) return
+  detailItemId.value = item.id
+}
 
 const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG' }
 
@@ -164,13 +176,41 @@ const fullAnalysis = ref<string | null>(null)
 
 const activeHop = computed(() => chain.value[activeHopIdx.value])
 
-async function startChain(type: 'forgotten' | 'recent') {
+const STORAGE_KEY = 'vela_chain_state'
+
+function saveChainState() {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      chain: chain.value,
+      activeHopIdx: activeHopIdx.value,
+      fullAnalysis: fullAnalysis.value,
+    }))
+  } catch {}
+}
+
+function restoreChainState() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const state = JSON.parse(raw)
+    if (state.chain?.length) {
+      chain.value = state.chain
+      activeHopIdx.value = state.activeHopIdx ?? 0
+      fullAnalysis.value = state.fullAnalysis ?? null
+    }
+  } catch {}
+}
+
+onMounted(restoreChainState)
+watch([chain, activeHopIdx, fullAnalysis], saveChainState, { deep: true })
+
+async function startChain() {
   chainLoading.value = true
   startCandidates.value = []
   chain.value = []
   fullAnalysis.value = null
   try {
-    startCandidates.value = await apiFetch<ChainItem[]>(`/explore/chain/start?type=${type}`)
+    startCandidates.value = await apiFetch<ChainItem[]>('/explore/chain/start?type=random')
   } finally {
     chainLoading.value = false
   }
@@ -185,13 +225,14 @@ async function pickStart(item: ChainItem) {
 
 async function loadCandidates(hopIdx: number) {
   nextLoading.value = true
-  // 只排除當前 item 本身，避免立即往回跳；不排除整條歷史，讓 item 少時也能繼續探索
   const currentId = chain.value[hopIdx].item.id
+  const excludeIds = chain.value.map(h => h.item.id).join(',')
   try {
     const candidates = await apiFetch<ChainItem[]>(
-      `/explore/chain/next?item_id=${currentId}&exclude=${currentId}`
+      `/explore/chain/next?item_id=${currentId}&exclude=${excludeIds}`
     )
-    chain.value[hopIdx].candidates = candidates
+    const chainIdSet = new Set(chain.value.map(h => h.item.id))
+    chain.value[hopIdx].candidates = candidates.filter(c => !chainIdSet.has(c.id))
   } finally {
     nextLoading.value = false
   }
@@ -199,9 +240,9 @@ async function loadCandidates(hopIdx: number) {
 
 async function jumpTo(item: ChainItem) {
   const fromItem = chain.value[chain.value.length - 1].item
-  // 截斷後面（如果從中間節點跳，理論上 activeHopIdx 已是末端）
   chain.value.push({ item, analysis: null, candidates: [] })
-  activeHopIdx.value = chain.value.length - 1
+  const hopIdx = chain.value.length - 1
+  activeHopIdx.value = hopIdx
   fullAnalysis.value = null
 
   chainLoading.value = true
@@ -210,14 +251,14 @@ async function jumpTo(item: ChainItem) {
       method: 'POST',
       body: { from_item_id: fromItem.id, to_item_id: item.id },
     })
-    chain.value[activeHopIdx.value].analysis = analysis
+    chain.value[hopIdx].analysis = analysis
   } catch {
-    chain.value[activeHopIdx.value].analysis = null
+    chain.value[hopIdx].analysis = null
   } finally {
     chainLoading.value = false
   }
 
-  await loadCandidates(activeHopIdx.value)
+  await loadCandidates(hopIdx)
 }
 
 async function doFullAnalysis() {
@@ -238,6 +279,7 @@ function resetChain() {
   startCandidates.value = []
   activeHopIdx.value = 0
   fullAnalysis.value = null
+  try { sessionStorage.removeItem(STORAGE_KEY) } catch {}
 }
 
 function timeAgo(isoDate: string) {
@@ -296,21 +338,22 @@ function sourceLabel(type: string | null) {
 .chain-section__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
 .chain-section__desc { font-size: 12.5px; color: var(--text-dim); }
 
-.chain-start { display: flex; gap: 10px; }
-.chain-start__btn { flex: 1; display: flex; align-items: center; gap: 10px; padding: 16px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; font-size: 13.5px; color: var(--text-mid); cursor: pointer; transition: all .15s ease; }
-.chain-start__btn:hover { border-color: var(--accent-bdr); color: var(--accent); background: var(--accent-dim); }
-.chain-start__btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.chain-start__icon { font-size: 18px; }
+.chain-start { display: flex; justify-content: center; padding: 8px 0 4px; }
+.chain-start__lucky { display: inline-flex; align-items: center; gap: 10px; padding: 14px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 40px; font-size: 14px; color: var(--text-mid); cursor: pointer; transition: all .18s ease; }
+.chain-start__lucky:hover { border-color: var(--accent-bdr); color: var(--accent); background: var(--accent-dim); }
+.chain-start__lucky:disabled { opacity: 0.5; cursor: not-allowed; }
+.chain-start__lucky-icon { font-size: 18px; line-height: 1; }
+.chain-start__lucky-pulse { display: flex; gap: 5px; }
+.chain-start__lucky-pulse span { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 1.2s infinite; }
+.chain-start__lucky-pulse span:nth-child(2) { animation-delay: .18s; }
+.chain-start__lucky-pulse span:nth-child(3) { animation-delay: .36s; }
 
 .chain-candidates { margin-top: 16px; }
 .chain-candidates__label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
 .chain-cand-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.cand-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; cursor: pointer; transition: all .15s ease; text-align: left; }
-.cand-card:hover { border-color: var(--accent-bdr); transform: translateY(-3px); box-shadow: 0 8px 20px -8px var(--shadow); }
-.cand-card--skel { pointer-events: none; }
-.cand-card__thumb { height: 70px; overflow: hidden; background: var(--surface2); }
-.cand-card--skel .cand-card__thumb { animation: skel-pulse 1.4s ease infinite; }
-.cand-card__title { padding: 8px 10px 10px; font-size: 11.5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-mid); }
+.chain-cand-card { width: auto; }
+.chain-cand-card--skel { pointer-events: none; }
+.chain-cand-card--skel .card__thumb { animation: skel-pulse 1.4s ease infinite; }
 
 .chain-path { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .chain-node { display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; cursor: pointer; transition: all .15s ease; max-width: 160px; }
@@ -323,11 +366,9 @@ function sourceLabel(type: string | null) {
 .chain-reset { margin-left: auto; font-size: 11.5px; height: 28px; padding: 0 12px; }
 
 .chain-detail { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
-.chain-item-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; transition: all .15s ease; }
-.chain-item-card:hover { border-color: var(--accent-bdr); }
-.chain-item-card__thumb { width: 72px; height: 52px; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
-.chain-item-card__title { font-weight: 500; font-size: 14px; line-height: 1.4; margin-bottom: 4px; }
-.chain-item-card__meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+.chain-public-badge { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; padding: 2px 7px; border-radius: 5px; background: color-mix(in oklab, var(--tag-d) 14%, transparent); color: var(--tag-d); border: 1px solid color-mix(in oklab, var(--tag-d) 25%, transparent); }
+.chain-public-badge--thumb { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,0.55); color: #fff; border: none; border-radius: 4px; }
 
 .hop-analysis { display: flex; flex-direction: column; gap: 10px; }
 .hop-block { padding: 14px 16px; border-radius: 10px; }
@@ -367,6 +408,6 @@ function sourceLabel(type: string | null) {
 .pulse-row span:nth-child(3) { animation-delay: .36s; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.5); opacity: 1; } }
 
-@media (max-width: 980px) { .chain-cand-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 980px) { .chain-cand-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 640px) { .chain-start { flex-direction: column; } .chain-cand-grid { grid-template-columns: repeat(2, 1fr); } }
 </style>

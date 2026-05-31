@@ -414,7 +414,8 @@ const avatarUrl = computed(() =>
   ?? null
 )
 const displayName = computed(() =>
-  supabaseUser.value?.user_metadata?.full_name
+  authStore.user?.username
+  ?? supabaseUser.value?.user_metadata?.full_name
   ?? supabaseUser.value?.user_metadata?.name
   ?? supabaseUser.value?.email?.split('@')[0]
   ?? '使用者'
