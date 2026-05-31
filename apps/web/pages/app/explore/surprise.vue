@@ -3,25 +3,25 @@
     <!-- ── 連鎖探索 ─────────────────────────────── -->
     <section class="chain-section">
       <header class="chain-section__head">
-        <span class="eyebrow">連鎖探索</span>
-        <span class="chain-section__desc">從一張卡跳到下一張，每跳一次 AI 分析關聯與創意發想</span>
+        <span class="eyebrow">{{ $t('explore.chain.eyebrow') }}</span>
+        <span class="chain-section__desc">{{ $t('explore.chain.desc') }}</span>
       </header>
 
       <!-- 起點選擇 -->
       <div v-if="!chain.length" class="chain-start">
         <button class="chain-start__btn" :disabled="chainLoading" @click="startChain('forgotten')">
           <span class="chain-start__icon">◌</span>
-          <span>從遺忘內容開始</span>
+          <span>{{ $t('explore.chain.start_forgotten') }}</span>
         </button>
         <button class="chain-start__btn" :disabled="chainLoading" @click="startChain('recent')">
           <span class="chain-start__icon">◈</span>
-          <span>從最近關注開始</span>
+          <span>{{ $t('explore.chain.start_recent') }}</span>
         </button>
       </div>
 
       <!-- 起點候選選擇 -->
       <div v-if="startCandidates.length && !chain.length" class="chain-candidates">
-        <p class="chain-candidates__label">選擇起點：</p>
+        <p class="chain-candidates__label">{{ $t('explore.chain.pick_label') }}</p>
         <div class="chain-cand-grid">
           <button
             v-for="item in startCandidates"
@@ -50,11 +50,11 @@
             >
               <img v-if="hop.item.thumbnail_url" :src="hop.item.thumbnail_url" :alt="hop.item.title || ''" class="chain-node__thumb">
               <div v-else class="chain-node__thumb chain-node__thumb--empty"></div>
-              <span class="chain-node__label">{{ hop.item.title ? hop.item.title.slice(0, 20) + (hop.item.title.length > 20 ? '...' : '') : '(無標題)' }}</span>
+              <span class="chain-node__label">{{ hop.item.title ? hop.item.title.slice(0, 20) + (hop.item.title.length > 20 ? '...' : '') : $t('explore.chain.no_title') }}</span>
             </button>
             <span v-if="i < chain.length - 1" class="chain-arrow">→</span>
           </template>
-          <button class="btn btn--ghost chain-reset" @click="resetChain">重新開始</button>
+          <button class="btn btn--ghost chain-reset" @click="resetChain">{{ $t('explore.chain.reset') }}</button>
         </div>
 
         <!-- 當前節點詳情 -->
@@ -75,40 +75,40 @@
           <template v-if="activeHop.analysis">
             <div class="hop-analysis fadeup">
               <div class="hop-block hop-block--connect">
-                <span class="hop-block__label">↗ 關聯</span>
+                <span class="hop-block__label">{{ $t('explore.chain.connection_label') }}</span>
                 <!-- eslint-disable-next-line vue/no-v-html -->
                 <p v-html="activeHop.analysis.connection"></p>
               </div>
               <div class="hop-block hop-block--idea">
-                <span class="hop-block__label">✦ 創意發想</span>
+                <span class="hop-block__label">{{ $t('explore.chain.ideation_label') }}</span>
                 <p>{{ activeHop.analysis.ideation }}</p>
               </div>
               <div class="hop-block hop-block--question">
-                <span class="hop-block__label">? 引出的問題</span>
+                <span class="hop-block__label">{{ $t('explore.chain.question_label') }}</span>
                 <p class="hop-question">{{ activeHop.analysis.question }}</p>
               </div>
             </div>
           </template>
-          <div v-else-if="activeHopIdx === 0" class="hop-start-hint">這是起點，選擇下方的卡片開始探索吧。</div>
+          <div v-else-if="activeHopIdx === 0" class="hop-start-hint">{{ $t('explore.chain.start_hint') }}</div>
 
           <!-- 分析 loading -->
           <div v-if="chainLoading && activeHopIdx === chain.length - 1 && !activeHop.analysis" class="hop-loading">
             <div class="pulse-row"><span></span><span></span><span></span></div>
-            <span>AI 正在分析關聯...</span>
+            <span>{{ $t('explore.chain.loading_hop') }}</span>
           </div>
         </div>
 
         <!-- 整條路徑分析 -->
         <div v-if="chain.length >= 3" class="full-chain">
           <button v-if="!fullAnalysis && !fullLoading" class="btn full-chain__btn" @click="doFullAnalysis">
-            ✦ 分析整條探索路徑（{{ chain.length }} 個節點）
+            {{ $t('explore.chain.full_btn', { n: chain.length }) }}
           </button>
           <div v-if="fullLoading" class="hop-loading">
             <div class="pulse-row"><span></span><span></span><span></span></div>
-            <span>AI 正在分析整條路徑...</span>
+            <span>{{ $t('explore.chain.loading_full') }}</span>
           </div>
           <div v-if="fullAnalysis" class="full-chain__result fadeup">
-            <span class="synth__badge">路徑洞察</span>
+            <span class="synth__badge">{{ $t('explore.chain.synth_badge') }}</span>
             <!-- eslint-disable-next-line vue/no-v-html -->
             <p v-html="fullAnalysis"></p>
           </div>
@@ -116,7 +116,7 @@
 
         <!-- 候選下一跳 -->
         <div v-if="activeHopIdx === chain.length - 1" class="chain-next">
-          <p class="chain-next__label">繼續探索：</p>
+          <p class="chain-next__label">{{ $t('explore.chain.next_label') }}</p>
           <div v-if="nextLoading" class="chain-cand-grid">
             <div v-for="n in 4" :key="n" class="cand-card cand-card--skel">
               <div class="cand-card__thumb"></div>
@@ -137,7 +137,7 @@
               <div class="cand-card__title">{{ item.title || item.url }}</div>
             </button>
           </div>
-          <p v-else class="chain-empty">找不到更多相關內容了。</p>
+          <p v-else class="chain-empty">{{ $t('explore.chain.empty') }}</p>
         </div>
       </template>
     </section>
@@ -148,6 +148,8 @@
 import type { ChainHop, ChainItem } from '~/types/api'
 
 const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG' }
+
+const { t } = useI18n()
 
 const apiFetch = useApiFetch()
 
@@ -240,9 +242,9 @@ function resetChain() {
 
 function timeAgo(isoDate: string) {
   const days = Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000)
-  if (days === 0) return 'today'
-  if (days < 30) return `${days}d ago`
-  return `${Math.floor(days / 30)}mo ago`
+  if (days === 0) return t('explore.chain.time_today')
+  if (days < 30) return t('explore.chain.time_days', { n: days })
+  return t('explore.chain.time_months', { n: Math.floor(days / 30) })
 }
 
 function sourceLabel(type: string | null) {
