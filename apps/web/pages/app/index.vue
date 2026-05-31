@@ -29,8 +29,13 @@ async function handleConfirmItem(item: ItemPendingReview) {
   for (const tag of [...item.pending_tags]) {
     await confirmItemTag(item.id, tag.id)
   }
+  // 樂觀更新：立刻把 pending tags 合進 tagMap，讓下方 tag 列即時出現
+  const existing = itemTagsMap.value[item.id] ?? []
+  const merged = [...existing, ...item.pending_tags.filter(pt => !existing.some(t => t.id === pt.id))]
+  itemTagsMap.value = { ...itemTagsMap.value, [item.id]: merged }
   pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
-  itemTagsMap.value[item.id] = await getItemTags(item.id)
+  // 背景同步：用伺服器最新狀態覆蓋
+  getItemTags(item.id).then(tags => { itemTagsMap.value = { ...itemTagsMap.value, [item.id]: tags } })
 }
 
 async function handleArchiveItem(item: ItemPendingReview) {
@@ -72,9 +77,14 @@ async function handleConfirmSelected() {
       for (const tag of [...item.pending_tags]) {
         await confirmItemTag(item.id, tag.id)
       }
+      // 樂觀更新
+      const existing = itemTagsMap.value[item.id] ?? []
+      const merged = [...existing, ...item.pending_tags.filter(pt => !existing.some(t => t.id === pt.id))]
+      itemTagsMap.value = { ...itemTagsMap.value, [item.id]: merged }
       pendingItems.value = pendingItems.value.filter(i => i.id !== itemId)
-      itemTagsMap.value[itemId] = await getItemTags(itemId)
       selectedPendingIds.delete(itemId)
+      // 背景同步
+      getItemTags(itemId).then(tags => { itemTagsMap.value = { ...itemTagsMap.value, [itemId]: tags } })
     }
   } finally {
     confirmingSelected.value = false
@@ -183,6 +193,7 @@ const visibleTagCount = ref(TAGROWS_PER_PAGE)
 const tagGroups = computed(() => {
   const groups = new Map<string, { tag: Tag; items: Item[] }>()
   for (const item of itemStore.items) {
+    if (!item.parsed_at) continue
     for (const tag of itemTagsMap.value[item.id] ?? []) {
       if (!groups.has(tag.id)) groups.set(tag.id, { tag, items: [] })
       groups.get(tag.id)!.items.push(item)
