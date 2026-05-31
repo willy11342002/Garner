@@ -14,9 +14,13 @@
     "saving": "存入中...",
     "save": "存入",
     "error": "儲存失敗，請確認 URL 格式是否正確",
-    "processing": "AI 讀取中...",
-    "processingHint": "可以先關閉，背景會繼續處理。",
-    "close": "關閉"
+    "processing": "AI 正在處理...",
+    "processingHint": "處理完成後畫面會自動更新",
+    "close": "關閉",
+    "step1": "獲取影片資訊",
+    "step2": "讀取內容（字幕 / 語音辨識）",
+    "step3": "AI 分析摘要與標籤",
+    "step4": "建立語意索引"
   },
   "nav": {
     "explore": "探索",

@@ -147,7 +147,7 @@
 
     <!-- 新增 URL modal -->
     <Transition name="modal">
-      <div v-if="addOpen" class="add-overlay" @click.self="closeAdd">
+      <div v-if="addOpen" class="add-overlay">
         <div class="add-modal">
           <!-- Processing state -->
           <template v-if="addProcessingItemId">
@@ -155,10 +155,25 @@
               <span class="add-modal__processing-dot"></span>
               <p class="add-modal__processing-text">{{ t('add.processing') }}</p>
             </div>
+            <ol class="add-modal__steps">
+              <li
+                v-for="(key, i) in ['step1','step2','step3','step4']"
+                :key="key"
+                class="add-modal__step"
+                :class="{
+                  'add-modal__step--done': i < processingStep,
+                  'add-modal__step--active': i === processingStep,
+                }"
+              >
+                <span class="add-modal__step-icon">
+                  <svg v-if="i < processingStep" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 8 6 11 13 4"/></svg>
+                  <span v-else-if="i === processingStep" class="add-modal__step-spinner"></span>
+                  <span v-else class="add-modal__step-idle"></span>
+                </span>
+                {{ t(`add.${key}`) }}
+              </li>
+            </ol>
             <p class="add-modal__hint">{{ t('add.processingHint') }}</p>
-            <div class="add-modal__row add-modal__row--end">
-              <button class="btn btn--ghost" @click="closeAdd">{{ t('add.close') }}</button>
-            </div>
           </template>
           <!-- Input state -->
           <template v-else>
@@ -262,6 +277,28 @@ const addSaving = ref(false)
 const addError = ref('')
 const addInput = ref<HTMLInputElement | null>(null)
 const addProcessingItemId = ref<string | null>(null)
+const processingStep = ref(0)
+const STEP_DELAYS = [2000, 5000, 8000] // ms to advance from step 0→1, 1→2, 2→3; step 3 stays until done
+let stepTimer: ReturnType<typeof setTimeout> | null = null
+
+function startStepTimer() {
+  processingStep.value = 0
+  let idx = 0
+  const advance = () => {
+    if (idx < STEP_DELAYS.length) {
+      stepTimer = setTimeout(() => {
+        processingStep.value = idx + 1
+        idx++
+        advance()
+      }, STEP_DELAYS[idx])
+    }
+  }
+  advance()
+}
+
+function clearStepTimer() {
+  if (stepTimer) { clearTimeout(stepTimer); stepTimer = null }
+}
 
 watch(addOpen, (val) => {
   if (val) nextTick(() => addInput.value?.focus())
@@ -269,13 +306,19 @@ watch(addOpen, (val) => {
     addUrl.value = ''
     addError.value = ''
     addProcessingItemId.value = null
+    clearStepTimer()
+    processingStep.value = 0
   }
 })
 
 watch(() => itemStore.recentlyProcessed, (itemId) => {
   if (itemId && itemId === addProcessingItemId.value) {
-    addProcessingItemId.value = null
-    addOpen.value = false
+    processingStep.value = 4 // all done
+    clearStepTimer()
+    setTimeout(() => {
+      addProcessingItemId.value = null
+      addOpen.value = false
+    }, 600)
   }
 })
 
@@ -293,6 +336,7 @@ async function submitAdd() {
     const item = await itemStore.add({ url })
     addUrl.value = ''
     addProcessingItemId.value = item.id
+    startStepTimer()
     if (!route.path.startsWith('/app') || route.path === '/app/archive') {
       navigateTo('/app')
     }
@@ -617,6 +661,69 @@ watch(() => route.path, () => {
 
 .add-modal__row--end {
   justify-content: flex-end;
+}
+
+.add-modal__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.add-modal__step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-dim);
+  transition: color 0.2s ease;
+}
+
+.add-modal__step--active {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.add-modal__step--done {
+  color: var(--text-dim);
+}
+
+.add-modal__step-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.add-modal__step-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--accent);
+}
+
+.add-modal__step-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+
+.add-modal__step-idle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border2);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .modal-enter-active, .modal-leave-active {

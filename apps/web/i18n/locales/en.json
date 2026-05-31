@@ -14,9 +14,13 @@
     "saving": "Saving...",
     "save": "Save",
     "error": "Failed to save. Please check the URL format.",
-    "processing": "AI is reading the content...",
-    "processingHint": "You can close this — it'll finish in the background.",
-    "close": "Close"
+    "processing": "AI is processing...",
+    "processingHint": "The page will update automatically when done.",
+    "close": "Close",
+    "step1": "Fetching video info",
+    "step2": "Reading content (subtitles / speech recognition)",
+    "step3": "AI analysis — summary & tags",
+    "step4": "Building semantic index"
   },
   "nav": {
     "explore": "Explore",
