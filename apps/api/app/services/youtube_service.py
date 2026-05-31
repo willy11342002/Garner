@@ -49,7 +49,6 @@ async def _get_transcript(video_id: str) -> str | None:
     try:
         return await asyncio.to_thread(_fetch)
     except Exception:
-        logger.exception("Failed to get transcript for video_id=%s", video_id)
         return None
 
 

@@ -8,6 +8,9 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.routers import auth, chat, collections, explore, items, search, share, tags
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
 if settings.sentry_dsn:
     sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.2)
 
