@@ -145,11 +145,65 @@ const newUrl = ref('')
 const saving = ref(false)
 const saveError = ref('')
 
-const heroItem = computed(() => itemStore.items.find(i => !!i.parsed_at) ?? null)
+// --- Spaced-Repetition Hero ---
+const HERO_LS_KEY = 'vela_hero_seen'
+const HERO_DATE_KEY = 'vela_hero_date'
+
+function getSeenMap(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(HERO_LS_KEY) ?? '{}') } catch { return {} }
+}
+
+function markHeroSeen(itemId: string) {
+  const map = getSeenMap()
+  map[itemId] = Date.now()
+  localStorage.setItem(HERO_LS_KEY, JSON.stringify(map))
+  localStorage.setItem(HERO_DATE_KEY, new Date().toDateString())
+}
+
+function heroScore(item: Item): number {
+  const age = (Date.now() - new Date(item.saved_at).getTime()) / 86400000
+  // 峰值在收藏後第 14 天，sigma=10 的高斯曲線
+  const ageFactor = Math.exp(-((age - 14) ** 2) / (2 * 100))
+  const seenMap = getSeenMap()
+  const lastSeenMs = seenMap[item.id]
+  // 最近看過的降權：看過後 7 天內分數接近 0，之後線性恢復
+  const recencyFactor = lastSeenMs
+    ? Math.min(1, (Date.now() - lastSeenMs) / (7 * 86400000))
+    : 1
+  return ageFactor * recencyFactor
+}
+
+const heroItem = computed(() => {
+  const candidates = itemStore.items.filter(i => !!i.parsed_at)
+  if (!candidates.length) return null
+  return candidates.reduce((best, cur) =>
+    heroScore(cur) > heroScore(best) ? cur : best
+  )
+})
+
+const heroDaysAgo = computed(() =>
+  heroItem.value ? Math.round((Date.now() - new Date(heroItem.value.saved_at).getTime()) / 86400000) : 0
+)
+
+const heroEyebrow = computed(() => {
+  const d = heroDaysAgo.value
+  if (d === 0) return 'SAVED TODAY · REVISIT'
+  if (d <= 3)  return `${d}D AGO · STILL FRESH`
+  if (d <= 10) return `${d} DAYS AGO · REVISIT`
+  if (d <= 30) return `${d} DAYS AGO · WORTH REVISITING`
+  return `${d} DAYS AGO · REDISCOVER`
+})
 
 const heroTags = computed(() =>
   heroItem.value ? (itemTagsMap.value[heroItem.value.id] ?? []) : []
 )
+
+// 每次 heroItem 確定後記錄到 localStorage（每日只記一次）
+watch(heroItem, (item) => {
+  if (!item) return
+  if (localStorage.getItem(HERO_DATE_KEY) === new Date().toDateString()) return
+  markHeroSeen(item.id)
+}, { immediate: false })
 
 const heroPage = ref(0)
 const HERO_TOTAL = 2
@@ -374,7 +428,7 @@ function openShareModal(tagId: string) {
               <span class="source-badge hero__source">{{ sourceLabel(heroItem.url) }}</span>
             </div>
             <div class="hero__body">
-              <span class="hero__eyebrow">TODAY'S REVISIT</span>
+              <span class="hero__eyebrow">{{ heroEyebrow }}</span>
               <h1 class="hero__title">{{ cardTitle(heroItem.url, heroItem.title) }}</h1>
               <p v-if="heroItem.summary || heroItem.summary_i18n" class="hero__summary">{{ localize(heroItem.summary_i18n, heroItem.summary) }}</p>
               <div v-if="heroTags.length > 0" class="hero__chips">
