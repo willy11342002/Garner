@@ -14,6 +14,4 @@ class UserRead(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    username: str | None = None
-    avatar_url: str | None = None
     allow_public_chain: bool | None = None

@@ -12,16 +12,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function updateProfile(data: { username?: string; avatar_url?: string; allow_public_chain?: boolean }) {
+  async function updateProfile(data: { allow_public_chain?: boolean }) {
     const apiFetch = useApiFetch()
     user.value = await apiFetch<User>('/auth/me', { method: 'PUT', body: data })
-  }
-
-  async function uploadAvatar(file: File) {
-    const apiFetch = useApiFetch()
-    const form = new FormData()
-    form.append('file', file)
-    user.value = await apiFetch<User>('/auth/me/avatar', { method: 'POST', body: form })
   }
 
   async function deleteAccount() {
@@ -36,5 +29,5 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
-  return { user, init, clear, updateProfile, uploadAvatar, deleteAccount }
+  return { user, init, clear, updateProfile, deleteAccount }
 })
