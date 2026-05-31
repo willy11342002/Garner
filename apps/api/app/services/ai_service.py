@@ -6,6 +6,33 @@ from app.core.config import settings
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# In-memory cache loaded at startup via load_model_configs().
+# Fallbacks keep the service alive even if the table is empty.
+_model_cache: dict[str, str] = {
+    "llm": "anthropic/claude-3-5-haiku",
+    "embedding": "openai/text-embedding-3-small",
+}
+
+
+async def load_model_configs() -> None:
+    """Load ai_model_configs from DB into the in-memory cache. Call once at startup."""
+    from sqlalchemy import select
+    from app.core.database import AsyncSessionLocal
+    from app.models.ai_model_config import AiModelConfig
+
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(AiModelConfig))).scalars().all()
+        for row in rows:
+            _model_cache[row.key] = row.model_id
+
+
+def _llm() -> str:
+    return _model_cache["llm"]
+
+
+def _emb() -> str:
+    return _model_cache["embedding"]
+
 _ANALYZE_PROMPT = """\
 Analyze the following content and return ONLY a JSON object with this exact structure:
 {
@@ -40,7 +67,7 @@ async def analyze_content(content: str) -> dict:
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": "anthropic/claude-3-5-haiku",
+                "model": _llm(),
                 "messages": [{"role": "user", "content": _ANALYZE_PROMPT + content[:8000]}],
             },
             timeout=60,
@@ -87,7 +114,7 @@ async def synthesize_focus(query: str, items: list[dict]) -> str:
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": "anthropic/claude-3-5-haiku",
+                "model": _llm(),
                 "messages": [
                     {"role": "system", "content": _FOCUS_SYSTEM},
                     {"role": "user", "content": prompt},
@@ -152,7 +179,7 @@ async def analyze_chain_hop(
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": "anthropic/claude-3-5-haiku",
+                "model": _llm(),
                 "messages": [
                     {"role": "system", "content": _HOP_SYSTEM},
                     {"role": "user", "content": prompt},
@@ -183,7 +210,7 @@ async def analyze_full_chain(items: list[dict]) -> str:
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": "anthropic/claude-3-5-haiku",
+                "model": _llm(),
                 "messages": [
                     {"role": "system", "content": _CHAIN_SYSTEM},
                     {"role": "user", "content": prompt},
@@ -245,7 +272,7 @@ async def plan_tools(query: str, history: list[dict], today: str) -> dict:
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": "anthropic/claude-3-5-haiku",
+                "model": _llm(),
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
@@ -318,7 +345,7 @@ async def chat_stream(
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": "anthropic/claude-3-5-haiku",
+                "model": _llm(),
                 "stream": True,
                 "messages": [
                     {"role": "system", "content": _CHAT_SYSTEM},
@@ -359,7 +386,7 @@ async def compress_memory(
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": "anthropic/claude-3-5-haiku",
+                "model": _llm(),
                 "messages": [
                     {"role": "system", "content": _COMPRESS_SYSTEM},
                     {"role": "user", "content": prompt},
@@ -393,5 +420,5 @@ async def embed(text: str) -> list[float]:
         api_key=settings.openrouter_api_key,
         base_url="https://openrouter.ai/api/v1",
     )
-    result = await client.embeddings.create(model="openai/text-embedding-3-small", input=text)
+    result = await client.embeddings.create(model=_emb(), input=text)
     return result.data[0].embedding

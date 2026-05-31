@@ -17,6 +17,8 @@ if settings.sentry_dsn:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.services.ai_service import load_model_configs
+    await load_model_configs()
     yield
 
 
