@@ -1,10 +1,7 @@
 <script setup lang="ts">
-const { t, locale, setLocale } = useI18n()
-const { isDark, toggle } = useTheme()
+const { t } = useI18n()
 const supabaseUser = useSupabaseUser()
 const authStore = useAuthStore()
-
-const activeSection = ref<'profile' | 'appearance'>('profile')
 
 const avatarUrl = computed(() =>
   authStore.user?.avatar_url
@@ -75,8 +72,27 @@ const initials = computed(() => {
   return name.slice(0, 2).toUpperCase()
 })
 
-function setTheme(dark: boolean) {
-  if (isDark.value !== dark) toggle()
+// ── Delete account ──
+const showDeleteDialog = ref(false)
+const deleteConfirmInput = ref('')
+const isDeleting = ref(false)
+
+const deleteConfirmed = computed(() => deleteConfirmInput.value === 'DELETE')
+
+async function confirmDelete() {
+  if (!deleteConfirmed.value || isDeleting.value) return
+  isDeleting.value = true
+  try {
+    await authStore.deleteAccount()
+    await navigateTo('/')
+  } finally {
+    isDeleting.value = false
+  }
+}
+
+function openDeleteDialog() {
+  deleteConfirmInput.value = ''
+  showDeleteDialog.value = true
 }
 </script>
 
@@ -84,37 +100,11 @@ function setTheme(dark: boolean) {
   <main class="shell shell--narrow settings-page fadeup">
     <div class="settings-layout">
 
-      <!-- Sidebar nav -->
-      <nav class="settings-sidebar">
-        <button
-          class="settings-nav-item"
-          :class="{ active: activeSection === 'profile' }"
-          @click="activeSection = 'profile'"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="8" r="4"/>
-            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
-          </svg>
-          {{ t('settings.profile.title') }}
-        </button>
-        <button
-          class="settings-nav-item"
-          :class="{ active: activeSection === 'appearance' }"
-          @click="activeSection = 'appearance'"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="4" fill="none"/>
-            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-          </svg>
-          {{ t('settings.appearance.title') }}
-        </button>
-      </nav>
-
       <!-- Content -->
       <div class="settings-content">
 
         <!-- Profile section -->
-        <section v-if="activeSection === 'profile'" class="settings-section">
+        <section class="settings-section">
           <div class="settings-card">
             <div class="settings-card__head">
               <h2 class="settings-card__title">{{ t('settings.profile.title') }}</h2>
@@ -193,76 +183,17 @@ function setTheme(dark: boolean) {
           </div>
         </section>
 
-        <!-- Appearance section -->
-        <section v-if="activeSection === 'appearance'" class="settings-section">
-          <div class="settings-card">
+        <!-- Danger Zone -->
+        <section class="settings-section">
+          <div class="settings-card settings-card--danger">
             <div class="settings-card__head">
-              <h2 class="settings-card__title">{{ t('settings.appearance.title') }}</h2>
+              <h2 class="settings-card__title settings-card__title--danger">{{ t('settings.danger.title') }}</h2>
             </div>
-            <div class="settings-card__body">
-
-              <!-- Theme -->
-              <div class="settings-row">
-                <span class="settings-row__label">{{ t('settings.appearance.theme') }}</span>
-                <div class="theme-selector">
-                  <button
-                    class="theme-card theme-card--dark"
-                    :class="{ selected: isDark }"
-                    :aria-pressed="isDark"
-                    @click="setTheme(true)"
-                  >
-                    <div class="theme-card__preview">
-                      <div class="theme-preview-bar theme-preview-bar--accent"></div>
-                      <div class="theme-preview-bar"></div>
-                      <div class="theme-preview-bar theme-preview-bar--short"></div>
-                      <div class="theme-preview-bar"></div>
-                    </div>
-                    <div class="theme-card__label">
-                      <span>{{ t('settings.appearance.dark') }}</span>
-                      <svg v-if="isDark" class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    </div>
-                  </button>
-                  <button
-                    class="theme-card theme-card--light"
-                    :class="{ selected: !isDark }"
-                    :aria-pressed="!isDark"
-                    @click="setTheme(false)"
-                  >
-                    <div class="theme-card__preview">
-                      <div class="theme-preview-bar theme-preview-bar--accent"></div>
-                      <div class="theme-preview-bar"></div>
-                      <div class="theme-preview-bar theme-preview-bar--short"></div>
-                      <div class="theme-preview-bar"></div>
-                    </div>
-                    <div class="theme-card__label">
-                      <span>{{ t('settings.appearance.light') }}</span>
-                      <svg v-if="!isDark" class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Language -->
-              <div class="settings-row settings-row--last">
-                <span class="settings-row__label">{{ t('settings.appearance.language') }}</span>
-                <div class="lang-selector">
-                  <button
-                    class="lang-option"
-                    :class="{ selected: locale === 'zh-TW' }"
-                    @click="setLocale('zh-TW')"
-                  >繁體中文</button>
-                  <button
-                    class="lang-option"
-                    :class="{ selected: locale === 'en' }"
-                    @click="setLocale('en')"
-                  >English</button>
-                </div>
-              </div>
-
+            <div class="settings-card__body danger-body">
+              <p class="danger-desc">{{ t('settings.danger.delete_desc') }}</p>
+              <button class="btn-delete-account" @click="openDeleteDialog">
+                {{ t('settings.danger.delete_button') }}
+              </button>
             </div>
           </div>
         </section>
@@ -270,6 +201,36 @@ function setTheme(dark: boolean) {
       </div>
     </div>
   </main>
+
+  <!-- Delete confirmation dialog -->
+  <Teleport to="body">
+    <div v-if="showDeleteDialog" class="delete-overlay" @click.self="showDeleteDialog = false">
+      <div class="delete-dialog">
+        <h3 class="delete-dialog__title">{{ t('settings.danger.confirm_title') }}</h3>
+        <p class="delete-dialog__desc">{{ t('settings.danger.confirm_desc') }}</p>
+        <label class="delete-dialog__label">{{ t('settings.danger.confirm_input_label') }}</label>
+        <input
+          v-model="deleteConfirmInput"
+          class="delete-dialog__input"
+          :placeholder="t('settings.danger.confirm_input_placeholder')"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="delete-dialog__actions">
+          <button class="btn-cancel" @click="showDeleteDialog = false">
+            {{ t('settings.danger.cancel') }}
+          </button>
+          <button
+            class="btn-confirm-delete"
+            :disabled="!deleteConfirmed || isDeleting"
+            @click="confirmDelete"
+          >
+            {{ isDeleting ? t('settings.danger.deleting') : t('settings.danger.confirm_button') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style>
@@ -278,52 +239,8 @@ function setTheme(dark: boolean) {
 }
 
 .settings-layout {
-  display: grid;
-  grid-template-columns: 188px 1fr;
-  gap: 28px;
-  align-items: start;
   padding-top: 28px;
 }
-
-/* Sidebar */
-.settings-sidebar {
-  position: sticky;
-  top: 76px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-}
-
-.settings-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 12px;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--font-ui);
-  color: var(--text-mid);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  transition: all .12s;
-}
-.settings-nav-item:hover { background: var(--surface2); color: var(--text); }
-.settings-nav-item.active { background: var(--surface2); color: var(--text); }
-.settings-nav-item svg {
-  width: 15px; height: 15px;
-  flex-shrink: 0;
-  color: var(--text-dim);
-  transition: color .12s;
-}
-.settings-nav-item:hover svg,
-.settings-nav-item.active svg { color: var(--text-mid); }
 
 /* Content */
 .settings-content { min-width: 0; }
@@ -500,105 +417,130 @@ function setTheme(dark: boolean) {
   margin: 0;
 }
 
-/* Appearance rows */
-.settings-row {
-  padding: 18px 0;
-  border-bottom: 1px solid var(--border);
+/* Danger Zone */
+.settings-section + .settings-section { margin-top: 12px; }
+.settings-card--danger { border-color: color-mix(in srgb, var(--danger, #e85555) 30%, transparent); }
+.settings-card__title--danger { color: var(--danger, #e85555); }
+.danger-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.danger-desc {
+  font-size: 13px;
+  color: var(--text-mid);
+  margin: 0;
+  flex: 1;
+}
+.btn-delete-account {
+  padding: 8px 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  background: transparent;
+  border: 1.5px solid var(--danger, #e85555);
+  color: var(--danger, #e85555);
+  cursor: pointer;
+  transition: all .12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-delete-account:hover { background: color-mix(in srgb, var(--danger, #e85555) 10%, transparent); }
+
+/* Delete dialog */
+.delete-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+.delete-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px;
+  width: 100%;
+  max-width: 420px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.settings-row--last { border-bottom: none; padding-bottom: 0; }
-.settings-row__label {
-  font-size: 12.5px;
+.delete-dialog__title {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-ui);
+  color: var(--text);
+  margin: 0;
+}
+.delete-dialog__desc {
+  font-size: 13.5px;
+  color: var(--text-mid);
+  margin: 0;
+  line-height: 1.5;
+}
+.delete-dialog__label {
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-mid);
 }
-
-/* Theme cards */
-.theme-selector { display: flex; gap: 10px; }
-.theme-card {
-  flex: 1;
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: pointer;
-  background: transparent;
-  padding: 0;
-  transition: border-color .15s;
-}
-.theme-card:hover { border-color: var(--border2); }
-.theme-card.selected { border-color: var(--accent); }
-
-.theme-card__preview {
-  padding: 10px 10px 8px;
-  display: flex; flex-direction: column; gap: 5px;
-  height: 72px;
-}
-.theme-card--dark .theme-card__preview { background: #111318; }
-.theme-card--light .theme-card__preview { background: #f4f5f7; }
-
-.theme-preview-bar {
-  height: 7px;
-  border-radius: 4px;
-  width: 100%;
-}
-.theme-card--dark .theme-preview-bar { background: rgba(255,255,255,0.08); }
-.theme-card--light .theme-preview-bar { background: rgba(0,0,0,0.08); }
-.theme-card--dark .theme-preview-bar--accent { background: #4effc8; width: 55%; }
-.theme-card--light .theme-preview-bar--accent { background: #00c896; width: 55%; }
-.theme-preview-bar--short { width: 40%; }
-
-.theme-card__label {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 9px 12px 10px;
-  font-size: 12.5px; font-weight: 500;
-  color: var(--text);
-  background: var(--surface2);
-  border-top: 1px solid var(--border);
-}
-.check-icon { width: 13px; height: 13px; color: var(--accent); }
-
-/* Language selector */
-.lang-selector { display: flex; gap: 8px; }
-.lang-option {
-  flex: 1;
-  padding: 9px 16px;
+.delete-dialog__input {
+  background: var(--bg);
   border: 1.5px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface2);
-  font-size: 13px; font-weight: 500;
-  color: var(--text-mid);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  outline: none;
+  transition: border-color .12s;
+  letter-spacing: 0.05em;
+}
+.delete-dialog__input:focus { border-color: var(--danger, #e85555); }
+.delete-dialog__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.btn-cancel {
+  padding: 9px 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
   font-family: var(--font-ui);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-mid);
   cursor: pointer;
   transition: all .12s;
-  text-align: center;
 }
-.lang-option:hover { border-color: var(--border2); color: var(--text); }
-.lang-option.selected {
-  border-color: var(--accent-bdr);
-  background: var(--accent-dim);
-  color: var(--accent);
+.btn-cancel:hover { border-color: var(--border2); color: var(--text); }
+.btn-confirm-delete {
+  padding: 9px 18px;
+  border-radius: 9px;
+  font-size: 13px;
   font-weight: 600;
+  font-family: var(--font-ui);
+  background: var(--danger, #e85555);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  transition: all .12s;
 }
+.btn-confirm-delete:hover:not(:disabled) { opacity: 0.88; }
+.btn-confirm-delete:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Responsive */
 @media (max-width: 640px) {
   .settings-layout {
-    grid-template-columns: 1fr;
     padding-top: 18px;
-    gap: 18px;
   }
-  .settings-sidebar {
-    position: static;
-    flex-direction: row;
-  }
-  .settings-nav-item {
-    flex: 1;
-    justify-content: center;
-    gap: 6px;
-    font-size: 12.5px;
-  }
-  .settings-nav-item svg { display: none; }
 }
 </style>

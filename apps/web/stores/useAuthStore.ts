@@ -24,9 +24,17 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = await apiFetch<User>('/auth/me/avatar', { method: 'POST', body: form })
   }
 
+  async function deleteAccount() {
+    const apiFetch = useApiFetch()
+    await apiFetch('/auth/me', { method: 'DELETE' })
+    const supabase = useSupabaseClient()
+    await supabase.auth.signOut()
+    user.value = null
+  }
+
   function clear() {
     user.value = null
   }
 
-  return { user, init, clear, updateProfile, uploadAvatar }
+  return { user, init, clear, updateProfile, uploadAvatar, deleteAccount }
 })

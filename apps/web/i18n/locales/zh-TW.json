@@ -6,7 +6,29 @@
     "stat_public": "公開集合",
     "stat_weekly": "本週新增",
     "tab_surprise": "隨機驚喜",
-    "tab_browse": "公開集合"
+    "tab_browse": "公開集合",
+    "chain": {
+      "eyebrow": "連鎖探索",
+      "desc": "從一張卡跳到下一張，每跳一次 AI 分析關聯與創意發想",
+      "start_forgotten": "從遺忘內容開始",
+      "start_recent": "從最近關注開始",
+      "pick_label": "選擇起點：",
+      "no_title": "（無標題）",
+      "reset": "重新開始",
+      "connection_label": "↗ 關聯",
+      "ideation_label": "✦ 創意發想",
+      "question_label": "? 引出的問題",
+      "start_hint": "這是起點，選擇下方的卡片開始探索吧。",
+      "loading_hop": "AI 正在分析關聯...",
+      "full_btn": "✦ 分析整條探索路徑（{n} 個節點）",
+      "loading_full": "AI 正在分析整條路徑...",
+      "synth_badge": "路徑洞察",
+      "next_label": "繼續探索：",
+      "empty": "找不到更多相關內容了。",
+      "time_today": "今天",
+      "time_days": "{n} 天前",
+      "time_months": "{n} 個月前"
+    }
   },
   "add": {
     "label": "存入 URL",
@@ -27,13 +49,18 @@
     "chat": "對話",
     "archive": "封存",
     "add": "新增",
+    "collections": "我的集合",
     "settings": "設置",
     "security": "安全性",
+    "appearance": "外觀",
+    "language": "顯示語言",
     "signOut": "登出",
     "login": "登入 / 免費試用",
     "searchPlaceholder": "搜尋你的知識庫...",
     "searchLoading": "搜尋中...",
-    "searchEmpty": "找不到相關內容"
+    "searchEmpty": "找不到相關內容",
+    "toggleTheme": "切換主題",
+    "toggleLanguage": "切換語言"
   },
   "chat": {
     "title": "AI Chat",
@@ -109,7 +136,20 @@
       "theme": "主題",
       "dark": "深色",
       "light": "淺色",
+      "system": "隨系統",
       "language": "介面語言"
+    },
+    "danger": {
+      "title": "危險區域",
+      "delete_desc": "永久刪除你的帳號與所有資料，此操作無法復原。",
+      "delete_button": "刪除我的帳號",
+      "confirm_title": "確定要刪除帳號？",
+      "confirm_desc": "你所有的收藏、標籤、集合將被永久刪除，無法復原。",
+      "confirm_input_label": "輸入 DELETE 以確認",
+      "confirm_input_placeholder": "DELETE",
+      "confirm_button": "永久刪除帳號",
+      "cancel": "取消",
+      "deleting": "刪除中..."
     }
   },
   "landing": {

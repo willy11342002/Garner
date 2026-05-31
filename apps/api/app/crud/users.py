@@ -1,9 +1,15 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.collection_item import CollectionItem
+from app.models.collection import Collection
+from app.models.item_tag import ItemTag
+from app.models.subscription import Subscription
+from app.models.tag import Tag
 from app.models.user import User
+from app.models.user_item import UserItem
 
 
 async def get_by_id(db: AsyncSession, user_id: UUID) -> User | None:
@@ -30,5 +36,28 @@ async def update_user(db: AsyncSession, user: User, username: str | None = None,
 
 
 async def delete_user(db: AsyncSession, user: User) -> None:
+    uid = user.id
+
+    # 1. item_tags（被 user_items 和 tags 雙向參考，必須先刪）
+    user_item_ids = select(UserItem.id).where(UserItem.user_id == uid)
+    await db.execute(delete(ItemTag).where(ItemTag.user_item_id.in_(user_item_ids)))
+
+    # 2. user_items
+    await db.execute(delete(UserItem).where(UserItem.user_id == uid))
+
+    # 3. tags
+    await db.execute(delete(Tag).where(Tag.user_id == uid))
+
+    # 4. collection_items（被 collections 參考，先刪）
+    collection_ids = select(Collection.id).where(Collection.user_id == uid)
+    await db.execute(delete(CollectionItem).where(CollectionItem.collection_id.in_(collection_ids)))
+
+    # 5. collections
+    await db.execute(delete(Collection).where(Collection.user_id == uid))
+
+    # 6. subscriptions
+    await db.execute(delete(Subscription).where(Subscription.user_id == uid))
+
+    # 7. user（chat_folders / chat_sessions 有 ondelete=CASCADE，DB 自動處理）
     await db.delete(user)
     await db.flush()

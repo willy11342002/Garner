@@ -6,7 +6,29 @@
     "stat_public": "Public collections",
     "stat_weekly": "New this week",
     "tab_surprise": "Surprise",
-    "tab_browse": "Browse"
+    "tab_browse": "Browse",
+    "chain": {
+      "eyebrow": "Chain Explorer",
+      "desc": "Jump from card to card — AI analyzes the connection and sparks ideas each hop",
+      "start_forgotten": "Start from forgotten items",
+      "start_recent": "Start from recent favorites",
+      "pick_label": "Choose a starting point:",
+      "no_title": "(No title)",
+      "reset": "Start over",
+      "connection_label": "↗ Connection",
+      "ideation_label": "✦ Ideas",
+      "question_label": "? Question raised",
+      "start_hint": "This is the starting point — pick a card below to begin exploring.",
+      "loading_hop": "AI is analyzing the connection...",
+      "full_btn": "✦ Analyze full path ({n} nodes)",
+      "loading_full": "AI is analyzing the full path...",
+      "synth_badge": "Path Insight",
+      "next_label": "Keep exploring:",
+      "empty": "No more related content found.",
+      "time_today": "today",
+      "time_days": "{n}d ago",
+      "time_months": "{n}mo ago"
+    }
   },
   "add": {
     "label": "Save URL",
@@ -27,13 +49,18 @@
     "chat": "Chat",
     "archive": "Archive",
     "add": "Add",
+    "collections": "My Collections",
     "settings": "Settings",
     "security": "Security",
+    "appearance": "Appearance",
+    "language": "Display language",
     "signOut": "Sign out",
     "login": "Sign in / Try free",
     "searchPlaceholder": "Search your knowledge base...",
     "searchLoading": "Searching...",
-    "searchEmpty": "No results found"
+    "searchEmpty": "No results found",
+    "toggleTheme": "Toggle theme",
+    "toggleLanguage": "Toggle language"
   },
   "chat": {
     "title": "AI Chat",
@@ -109,7 +136,20 @@
       "theme": "Theme",
       "dark": "Dark",
       "light": "Light",
+      "system": "Use device theme",
       "language": "Interface language"
+    },
+    "danger": {
+      "title": "Danger Zone",
+      "delete_desc": "Permanently delete your account and all data. This action cannot be undone.",
+      "delete_button": "Delete my account",
+      "confirm_title": "Delete your account?",
+      "confirm_desc": "All your items, tags, and collections will be permanently deleted. This cannot be undone.",
+      "confirm_input_label": "Type DELETE to confirm",
+      "confirm_input_placeholder": "DELETE",
+      "confirm_button": "Permanently delete account",
+      "cancel": "Cancel",
+      "deleting": "Deleting..."
     }
   },
   "landing": {

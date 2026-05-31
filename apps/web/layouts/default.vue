@@ -72,20 +72,6 @@
             </Transition>
           </div>
         </template>
-        <button class="nav__lang" @click="switchLocale" :aria-label="locale === 'zh-TW' ? 'Switch to English' : '切換為繁體中文'">
-          {{ locale === 'zh-TW' ? 'EN' : '中' }}
-        </button>
-        <button class="nav__theme" @click="toggle" aria-label="Toggle theme">
-          <svg viewBox="0 0 24 24">
-            <template v-if="!isDark">
-              <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/>
-              <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-            </template>
-            <template v-else>
-              <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-            </template>
-          </svg>
-        </button>
         <template v-if="isLoggedIn">
           <button class="nav__add" @click="addOpen = true">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
@@ -103,38 +89,108 @@
 
             <Transition name="menu">
               <div v-if="menuOpen" class="nav__menu">
-                <div class="nav__menu-header">
-                  <span class="nav__menu-name">{{ displayName }}</span>
-                  <span class="nav__menu-email">{{ supabaseUser?.email }}</span>
-                </div>
-                <div class="nav__menu-divider" />
-                <button class="nav__menu-item" @click="goTo('/app/collections')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                  我的集合
-                </button>
-                <button class="nav__menu-item" @click="goTo('/app/archive')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 8v13H3V8"/><path d="M23 3H1v5h22V3z"/><path d="M10 12h4"/></svg>
-                  我的封存
-                </button>
-                <div class="nav__menu-divider" />
-                <button class="nav__menu-item" @click="goTo('/app/settings')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                  {{ t('nav.settings') }}
-                </button>
-                <button class="nav__menu-item" @click="goTo('/app/security')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  {{ t('nav.security') }}
-                </button>
-                <div class="nav__menu-divider" />
-                <button class="nav__menu-item nav__menu-item--danger" @click="signOut">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
-                  {{ t('nav.signOut') }}
-                </button>
+
+                <!-- Main panel -->
+                <template v-if="menuPanel === 'main'">
+                  <div class="nav__menu-header">
+                    <span class="nav__menu-name">{{ displayName }}</span>
+                    <span class="nav__menu-email">{{ supabaseUser?.email }}</span>
+                  </div>
+                  <div class="nav__menu-divider" />
+                  <button class="nav__menu-item" @click="goTo('/app/collections')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                    {{ t('nav.collections') }}
+                  </button>
+                  <button class="nav__menu-item" @click="goTo('/app/archive')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 8v13H3V8"/><path d="M23 3H1v5h22V3z"/><path d="M10 12h4"/></svg>
+                    {{ t('nav.archive') }}
+                  </button>
+                  <div class="nav__menu-divider" />
+                  <button class="nav__menu-item" @click="goTo('/app/settings')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    {{ t('nav.settings') }}
+                  </button>
+                  <button class="nav__menu-item" @click="goTo('/app/security')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    {{ t('nav.security') }}
+                  </button>
+                  <div class="nav__menu-divider" />
+                  <button class="nav__menu-item nav__menu-item--chevron" @click="menuPanel = 'appearance'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                    {{ t('nav.appearance') }}
+                    <svg class="nav__menu-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                  </button>
+                  <button class="nav__menu-item nav__menu-item--chevron" @click="menuPanel = 'language'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    {{ t('nav.language') }}
+                    <svg class="nav__menu-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                  </button>
+                  <div class="nav__menu-divider" />
+                  <button class="nav__menu-item nav__menu-item--danger" @click="signOut">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                    {{ t('nav.signOut') }}
+                  </button>
+                </template>
+
+                <!-- Appearance panel -->
+                <template v-else-if="menuPanel === 'appearance'">
+                  <button class="nav__menu-back" @click="menuPanel = 'main'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+                    {{ t('nav.appearance') }}
+                  </button>
+                  <div class="nav__menu-divider" />
+                  <button class="nav__menu-item nav__menu-item--check" :class="{ 'nav__menu-item--checked': themeMode === 'system' }" @click="setMode('system')">
+                    <svg v-if="themeMode === 'system'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="nav__check-icon"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span v-else class="nav__check-placeholder" />
+                    {{ t('settings.appearance.system') }}
+                  </button>
+                  <button class="nav__menu-item nav__menu-item--check" :class="{ 'nav__menu-item--checked': themeMode === 'dark' }" @click="setMode('dark')">
+                    <svg v-if="themeMode === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="nav__check-icon"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span v-else class="nav__check-placeholder" />
+                    {{ t('settings.appearance.dark') }}
+                  </button>
+                  <button class="nav__menu-item nav__menu-item--check" :class="{ 'nav__menu-item--checked': themeMode === 'light' }" @click="setMode('light')">
+                    <svg v-if="themeMode === 'light'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="nav__check-icon"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span v-else class="nav__check-placeholder" />
+                    {{ t('settings.appearance.light') }}
+                  </button>
+                </template>
+
+                <!-- Language panel -->
+                <template v-else-if="menuPanel === 'language'">
+                  <button class="nav__menu-back" @click="menuPanel = 'main'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+                    {{ t('nav.language') }}
+                  </button>
+                  <div class="nav__menu-divider" />
+                  <button class="nav__menu-item nav__menu-item--check" :class="{ 'nav__menu-item--checked': locale === 'zh-TW' }" @click="setLocale('zh-TW')">
+                    <svg v-if="locale === 'zh-TW'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="nav__check-icon"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span v-else class="nav__check-placeholder" />
+                    繁體中文
+                  </button>
+                  <button class="nav__menu-item nav__menu-item--check" :class="{ 'nav__menu-item--checked': locale === 'en' }" @click="setLocale('en')">
+                    <svg v-if="locale === 'en'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="nav__check-icon"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span v-else class="nav__check-placeholder" />
+                    English
+                  </button>
+                </template>
+
               </div>
             </Transition>
           </div>
         </template>
         <template v-else>
+          <button class="nav__icon-btn" :title="t('nav.toggleTheme')" @click="toggleTheme">
+            <svg v-if="isDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+            </svg>
+          </button>
+          <button class="nav__icon-btn nav__lang-btn" :title="t('nav.toggleLanguage')" @click="toggleLocale">
+            {{ locale === 'zh-TW' ? '中' : 'EN' }}
+          </button>
           <NuxtLink to="/login" class="nav__add"><span>{{ t('nav.login') }}</span></NuxtLink>
         </template>
       </div>
@@ -206,13 +262,9 @@
 import type { Item } from '~/types/api'
 
 const { t, locale, setLocale } = useI18n()
-
-function switchLocale() {
-  setLocale(locale.value === 'zh-TW' ? 'en' : 'zh-TW')
-}
 const route = useRoute()
 const router = useRouter()
-const { isDark, toggle } = useTheme()
+const { isDark, mode: themeMode, setMode } = useTheme()
 const supabaseUser = useSupabaseUser()
 const client = useSupabaseClient()
 const authStore = useAuthStore()
@@ -221,6 +273,15 @@ const { searchItems } = useSearch()
 
 const isLoggedIn = computed(() => !!supabaseUser.value)
 const menuOpen = ref(false)
+
+function toggleTheme() {
+  setMode(isDark.value ? 'light' : 'dark')
+}
+
+function toggleLocale() {
+  setLocale(locale.value === 'zh-TW' ? 'en' : 'zh-TW')
+}
+const menuPanel = ref<'main' | 'appearance' | 'language'>('main')
 
 // 搜尋
 const searchEl = ref<HTMLElement | null>(null)
@@ -373,6 +434,10 @@ async function signOut() {
   authStore.clear()
   navigateTo('/')
 }
+
+watch(menuOpen, (val) => {
+  if (!val) menuPanel.value = 'main'
+})
 
 // 路由切換時關閉選單與搜尋
 watch(() => route.path, () => {
@@ -557,6 +622,100 @@ watch(() => route.path, () => {
 
 .nav__menu-item--danger svg {
   color: #e85555;
+}
+
+.nav__menu-item--chevron {
+  justify-content: flex-start;
+}
+
+.nav__menu-chevron {
+  width: 14px !important;
+  height: 14px !important;
+  margin-left: auto;
+  color: var(--text-dim) !important;
+  flex-shrink: 0;
+}
+
+.nav__menu-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nav__menu-back svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-mid);
+  flex-shrink: 0;
+}
+
+.nav__menu-back:hover {
+  color: var(--text);
+}
+
+.nav__menu-item--check {
+  gap: 10px;
+}
+
+.nav__check-icon {
+  width: 14px !important;
+  height: 14px !important;
+  color: var(--accent) !important;
+  flex-shrink: 0;
+}
+
+.nav__check-placeholder {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.nav__menu-item--checked {
+  color: var(--accent);
+}
+
+.nav__icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+
+.nav__icon-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.nav__icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.nav__lang-btn {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
 }
 
 .nav__backdrop {
