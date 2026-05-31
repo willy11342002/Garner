@@ -1,4 +1,5 @@
 from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
+from app.models.content_chunk import ContentChunk
 from app.models.collection import Collection, CollectionVisibility
 from app.models.collection_item import CollectionItem
 from app.models.content_object import ContentObject, SourceType
@@ -31,4 +32,5 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "MessageRole",
+    "ContentChunk",
 ]

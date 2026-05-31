@@ -373,6 +373,19 @@ async def compress_memory(
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+def chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> list[str]:
+    """依 token 估算切割文字。用空白估算（1 token ≈ 4 chars）。"""
+    char_size = chunk_size * 4
+    char_overlap = overlap * 4
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = start + char_size
+        chunks.append(text[start:end].strip())
+        start += char_size - char_overlap
+    return [c for c in chunks if c]
+
+
 async def embed(text: str) -> list[float]:
     from openai import AsyncOpenAI
 

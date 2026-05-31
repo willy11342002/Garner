@@ -44,3 +44,6 @@ class ContentObject(Base):
 
     user_items: Mapped[list["UserItem"]] = relationship(back_populates="content")
     collection_items: Mapped[list["CollectionItem"]] = relationship(back_populates="content")
+    chunks: Mapped[list["ContentChunk"]] = relationship(
+        back_populates="content", cascade="all, delete-orphan"
+    )

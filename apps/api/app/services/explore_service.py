@@ -11,8 +11,10 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud import chunks as crud_chunks
 from app.crud import collections as crud_collections
 from app.crud import items as crud_items
+from app.models.content_chunk import ContentChunk
 from app.models.user_item import UserItem
 from app.schemas.explore import (
     ChainFullAnalysis,
@@ -42,8 +44,39 @@ async def rag_retrieve(
     query: str,
     limit: int = 8,
 ) -> list[tuple[UserItem, float]]:
-    """將 query embed 後做向量搜尋，回傳 (UserItem, distance) 清單。"""
+    """將 query embed 後做 chunk-level 向量搜尋，回傳去重後的 (UserItem, distance) 清單。
+    若尚無 chunks（舊資料），fallback 到 content_objects embedding。
+    """
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import select
+    from app.models.content_object import ContentObject
+
     embedding = await ai_service.embed(query)
+    chunk_hits = await crud_chunks.semantic_search(db, user_id, embedding, limit=limit * 2)
+
+    if chunk_hits:
+        # 從 chunks 反查 UserItem，去重保留最近距離
+        seen: dict[UUID, tuple[UserItem, float]] = {}
+        for chunk, dist in chunk_hits:
+            result = await db.execute(
+                select(UserItem)
+                .options(joinedload(UserItem.content))
+                .join(UserItem.content)
+                .where(
+                    UserItem.content_id == chunk.content_id,
+                    UserItem.user_id == user_id,
+                    UserItem.deleted_at.is_(None),
+                )
+                .limit(1)
+            )
+            ui = result.scalar_one_or_none()
+            if ui and ui.id not in seen:
+                seen[ui.id] = (ui, dist)
+            if len(seen) >= limit:
+                break
+        return list(seen.values())
+
+    # Fallback：沒有 chunks 時用 summary embedding
     return await crud_items.semantic_search(db, user_id, embedding, limit=limit)
 
 

@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import chat as crud_chat
+from app.crud import chunks as crud_chunks
 from app.crud import items as crud_items
 from app.models.chat import MessageRole
 from app.models.user_item import UserItem
@@ -36,29 +37,31 @@ def _parse_date(s: str | None) -> datetime | None:
         return None
 
 
+ItemWithDist = tuple[UserItem, float | None]
+
+
 async def _exec_semantic_search(
     db: AsyncSession, user_id: UUID, tool: dict
-) -> list[UserItem]:
+) -> list[ItemWithDist]:
     query = tool.get("query", "")
     if not query:
         return []
     hits = await rag_retrieve(db, user_id, query, limit=6)
-    return [ui for ui, _ in hits]
+    return hits  # already list[tuple[UserItem, float]]
 
 
 async def _exec_structured_filter(
     db: AsyncSession, user_id: UUID, tool: dict
-) -> list[UserItem]:
+) -> list[ItemWithDist]:
     tags = tool.get("tags") or None
     source_type = tool.get("source_type") or None
     saved_after = _parse_date(tool.get("start_date"))
     saved_before = _parse_date(tool.get("end_date"))
 
-    # 所有維度都空白就跳過
     if not any([tags, source_type, saved_after, saved_before]):
         return []
 
-    return await crud_items.structured_filter(
+    items = await crud_items.structured_filter(
         db, user_id,
         tags=tags,
         source_type=source_type,
@@ -66,6 +69,7 @@ async def _exec_structured_filter(
         saved_before=saved_before,
         limit=8,
     )
+    return [(ui, None) for ui in items]
 
 
 _TOOL_HANDLERS = {
@@ -74,13 +78,14 @@ _TOOL_HANDLERS = {
 }
 
 
-def _to_chat_source(ui: UserItem) -> ChatSource:
+def _to_chat_source(ui: UserItem, distance: float | None = None) -> ChatSource:
     return ChatSource(
         id=ui.id,
         url=ui.content.url,
         title=ui.content.title,
         thumbnail_url=ui.content.thumbnail_url,
         source_type=ui.content.source_type.value if ui.content.source_type else None,
+        distance=round(distance, 4) if distance is not None else None,
     )
 
 
@@ -128,9 +133,8 @@ async def stream_reply(
     if not tools:
         tools = [{"name": "semantic_search", "query": user_content}]
 
-    all_items: list[UserItem] = []
+    all_items: list[ItemWithDist] = []
     seen_ids: set[UUID] = set()
-    # 累積 process log 供儲存到 DB
     process_steps: list[dict] = []
 
     for tool in tools:
@@ -143,26 +147,26 @@ async def stream_reply(
         yield _sse("tool_call", tool_payload)
 
         try:
-            items = await handler(db, user_id, tool)
+            hits = await handler(db, user_id, tool)
         except Exception:
-            items = []
+            hits = []
 
-        new_items = [ui for ui in items if ui.id not in seen_ids]
-        for ui in new_items:
+        new_hits = [(ui, dist) for ui, dist in hits if ui.id not in seen_ids]
+        for ui, dist in new_hits:
             seen_ids.add(ui.id)
-            all_items.append(ui)
+            all_items.append((ui, dist))
 
         tool_result = {
             "tool": name,
-            "count": len(new_items),
-            "titles": [ui.content.title or ui.content.url for ui in new_items[:3]],
+            "count": len(new_hits),
+            "titles": [ui.content.title or ui.content.url for ui, _ in new_hits[:3]],
         }
         process_steps.append({"toolCall": tool_payload, "toolResult": tool_result})
         yield _sse("tool_result", tool_result)
 
     # 最多取 10 筆
     all_items = all_items[:10]
-    sources = [_to_chat_source(ui) for ui in all_items]
+    sources = [_to_chat_source(ui, dist) for ui, dist in all_items]
     cited_ids = [s.id for s in sources]
 
     yield _sse("sources", [s.model_dump(mode="json") for s in sources])
@@ -171,10 +175,27 @@ async def stream_reply(
     await crud_chat.add_message(db, session_id, MessageRole.user, user_content)
 
     # ── Step 3：Streaming 回覆 ────────────────────────────────────────────────
-    llm_items = [
-        {"title": ui.content.title, "summary": ui.content.summary}
-        for ui in all_items
-    ]
+    # 用 chunk 原文取代 summary，讓 AI 能回答細節問題
+    query_embedding = await ai_service.embed(user_content)
+    chunk_hits = await crud_chunks.semantic_search(db, user_id, query_embedding, limit=12)
+
+    # 建立 content_id → title 的 mapping
+    content_titles = {ui.content.id: ui.content.title for ui, _ in all_items}
+
+    if chunk_hits:
+        llm_items = [
+            {
+                "title": content_titles.get(c.content_id, "(無標題)"),
+                "summary": c.text,
+            }
+            for c, _ in chunk_hits
+        ]
+    else:
+        llm_items = [
+            {"title": ui.content.title, "summary": ui.content.summary}
+            for ui, _ in all_items
+        ]
+
     full_reply = []
     async for chunk in ai_service.chat_stream(user_content, history, llm_items, memory_summary):
         full_reply.append(chunk)

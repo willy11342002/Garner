@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import events
+from app.crud import chunks as crud_chunks
 from app.crud import tags as crud_tags
 from app.models.content_object import ContentObject, SourceType, detect_source_type
 from app.models.item_tag import TagSource
@@ -54,9 +55,17 @@ async def process_item(
             content.summary_i18n = summary_i18n
             # Keep summary as zh-TW fallback for backward compatibility
             content.summary = summary_i18n.get("zh-TW") or summary_i18n.get("en", "")
-            # Embed the English summary for best semantic search quality
+            # Embed the English summary for fallback / explore_service
             embed_text = summary_i18n.get("en") or content.summary
             content.embedding = await ai_service.embed(embed_text)
+
+            # Chunk raw_content and embed each chunk for fine-grained RAG
+            chunk_texts = ai_service.chunk_text(raw_content)
+            chunk_records: list[dict] = []
+            for chunk in chunk_texts:
+                emb = await ai_service.embed(chunk)
+                chunk_records.append({"text": chunk, "embedding": emb})
+            await crud_chunks.replace_chunks(db, content_id, chunk_records)
 
             # Create and attach AI-generated tags
             tags_i18n: dict[str, list[str]] = analysis.get("tags", {})
