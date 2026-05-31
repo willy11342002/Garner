@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Enum, Integer, Text, func
+from sqlalchemy import DateTime, Enum, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +16,12 @@ class SourceType(str, enum.Enum):
     youtube = "youtube"
     article = "article"
     ig = "ig"
+
+
+class TranscriptionSource(str, enum.Enum):
+    transcript = "transcript"
+    whisper = "whisper"
+    none = "none"
 
 
 def detect_source_type(url: str) -> "SourceType":
@@ -40,6 +46,9 @@ class ContentObject(Base):
     summary_i18n: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    transcription_source: Mapped[TranscriptionSource | None] = mapped_column(
+        Enum(TranscriptionSource, name="transcription_source_enum"), nullable=True
+    )
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user_items: Mapped[list["UserItem"]] = relationship(back_populates="content")

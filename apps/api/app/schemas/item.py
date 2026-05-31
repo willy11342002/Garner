@@ -26,6 +26,7 @@ class ItemRead(BaseModel):
     parsed_at: datetime | None = None
     status: str | None = None
     source_type: str | None = None
+    transcription_source: str | None = None
 
     model_config = {"from_attributes": True}
 

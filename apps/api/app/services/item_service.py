@@ -25,6 +25,7 @@ def _item_to_read(user_item) -> ItemRead:
         parsed_at=content.parsed_at,
         status=user_item.status,
         source_type=content.source_type,
+        transcription_source=content.transcription_source,
     )
 
 
