@@ -224,6 +224,22 @@ function goHeroPage(page: number) {
   startHeroTimer()
 }
 
+// Touch / mouse drag support for hero gallery
+const dragStartX = ref<number | null>(null)
+
+function onDragStart(e: MouseEvent | TouchEvent) {
+  dragStartX.value = 'touches' in e ? e.touches[0].clientX : e.clientX
+}
+function onDragEnd(e: MouseEvent | TouchEvent) {
+  if (dragStartX.value === null) return
+  const endX = 'changedTouches' in e ? e.changedTouches[0].clientX : e.clientX
+  const dx = endX - dragStartX.value
+  dragStartX.value = null
+  if (!weeklyTagGroups.value.length) return
+  if (dx < -50 && heroPage.value < HERO_TOTAL - 1) goHeroPage(1)
+  else if (dx > 50 && heroPage.value > 0) goHeroPage(0)
+}
+
 const weeklyTagGroups = computed(() => {
   if (loading.value) return []
   const weekAgo = Date.now() - 7 * 86400000
@@ -417,7 +433,14 @@ function openShareModal(tagId: string) {
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3 11 8 6 13"/></svg>
         </button>
-        <div class="hero-gallery" :class="`hero-gallery--p${heroPage}`">
+        <div
+          class="hero-gallery"
+          :class="`hero-gallery--p${heroPage}`"
+          @touchstart.passive="onDragStart"
+          @touchend.passive="onDragEnd"
+          @mousedown="onDragStart"
+          @mouseup="onDragEnd"
+        >
           <!-- Slide 0: TODAY'S REVISIT -->
           <section class="hero-slide hero">
             <div class="hero__media">
