@@ -510,6 +510,7 @@ body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
 .tagrows-more { text-align: center; padding: 8px 0 24px; }
 .tagrows-more__btn { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); padding: 8px 20px; border: 1px dashed var(--border2); border-radius: 10px; background: none; cursor: pointer; transition: all .15s ease; }
 .tagrows-more__btn:hover { color: var(--accent); border-color: var(--accent-bdr); }
+.tagrows-more__btn:focus:not(:focus-visible) { color: var(--text-dim); border-color: var(--border2); outline: none; }
 
 @media (max-width: 600px) {
   .pending-row {
