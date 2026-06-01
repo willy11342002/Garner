@@ -29,7 +29,10 @@
       "empty": "找不到更多相關內容了。",
       "time_today": "今天",
       "time_days": "{n} 天前",
-      "time_months": "{n} 個月前"
+      "time_months": "{n} 個月前",
+      "start_over": "從頭開始",
+      "rewrite_hint": "從這個節點重寫後面的路徑",
+      "rewrite_btn": "從這裡重寫"
     }
   },
   "add": {

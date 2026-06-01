@@ -29,7 +29,10 @@
       "empty": "No more related content found.",
       "time_today": "today",
       "time_days": "{n}d ago",
-      "time_months": "{n}mo ago"
+      "time_months": "{n}mo ago",
+      "start_over": "Start over",
+      "rewrite_hint": "Rewrite the path from this node",
+      "rewrite_btn": "Rewrite from here"
     }
   },
   "add": {

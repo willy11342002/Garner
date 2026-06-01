@@ -17,6 +17,13 @@
           <span>{{ $t('explore.chain.start_lucky') }}</span>
         </button>
       </div>
+      <!-- 從任意節點重寫提示（鏈條存在 + 點了非末端節點） -->
+      <div v-if="chain.length && activeHopIdx < chain.length - 1" class="chain-rewrite-bar">
+        <span class="chain-rewrite-bar__hint">{{ $t('explore.chain.rewrite_hint') }}</span>
+        <button class="btn chain-rewrite-bar__btn" @click="rewriteFrom(activeHopIdx)">
+          {{ $t('explore.chain.rewrite_btn') }}
+        </button>
+      </div>
 
       <!-- 起點候選選擇 -->
       <div v-if="startCandidates.length && !chain.length" class="chain-candidates">
@@ -60,7 +67,7 @@
             </button>
             <span v-if="i < chain.length - 1" class="chain-arrow">→</span>
           </template>
-          <button class="btn btn--ghost chain-reset" @click="resetChain">{{ $t('explore.chain.reset') }}</button>
+          <button class="btn btn--ghost chain-reset" @click="resetChain">{{ $t('explore.chain.start_over') }}</button>
         </div>
 
         <!-- 當前節點詳情 -->
@@ -282,6 +289,14 @@ function resetChain() {
   try { sessionStorage.removeItem(STORAGE_KEY) } catch {}
 }
 
+async function rewriteFrom(hopIdx: number) {
+  chain.value = chain.value.slice(0, hopIdx + 1)
+  chain.value[hopIdx].candidates = []
+  activeHopIdx.value = hopIdx
+  fullAnalysis.value = null
+  await loadCandidates(hopIdx)
+}
+
 function timeAgo(isoDate: string) {
   const days = Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000)
   if (days === 0) return t('explore.chain.time_today')
@@ -354,6 +369,10 @@ function sourceLabel(type: string | null) {
 .chain-cand-card { width: auto; }
 .chain-cand-card--skel { pointer-events: none; }
 .chain-cand-card--skel .card__thumb { animation: skel-pulse 1.4s ease infinite; }
+
+.chain-rewrite-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; margin-bottom: 12px; background: color-mix(in oklab, var(--tag-e) 8%, transparent); border: 1px solid color-mix(in oklab, var(--tag-e) 22%, transparent); border-radius: 8px; }
+.chain-rewrite-bar__hint { font-family: var(--font-mono); font-size: 11px; color: var(--text-mid); }
+.chain-rewrite-bar__btn { font-size: 11.5px; height: 28px; padding: 0 14px; margin-left: auto; }
 
 .chain-path { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .chain-node { display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; cursor: pointer; transition: all .15s ease; max-width: 160px; }

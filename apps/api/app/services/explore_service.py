@@ -493,31 +493,25 @@ async def get_chain_candidates(
         embedding = co.embedding if co else None
         current_content_id = item_id
 
-    if embedding is None:
-        return []
-
-    cutoff = await _get_chain_cutoff(db)
     allow_public = await _get_user_allow_public_chain(db, user_id)
-    own_limit = 3 if allow_public else 4
+    own_limit = 2 if allow_public else 3
 
-    # 解析所有 chain item 的 content_id，用於排除相同內容（即使 UserItem.id 不同）
-    chain_content_ids = await _resolve_content_ids(db, user_id, [item_id, *exclude_ids])
-    exclude_content_ids = list({cid for cid in chain_content_ids if cid is not None})
-
-    own_hits = await crud_items.semantic_search(
-        db,
-        user_id,
-        embedding=embedding,
-        limit=own_limit,
-        exclude_ids=[item_id, *exclude_ids],
-        exclude_content_ids=exclude_content_ids,
-        cutoff=cutoff,
+    own_hits = await crud_items.get_random_with_embedding(
+        db, user_id, limit=own_limit + len(exclude_ids) + 1
     )
-    candidates = [_to_chain_item(ui) for ui, _ in own_hits]
+    exclude_id_set = {item_id, *exclude_ids}
+    own_candidates = [
+        _to_chain_item(ui) for ui in own_hits
+        if ui.id not in exclude_id_set
+    ][:own_limit]
+
+    candidates = own_candidates
 
     if allow_public:
-        needed = 4 - len(candidates)
-        public_items = await _get_public_chain_items(db, embedding, needed, user_id, exclude_content_ids)
+        needed = 3 - len(candidates)
+        chain_content_ids = await _resolve_content_ids(db, user_id, [item_id, *exclude_ids])
+        exclude_content_ids = list({cid for cid in chain_content_ids if cid is not None})
+        public_items = await _get_public_chain_items(db, None, needed, user_id, exclude_content_ids)
         candidates.extend(public_items)
 
     return candidates
