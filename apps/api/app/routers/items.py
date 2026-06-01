@@ -117,6 +117,23 @@ async def list_item_tags(item_id: UUID, current_user: CurrentUser, db: DbSession
     return list(result.scalars().all())
 
 
+@router.get("/{item_id}/tags/pending", response_model=list[TagRead])
+async def list_pending_item_tags(item_id: UUID, current_user: CurrentUser, db: DbSession):
+    from sqlalchemy import select
+    from app.models.item_tag import ItemTag
+    from app.models.tag import Tag
+    result = await db.execute(
+        select(Tag)
+        .join(ItemTag, ItemTag.tag_id == Tag.id)
+        .where(
+            ItemTag.user_item_id == item_id,
+            Tag.user_id == UUID(current_user["sub"]),
+            ItemTag.confirmed == False,  # noqa: E712
+        )
+    )
+    return list(result.scalars().all())
+
+
 @router.post("/{item_id}/tags", response_model=TagRead)
 async def attach_tag(
     item_id: UUID,

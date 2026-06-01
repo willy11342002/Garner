@@ -44,13 +44,17 @@ export function useItems() {
     return apiFetch('/items/pending-review')
   }
 
+  function getPendingItemTags(id: string): Promise<Tag[]> {
+    return apiFetch(`/items/${id}/tags/pending`)
+  }
+
   function confirmItemTag(itemId: string, tagId: string): Promise<void> {
     return apiFetch(`/items/${itemId}/tags/${tagId}/confirm`, { method: 'POST' })
   }
 
   return {
     listItems, createItem, getItem, updateItem, deleteItem,
-    getItemTags, attachTag, detachTag,
+    getItemTags, getPendingItemTags, attachTag, detachTag,
     listArchivedItems, getPendingReview, confirmItemTag,
   }
 }

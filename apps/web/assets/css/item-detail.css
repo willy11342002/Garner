@@ -166,6 +166,44 @@
 .id-tag__add:hover { border-color: var(--accent-bdr); color: var(--accent); }
 .id-tag__add:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Pending tags */
+.id-body__tags-pending-label {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: -2px;
+}
+
+.tag-chip--pending {
+  background: var(--surface2);
+  color: var(--text-dim);
+  border: 1px dashed var(--border2);
+  opacity: 0.85;
+}
+
+.id-tag__confirm {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  opacity: 0.7;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 2px 0 4px;
+  transition: opacity .12s ease;
+}
+.id-tag__confirm:hover { opacity: 1; }
+
+.btn--confirm-tags {
+  background: var(--accent-dim, color-mix(in srgb, var(--accent) 12%, transparent));
+  color: var(--accent);
+  border-color: var(--accent-bdr);
+  font-weight: 600;
+}
+
 .id-tag__input {
   height: 24px;
   padding: 0 10px;

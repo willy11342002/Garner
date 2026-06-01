@@ -14,11 +14,12 @@ const isOpen = computed(() => !!(props.itemId || props.item))
 // 是否為唯讀公開模式
 const readonly = computed(() => !props.itemId)
 
-const { getItem, getItemTags, attachTag, detachTag, updateItem } = useItems()
+const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag } = useItems()
 const { localize } = useI18nContent()
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
+const pendingTags = ref<Tag[]>([])
 const loading = ref(false)
 const error = ref(false)
 
@@ -31,6 +32,8 @@ const newTagInput = ref('')
 const tagRemoving = ref<Record<string, boolean>>({})
 const tagAdding = ref(false)
 const tagInputRef = ref<HTMLInputElement | null>(null)
+const tagConfirming = ref<Record<string, boolean>>({})
+const confirmingAll = ref(false)
 
 // Archive
 const archiving = ref(false)
@@ -63,10 +66,12 @@ async function load(id: string) {
   error.value = false
   fetchedItem.value = null
   tags.value = []
+  pendingTags.value = []
   try {
-    const [fi, ft] = await Promise.all([getItem(id), getItemTags(id)])
+    const [fi, ft, fp] = await Promise.all([getItem(id), getItemTags(id), getPendingItemTags(id)])
     fetchedItem.value = fi
     tags.value = ft
+    pendingTags.value = fp
   } catch {
     error.value = true
   } finally {
@@ -82,6 +87,7 @@ watch(() => props.itemId, (id) => {
     document.body.style.overflow = ''
     fetchedItem.value = null
     tags.value = []
+    pendingTags.value = []
   }
 }, { immediate: true })
 
@@ -124,6 +130,41 @@ async function handleRemoveTag(tag: Tag) {
   try {
     await detachTag(item.value.id, tag.id)
     tags.value = tags.value.filter(t => t.id !== tag.id)
+  } finally {
+    delete tagRemoving.value[tag.id]
+  }
+}
+
+async function handleConfirmTag(tag: Tag) {
+  if (!item.value) return
+  tagConfirming.value[tag.id] = true
+  try {
+    await confirmItemTag(item.value.id, tag.id)
+    pendingTags.value = pendingTags.value.filter(t => t.id !== tag.id)
+    tags.value.push(tag)
+  } finally {
+    delete tagConfirming.value[tag.id]
+  }
+}
+
+async function handleConfirmAll() {
+  if (!item.value || !pendingTags.value.length) return
+  confirmingAll.value = true
+  try {
+    await Promise.all(pendingTags.value.map(t => confirmItemTag(item.value!.id, t.id)))
+    tags.value.push(...pendingTags.value)
+    pendingTags.value = []
+  } finally {
+    confirmingAll.value = false
+  }
+}
+
+async function handleRemovePendingTag(tag: Tag) {
+  if (!item.value) return
+  tagRemoving.value[tag.id] = true
+  try {
+    await detachTag(item.value.id, tag.id)
+    pendingTags.value = pendingTags.value.filter(t => t.id !== tag.id)
   } finally {
     delete tagRemoving.value[tag.id]
   }
@@ -179,6 +220,22 @@ async function confirmArchive() {
 
           <!-- Tags（私人模式才顯示） -->
           <div v-if="!readonly" class="id-body__tags">
+            <!-- Pending tags：AI 推薦、待確認 -->
+            <template v-if="pendingTags.length">
+              <div class="id-body__tags-pending-label">AI 建議標籤</div>
+              <span
+                v-for="tag in pendingTags"
+                :key="tag.id"
+                class="tag-chip tag-chip--pending id-tag"
+                :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
+              >
+                {{ localize(tag.name_i18n, tag.name) }}
+                <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
+                <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
+              </span>
+            </template>
+
+            <!-- Confirmed tags -->
             <span
               v-for="(tag, i) in tags"
               :key="tag.id"
@@ -188,6 +245,7 @@ async function confirmArchive() {
               {{ localize(tag.name_i18n, tag.name) }}
               <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
             </span>
+
             <template v-if="addingTag">
               <input
                 ref="tagInputRef"
@@ -215,6 +273,14 @@ async function confirmArchive() {
 
           <!-- Actions -->
           <div class="id-body__actions">
+            <button
+              v-if="!readonly && pendingTags.length"
+              class="btn btn--confirm-tags"
+              :disabled="confirmingAll"
+              @click="handleConfirmAll"
+            >
+              {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
+            </button>
             <a :href="item.url" target="_blank" rel="noopener" class="btn btn--accent">開啟原文 →</a>
             <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
