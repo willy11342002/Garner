@@ -29,6 +29,7 @@
       </div>
       <div class="nav__right">
         <template v-if="isLoggedIn">
+          <!-- 桌機搜尋 input -->
           <div class="nav__search" ref="searchEl">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="7"/>
@@ -71,8 +72,23 @@
               </div>
             </Transition>
           </div>
-        </template>
-        <template v-if="isLoggedIn">
+
+          <!-- 手機版搜尋 icon -->
+          <button class="nav__search-btn" @click="mobileSearchOpen = true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/>
+              <path d="m20 20-3.5-3.5"/>
+            </svg>
+          </button>
+
+          <!-- 新增 -->
+          <button class="nav__add" @click="addOpen = true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            <span>{{ t('nav.add') }}</span>
+          </button>
+
           <!-- 通知鈴鐺 -->
           <div class="nav__notif" ref="notifEl">
             <button class="nav__notif-btn" @click.stop="notifOpen = !notifOpen">
@@ -108,13 +124,6 @@
               </div>
             </Transition>
           </div>
-
-          <button class="nav__add" @click="addOpen = true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-            <span>{{ t('nav.add') }}</span>
-          </button>
 
           <!-- 使用者頭像 + 下拉選單 -->
           <div class="nav__user">
@@ -239,6 +248,51 @@
     <!-- 點選外部關閉通知 -->
     <div v-if="notifOpen" class="nav__backdrop" @click="notifOpen = false" />
 
+
+    <!-- 手機版搜尋 modal -->
+    <Transition name="modal">
+      <div v-if="mobileSearchOpen" class="add-overlay" @click.self="closeMobileSearch">
+        <div class="add-modal search-modal">
+          <div class="search-modal__input-row">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-modal__icon">
+              <circle cx="11" cy="11" r="7"/>
+              <path d="m20 20-3.5-3.5"/>
+            </svg>
+            <input
+              ref="mobileSearchInput"
+              v-model="searchQuery"
+              class="add-modal__input search-modal__input"
+              :placeholder="t('nav.searchPlaceholder')"
+              @keydown.esc="closeMobileSearch"
+            />
+          </div>
+          <div v-if="searchLoading" class="search-modal__state">
+            <span class="add-modal__step-spinner"></span>
+            {{ t('nav.searchLoading') }}
+          </div>
+          <template v-else-if="searchResults.length > 0">
+            <button
+              v-for="item in searchResults.slice(0, 8)"
+              :key="item.id"
+              class="search-modal__item"
+              @click="closeMobileSearch(); openItemModal(item.id)"
+            >
+              <div class="search-modal__thumb">
+                <img v-if="item.thumbnail_url" :src="item.thumbnail_url" alt="">
+                <div v-else class="placeholder placeholder--b"><div class="placeholder__stripes"></div></div>
+              </div>
+              <div class="search-modal__info">
+                <span class="search-modal__title">{{ item.title || item.url }}</span>
+                <span class="search-modal__meta mono">{{ searchSourceLabel(item.url) }}</span>
+              </div>
+            </button>
+          </template>
+          <div v-else-if="searchDone" class="search-modal__state">
+            {{ t('nav.searchEmpty') }}
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- 新增 URL modal -->
     <Transition name="modal">
@@ -380,6 +434,19 @@ function closeSearch() {
   searchDone.value = false
   searchLoading.value = false
 }
+
+// 手機版搜尋 modal
+const mobileSearchOpen = ref(false)
+const mobileSearchInput = ref<HTMLInputElement | null>(null)
+
+function closeMobileSearch() {
+  mobileSearchOpen.value = false
+  closeSearch()
+}
+
+watch(mobileSearchOpen, (val) => {
+  if (val) nextTick(() => mobileSearchInput.value?.focus())
+})
 
 // inline item detail modal (搜尋 + 通知共用)
 const { activeItemId, open: openItemModal, close: closeItemModal } = useItemModal()
@@ -524,6 +591,7 @@ watch(() => route.path, () => {
   notifOpen.value = false
   closeItemModal()
   closeSearch()
+  mobileSearchOpen.value = false
 })
 
 // 通知輪詢
@@ -1011,7 +1079,7 @@ onUnmounted(() => notifStore.stopPolling())
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 50%;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-mid);
@@ -1162,6 +1230,106 @@ onUnmounted(() => notifStore.stopPolling())
 .nav__notif-time {
   font-size: 11px;
   font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+@media (max-width: 720px) {
+  .nav__notif-panel {
+    position: fixed;
+    top: 56px;
+    right: 12px;
+    left: auto;
+    width: calc(100vw - 24px);
+    max-width: 320px;
+  }
+}
+
+/* 手機版搜尋 icon button */
+.nav__search-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.nav__search-btn:hover { background: var(--surface); color: var(--text); border-color: var(--text-dim); }
+
+@media (max-width: 768px) {
+  .nav__search-btn { display: flex; }
+}
+
+/* 搜尋 modal 內部樣式 */
+.search-modal { padding: 16px; max-width: 480px; }
+
+.search-modal__input-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-modal__icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.search-modal__input { padding-left: 34px !important; }
+
+.search-modal__state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 8px 4px;
+}
+
+.search-modal__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s ease;
+}
+.search-modal__item:hover { background: var(--surface2); }
+
+.search-modal__thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+.search-modal__thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.search-modal__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.search-modal__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-modal__meta {
+  font-size: 11px;
   color: var(--text-dim);
 }
 </style>
