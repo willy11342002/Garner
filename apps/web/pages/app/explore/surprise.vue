@@ -17,14 +17,6 @@
           <span>{{ $t('explore.chain.start_lucky') }}</span>
         </button>
       </div>
-      <!-- 從任意節點重寫提示（鏈條存在 + 點了非末端節點） -->
-      <div v-if="chain.length && activeHopIdx < chain.length - 1" class="chain-rewrite-bar">
-        <span class="chain-rewrite-bar__hint">{{ $t('explore.chain.rewrite_hint') }}</span>
-        <button class="btn chain-rewrite-bar__btn" @click="rewriteFrom(activeHopIdx)">
-          {{ $t('explore.chain.rewrite_btn') }}
-        </button>
-      </div>
-
       <!-- 起點候選選擇 -->
       <div v-if="startCandidates.length && !chain.length" class="chain-candidates">
         <p class="chain-candidates__label">{{ $t('explore.chain.pick_label') }}</p>
@@ -68,6 +60,14 @@
             <span v-if="i < chain.length - 1" class="chain-arrow">→</span>
           </template>
           <button class="btn btn--ghost chain-reset" @click="resetChain">{{ $t('explore.chain.start_over') }}</button>
+        </div>
+
+        <!-- 從任意節點重寫提示（點了非末端節點） -->
+        <div v-if="activeHopIdx < chain.length - 1" class="chain-rewrite-bar">
+          <span class="chain-rewrite-bar__hint">{{ $t('explore.chain.rewrite_hint') }}</span>
+          <button class="btn chain-rewrite-bar__btn" @click="rewriteFrom(activeHopIdx)">
+            {{ $t('explore.chain.rewrite_btn') }}
+          </button>
         </div>
 
         <!-- 當前節點詳情 -->
