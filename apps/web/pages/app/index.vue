@@ -486,7 +486,7 @@ function openShareModal(tagId: string) {
       <section v-if="pendingItems.length > 0" class="pending-section fadeup">
         <header class="pending-section__head">
           <span class="pending-section__dot"></span>
-          <span class="pending-section__count">{{ pendingItems.length }} 筆待整理</span>
+          <span class="pending-section__count">{{ pendingItems.length }} 筆待確認</span>
           <button class="pending-section__toggle mono" @click="pendingCollapsed = !pendingCollapsed">
             {{ pendingCollapsed ? '展開 ↓' : '收起 ↑' }}
           </button>

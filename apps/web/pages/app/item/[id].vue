@@ -5,5 +5,5 @@ const id = route.params.id as string
 </script>
 
 <template>
-  <ItemDetailModal :itemId="id" @close="router.back()" @archived="router.back()" />
+  <ItemDetailModal :itemId="id" @close="router.back()" />
 </template>

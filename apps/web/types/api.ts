@@ -238,3 +238,15 @@ export interface ChatSource {
   thumbnail_url: string | null
   source_type: string | null
 }
+
+export type NotificationType = 'item_processed' | 'item_failed' | 'system'
+
+export interface Notification {
+  id: string
+  type: NotificationType
+  title: string
+  body: string | null
+  item_id: string | null
+  is_read: boolean
+  created_at: string
+}

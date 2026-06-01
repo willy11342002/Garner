@@ -142,8 +142,8 @@ async function confirmArchive() {
   try {
     const isArchived = item.value.status === 'archived'
     await updateItem(item.value.id, { status: isArchived ? 'active' : 'archived' })
+    fetchedItem.value = { ...fetchedItem.value!, status: isArchived ? 'active' : 'archived' }
     emit('archived')
-    doClose()
   } finally {
     archiving.value = false
   }

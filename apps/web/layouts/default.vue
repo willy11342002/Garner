@@ -73,6 +73,43 @@
           </div>
         </template>
         <template v-if="isLoggedIn">
+          <!-- 通知鈴鐺 -->
+          <div class="nav__notif" ref="notifEl">
+            <button class="nav__notif-btn" @click.stop="notifOpen = !notifOpen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+              <span v-if="notifStore.unreadCount > 0" class="nav__notif-badge">{{ notifStore.unreadCount > 9 ? '9+' : notifStore.unreadCount }}</span>
+            </button>
+
+            <Transition name="menu">
+              <div v-if="notifOpen" class="nav__notif-panel">
+                <div class="nav__notif-header">
+                  <span>{{ t('notif.title') }}</span>
+                  <button v-if="notifStore.unreadCount > 0" class="nav__notif-readall" @click="notifStore.markAllRead()">{{ t('notif.markAllRead') }}</button>
+                </div>
+                <div class="nav__notif-list">
+                  <div v-if="notifStore.items.length === 0" class="nav__notif-empty">{{ t('notif.empty') }}</div>
+                  <NuxtLink
+                    v-for="n in notifStore.items"
+                    :key="n.id"
+                    class="nav__notif-item"
+                    :class="{ 'nav__notif-item--unread': !n.is_read }"
+                    :to="n.item_id ? `/app/item/${n.item_id}` : '/app'"
+                    @click="notifStore.markRead([n.id]); notifOpen = false"
+                  >
+                    <span class="nav__notif-dot" :class="{ 'nav__notif-dot--visible': !n.is_read }" />
+                    <span class="nav__notif-content">
+                      <span class="nav__notif-text">{{ n.title }}</span>
+                      <span class="nav__notif-time">{{ formatNotifTime(n.created_at) }}</span>
+                    </span>
+                  </NuxtLink>
+                </div>
+              </div>
+            </Transition>
+          </div>
+
           <button class="nav__add" @click="addOpen = true">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
               <path d="M12 5v14M5 12h14"/>
@@ -200,10 +237,13 @@
     <div v-if="menuOpen" class="nav__backdrop" @click="menuOpen = false" />
     <!-- 點選外部關閉搜尋 -->
     <div v-if="searchOpen" class="nav__backdrop" @click="closeSearch" />
+    <!-- 點選外部關閉通知 -->
+    <div v-if="notifOpen" class="nav__backdrop" @click="notifOpen = false" />
+
 
     <!-- 新增 URL modal -->
     <Transition name="modal">
-      <div v-if="addOpen" class="add-overlay">
+      <div v-if="addOpen" class="add-overlay" @click.self="closeAdd">
         <div class="add-modal">
           <!-- Processing state -->
           <template v-if="addProcessingItemId">
@@ -269,7 +309,23 @@ const supabaseUser = useSupabaseUser()
 const client = useSupabaseClient()
 const authStore = useAuthStore()
 const itemStore = useItemStore()
+const notifStore = useNotificationStore()
 const { searchItems } = useSearch()
+
+// 通知
+const notifOpen = ref(false)
+const notifEl = ref<HTMLElement | null>(null)
+
+function formatNotifTime(isoStr: string) {
+  const diff = Date.now() - new Date(isoStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return t('notif.justNow')
+  if (mins < 60) return t('notif.minutesAgo', { n: mins })
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return t('notif.hoursAgo', { n: hours })
+  return t('notif.daysAgo', { n: Math.floor(hours / 24) })
+}
+
 
 const isLoggedIn = computed(() => !!supabaseUser.value)
 const menuOpen = ref(false)
@@ -376,6 +432,7 @@ watch(() => itemStore.recentlyProcessed, (itemId) => {
   if (itemId && itemId === addProcessingItemId.value) {
     processingStep.value = 4 // all done
     clearStepTimer()
+    notifStore.fetch()
     setTimeout(() => {
       addProcessingItemId.value = null
       addOpen.value = false
@@ -440,11 +497,20 @@ watch(menuOpen, (val) => {
   if (!val) menuPanel.value = 'main'
 })
 
-// 路由切換時關閉選單與搜尋
+// 路由切換時關閉選單、搜尋、通知
 watch(() => route.path, () => {
   menuOpen.value = false
+  notifOpen.value = false
   closeSearch()
 })
+
+// 通知輪詢
+watch(supabaseUser, (user) => {
+  if (user) notifStore.startPolling()
+  else notifStore.stopPolling()
+}, { immediate: true })
+
+onUnmounted(() => notifStore.stopPolling())
 </script>
 
 <style>
@@ -909,5 +975,171 @@ watch(() => route.path, () => {
 .menu-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* 通知鈴鐺 */
+.nav__notif {
+  position: relative;
+}
+
+.nav__notif-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+
+.nav__notif-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.nav__notif-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.nav__notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.nav__notif-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.nav__notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav__notif-readall {
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nav__notif-readall:hover {
+  opacity: 0.8;
+}
+
+.nav__notif-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.nav__notif-empty {
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+}
+
+.nav__notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.nav__notif-item:hover {
+  background: var(--bg);
+}
+
+.nav__notif-item--unread {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.nav__notif-item--unread:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.nav__notif-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+  background: transparent;
+}
+
+.nav__notif-dot--visible {
+  background: var(--accent);
+}
+
+.nav__notif-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nav__notif-text {
+  font-size: 12.5px;
+  font-family: var(--font-ui);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.nav__notif-time {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
 }
 </style>

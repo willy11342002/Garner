@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import auth, chat, collections, explore, items, search, share, tags
+from app.routers import auth, chat, collections, explore, items, notifications, search, share, tags
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +46,7 @@ app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(explore.router, prefix="/explore", tags=["explore"])
 app.include_router(share.router, prefix="/share", tags=["share"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 
 
 @app.exception_handler(Exception)

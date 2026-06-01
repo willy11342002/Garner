@@ -265,5 +265,14 @@
     "add_to_collection_error": "加入失敗",
     "no_collections": "你還沒有集合",
     "login_to_add": "登入後才能加入集合"
+  },
+  "notif": {
+    "title": "通知",
+    "empty": "目前沒有通知",
+    "markAllRead": "全部標為已讀",
+    "justNow": "剛剛",
+    "minutesAgo": "{n} 分鐘前",
+    "hoursAgo": "{n} 小時前",
+    "daysAgo": "{n} 天前"
   }
 }

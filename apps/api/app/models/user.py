@@ -37,3 +37,4 @@ class User(Base):
     user_items: Mapped[list["UserItem"]] = relationship(back_populates="user")
     tags: Mapped[list["Tag"]] = relationship(back_populates="user")
     collections: Mapped[list["Collection"]] = relationship(back_populates="user")
+    notifications: Mapped[list["Notification"]] = relationship(back_populates="user")

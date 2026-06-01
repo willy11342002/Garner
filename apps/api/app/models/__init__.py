@@ -1,4 +1,5 @@
 from app.models.app_setting import AppSetting
+from app.models.notification import Notification, NotificationType
 from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
 from app.models.content_chunk import ContentChunk
 from app.models.collection import Collection, CollectionVisibility
@@ -35,4 +36,6 @@ __all__ = [
     "MessageRole",
     "ContentChunk",
     "AppSetting",
+    "Notification",
+    "NotificationType",
 ]

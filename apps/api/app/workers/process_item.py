@@ -9,7 +9,9 @@ from app.core import events
 
 logger = logging.getLogger(__name__)
 from app.crud import chunks as crud_chunks
+from app.crud import notifications as crud_notifications
 from app.crud import tags as crud_tags
+from app.models.notification import NotificationType
 from app.models.content_object import ContentObject, SourceType, TranscriptionSource, detect_source_type
 from app.models.item_tag import TagSource
 from app.models.whisper_usage import WhisperUsage
@@ -91,6 +93,16 @@ async def process_item(
             db.add(WhisperUsage(user_id=user_id, date=date.today(), used_seconds=whisper_seconds))
 
     content.parsed_at = datetime.now(timezone.utc)
+
+    title_display = content.title or url
+    await crud_notifications.create(
+        db,
+        user_id=user_id,
+        type=NotificationType.item_processed,
+        title=title_display,
+        item_id=user_item_id,
+    )
+
     await db.commit()
 
     events.notify(str(user_item_id))

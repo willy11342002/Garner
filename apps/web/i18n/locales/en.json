@@ -265,5 +265,14 @@
     "add_to_collection_error": "Failed to add",
     "no_collections": "You have no collections",
     "login_to_add": "Log in to add to a collection"
+  },
+  "notif": {
+    "title": "Notifications",
+    "empty": "No notifications yet",
+    "markAllRead": "Mark all as read",
+    "justNow": "Just now",
+    "minutesAgo": "{n}m ago",
+    "hoursAgo": "{n}h ago",
+    "daysAgo": "{n}d ago"
   }
 }
