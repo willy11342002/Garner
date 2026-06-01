@@ -533,26 +533,26 @@ body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
   .hero__media::after { background: linear-gradient(180deg, transparent 0%, var(--surface) 90%); }
   .hero__body { padding: 20px 22px 24px; }
   .hero__title { font-size: 22px; }
+  .hero__summary { display: none; }
+  .hero__actions { display: none; }
   .card { width: 168px; }
   .card__thumb { height: 96px; }
 
-  /* Trend slide: collapse to single column */
-  .hero-slide--trend { min-height: 0; }
+  /* Trend slide: collapse to single column, chart fills remaining space */
+  .hero-slide--trend { min-height: 0; align-items: stretch; }
   .hero-slide--trend .insight {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "head"
-      "title"
-      "chart"
-      "foot";
+    display: flex;
+    flex-direction: column;
     padding: 20px 22px 24px;
-    gap: 10px 0;
+    gap: 10px;
   }
   .hero-slide--trend .topic-bars {
-    height: 110px;
+    flex: 1;
+    min-height: 80px;
     align-items: flex-end;
+    margin: 0;
   }
-  .hero-slide--trend .insight__title { font-size: 18px; }
+  .hero-slide--trend .insight__title { font-size: 18px; margin: 0; align-self: start; }
 
   /* Hide nav arrows on touch (use swipe instead) */
   .hero-nav { display: none; }
