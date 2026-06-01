@@ -1,7 +1,7 @@
 <template>
   <div class="chat-page">
     <!-- 左側：session 列表 -->
-    <aside class="chat-list">
+    <aside class="chat-list" :class="{ 'chat-list--hidden-mobile': mobileView === 'chat' }">
       <div class="chat-list__head">
         <span class="chat-list__title">{{ t('chat.title') }}</span>
         <button class="chat-icon-btn" :title="t('chat.new')" @click="newSession">
@@ -38,10 +38,18 @@
         </div>
         <div v-if="!sessions.length" class="chat-list__empty">{{ t('chat.empty_list') }}</div>
       </div>
+      <!-- 手機版：右邊緣切換箭頭 -->
+      <button class="panel-toggle panel-toggle--right" @click="mobileView = 'chat'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
     </aside>
 
     <!-- 右側：對話區 -->
-    <div class="chat-view">
+    <div class="chat-view" :class="{ 'chat-view--hidden-mobile': mobileView === 'list' }">
+      <!-- 手機版：左邊緣切換箭頭 -->
+      <button class="panel-toggle panel-toggle--left" @click="mobileView = 'list'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
       <div v-if="!activeSessionId" class="chat-welcome">
         <div class="chat-welcome__icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="44" height="44"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -53,6 +61,9 @@
 
       <template v-else>
         <div class="chat-view__head">
+          <button class="chat-back-btn" @click="mobileView = 'list'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
           <span class="chat-view__title">{{ activeSession?.title || t('chat.untitled') }}</span>
         </div>
 
@@ -246,6 +257,9 @@ const inputText = ref('')
 const loading = ref(false)
 const streamingText = ref('')
 
+// 手機版視圖切換
+const mobileView = ref<'list' | 'chat'>('list')
+
 // 哪些訊息的 thinking 是展開的（'live' = 進行中）
 const openThinking = ref<Set<string>>(new Set(['live']))
 // 哪些訊息的 sources 是展開的
@@ -287,6 +301,7 @@ async function newSession() {
     const s = await apiFetch<ChatSession>('/chat/sessions', { method: 'POST', body: {} })
     sessions.value.unshift(s)
     await openSession(s.id)
+    mobileView.value = 'chat'
   } catch {}
 }
 
@@ -331,6 +346,7 @@ async function openSession(id: string) {
       }
     }
 
+    mobileView.value = 'chat'
     await nextTick()
     scrollBottom()
   } catch {}
@@ -740,9 +756,72 @@ function sourceLabel(type: string | null) {
 .chat-send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .chat-hint { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); margin: 8px 0 0; text-align: center; }
 
+.chat-back-btn { display: none; }
+.panel-toggle { display: none; }
+
 @media (max-width: 768px) {
-  .chat-page { grid-template-columns: 1fr; }
-  .chat-list { display: none; }
-  .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block { max-width: 92%; }
+  .chat-page {
+    display: block;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .chat-list,
+  .chat-view {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transition: transform .3s cubic-bezier(.4, 0, .2, 1);
+    will-change: transform;
+  }
+
+  /* list 面板：chat 模式時滑出左側 */
+  .chat-list { transform: translateX(0); }
+  .chat-list--hidden-mobile { transform: translateX(-100%); }
+
+  /* chat 面板：list 模式時在右側等待 */
+  .chat-view { transform: translateX(100%); }
+  .chat-view--hidden-mobile { transform: translateX(100%); }
+  .chat-view:not(.chat-view--hidden-mobile) { transform: translateX(0); }
+
+  .panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    width: 22px;
+    height: 48px;
+    background: var(--surface);
+    color: var(--text-mid);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition: background .15s, color .15s;
+  }
+  .panel-toggle--right {
+    right: 0;
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+    box-shadow: -2px 0 8px rgba(0,0,0,.06);
+  }
+  .panel-toggle--left {
+    left: 0;
+    border-left: none;
+    border-radius: 0 10px 10px 0;
+    box-shadow: 2px 0 8px rgba(0,0,0,.06);
+  }
+  .panel-toggle:active {
+    background: #16a34a;
+    color: #fff;
+    border-color: #16a34a;
+  }
+
+  .chat-back-btn { display: none; }
+  .chat-view__head { display: flex; align-items: center; }
+
+  .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block { max-width: 92%; width: 92%; }
 }
 </style>
