@@ -323,13 +323,23 @@ async def _get_public_chain_items(
     db: AsyncSession,
     embedding: list[float] | None,
     limit: int,
+    user_id: UUID,
     exclude_content_ids: list[UUID] | None = None,
 ) -> list[ChainItem]:
-    """從所有 ContentObjects 做向量搜尋，排除用戶自己已有的，視為公開知識。"""
+    """從所有 ContentObjects 做向量搜尋，排除該用戶 user_items 中已有的，視為公開知識。"""
     from sqlalchemy import select
     from app.models.content_object import ContentObject
 
-    filters = [ContentObject.embedding.is_not(None)]
+    owned_subq = select(UserItem.content_id).where(
+        UserItem.user_id == user_id,
+        UserItem.content_id.is_not(None),
+        UserItem.deleted_at.is_(None),
+    ).scalar_subquery()
+
+    filters = [
+        ContentObject.embedding.is_not(None),
+        ContentObject.id.not_in(owned_subq),
+    ]
     if exclude_content_ids:
         filters.append(ContentObject.id.not_in(exclude_content_ids))
 
@@ -390,8 +400,7 @@ async def get_chain_start_items(
 
     if allow_public:
         needed = 3 - len(result)
-        exclude_content_ids = [ui.content_id for ui in items if ui.content_id]
-        public_items = await _get_public_chain_items(db, None, needed, exclude_content_ids)
+        public_items = await _get_public_chain_items(db, None, needed, user_id)
         result.extend(public_items)
 
     return result
@@ -508,7 +517,7 @@ async def get_chain_candidates(
 
     if allow_public:
         needed = 4 - len(candidates)
-        public_items = await _get_public_chain_items(db, embedding, needed, exclude_content_ids)
+        public_items = await _get_public_chain_items(db, embedding, needed, user_id, exclude_content_ids)
         candidates.extend(public_items)
 
     return candidates
