@@ -4,6 +4,7 @@ import type { Item, ItemPendingReview, Tag } from '~/types/api'
 const itemStore = useItemStore()
 const { getItemTags, getPendingReview, confirmItemTag, detachTag, attachTag } = useItems()
 const { localize } = useI18nContent()
+const { t } = useI18n()
 
 const loading = ref(true)
 const itemTagsMap = ref<Record<string, Tag[]>>({})
@@ -446,13 +447,13 @@ function openShareModal(tagId: string) {
           <section class="hero-slide hero-slide--trend">
             <article class="insight insight--trend">
               <header class="insight__head">
-                <span class="ins-badge ins-badge--a">◈ 主題趨勢</span>
-                <span class="insight__when">本週</span>
+                <span class="ins-badge ins-badge--a">{{ t('home.trend_badge') }}</span>
+                <span class="insight__when">{{ t('home.trend_when') }}</span>
               </header>
               <h3 v-if="weeklyTagGroups.length" class="insight__title">
-                本週你最關注「{{ localize(weeklyTagGroups[0].tag.name_i18n, weeklyTagGroups[0].tag.name) }}」
+                {{ t('home.trend_top_tag', { tag: localize(weeklyTagGroups[0].tag.name_i18n, weeklyTagGroups[0].tag.name) }) }}
               </h3>
-              <h3 v-else class="insight__title">本週還沒有新內容</h3>
+              <h3 v-else class="insight__title">{{ t('home.trend_empty') }}</h3>
               <div v-if="weeklyTagGroups.length" class="topic-bars">
                 <div v-for="(g, i) in weeklyTagGroups" :key="g.tag.id" class="topic-bar">
                   <div
@@ -486,9 +487,9 @@ function openShareModal(tagId: string) {
       <section v-if="pendingItems.length > 0" class="pending-section fadeup">
         <header class="pending-section__head">
           <span class="pending-section__dot"></span>
-          <span class="pending-section__count">{{ pendingItems.length }} 筆待確認</span>
+          <span class="pending-section__count">{{ t('home.pending_count', { n: pendingItems.length }) }}</span>
           <button class="pending-section__toggle mono" @click="pendingCollapsed = !pendingCollapsed">
-            {{ pendingCollapsed ? '展開 ↓' : '收起 ↑' }}
+            {{ pendingCollapsed ? t('home.pending_expand') : t('home.pending_collapse') }}
           </button>
         </header>
 

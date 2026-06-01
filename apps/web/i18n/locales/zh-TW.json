@@ -266,6 +266,15 @@
     "no_collections": "你還沒有集合",
     "login_to_add": "登入後才能加入集合"
   },
+  "home": {
+    "pending_count": "{n} 筆待確認",
+    "pending_expand": "展開 ↓",
+    "pending_collapse": "收起 ↑",
+    "trend_badge": "◈ 主題趨勢",
+    "trend_when": "本週",
+    "trend_top_tag": "本週你最關注「{tag}」",
+    "trend_empty": "本週還沒有新內容"
+  },
   "notif": {
     "title": "通知",
     "empty": "目前沒有通知",

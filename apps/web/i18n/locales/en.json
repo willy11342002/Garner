@@ -266,6 +266,15 @@
     "no_collections": "You have no collections",
     "login_to_add": "Log in to add to a collection"
   },
+  "home": {
+    "pending_count": "{n} pending",
+    "pending_expand": "Show ↓",
+    "pending_collapse": "Hide ↑",
+    "trend_badge": "◈ Topic Trends",
+    "trend_when": "This week",
+    "trend_top_tag": "This week you focused on \"{tag}\"",
+    "trend_empty": "No new content this week"
+  },
   "notif": {
     "title": "Notifications",
     "empty": "No notifications yet",
