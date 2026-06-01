@@ -51,7 +51,7 @@
                     v-for="item in searchResults.slice(0, 8)"
                     :key="item.id"
                     class="search-drop__item"
-                    @click="goToSearchItem(item.id)"
+                    @click="closeSearch(); openItemModal(item.id)"
                   >
                     <div class="search-drop__thumb">
                       <img v-if="item.thumbnail_url" :src="item.thumbnail_url" alt="">
@@ -91,20 +91,19 @@
                 </div>
                 <div class="nav__notif-list">
                   <div v-if="notifStore.items.length === 0" class="nav__notif-empty">{{ t('notif.empty') }}</div>
-                  <NuxtLink
+                  <div
                     v-for="n in notifStore.items"
                     :key="n.id"
                     class="nav__notif-item"
                     :class="{ 'nav__notif-item--unread': !n.is_read }"
-                    :to="n.item_id ? `/app/item/${n.item_id}` : '/app'"
-                    @click="notifStore.markRead([n.id]); notifOpen = false"
+                    @click="openItemFromNotif(n)"
                   >
                     <span class="nav__notif-dot" :class="{ 'nav__notif-dot--visible': !n.is_read }" />
                     <span class="nav__notif-content">
                       <span class="nav__notif-text">{{ n.title }}</span>
                       <span class="nav__notif-time">{{ formatNotifTime(n.created_at) }}</span>
                     </span>
-                  </NuxtLink>
+                  </div>
                 </div>
               </div>
             </Transition>
@@ -295,6 +294,12 @@
     </Transition>
 
     <slot />
+
+    <ItemDetailModal
+      :item-id="activeItemId"
+      @close="closeItemModal()"
+      @archived="onItemArchived"
+    />
   </div>
 </template>
 
@@ -374,6 +379,22 @@ function closeSearch() {
   searchResults.value = []
   searchDone.value = false
   searchLoading.value = false
+}
+
+// inline item detail modal (搜尋 + 通知共用)
+const { activeItemId, open: openItemModal, close: closeItemModal } = useItemModal()
+
+function onItemArchived() {
+  if (!activeItemId.value) return
+  const idx = itemStore.items.findIndex(i => i.id === activeItemId.value)
+  if (idx !== -1) itemStore.items.splice(idx, 1)
+  closeItemModal()
+}
+
+function openItemFromNotif(n: { id: string; item_id?: string | null }) {
+  notifStore.markRead([n.id])
+  notifOpen.value = false
+  if (n.item_id) openItemModal(n.item_id)
 }
 
 function goToSearchItem(id: string) {
@@ -501,6 +522,7 @@ watch(menuOpen, (val) => {
 watch(() => route.path, () => {
   menuOpen.value = false
   notifOpen.value = false
+  closeItemModal()
   closeSearch()
 })
 

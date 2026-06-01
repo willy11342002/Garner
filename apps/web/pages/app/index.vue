@@ -364,6 +364,17 @@ onUnmounted(() => {
   stopHeroTimer()
 })
 
+// inline item detail modal
+const { activeItemId, open: openItemModal } = useItemModal()
+
+// modal 關閉後刷新該卡片的 tags 與 pending 狀態
+watch(activeItemId, async (newId, oldId) => {
+  if (!newId && oldId) {
+    itemTagsMap.value[oldId] = await getItemTags(oldId)
+    pendingItems.value = await getPendingReview()
+  }
+})
+
 // share wizard modal
 const shareModalOpen = ref(false)
 const shareModalTagId = ref<string | undefined>(undefined)
@@ -461,7 +472,7 @@ function openShareModal(tagId: string) {
                 </span>
               </div>
               <div class="hero__actions">
-                <NuxtLink :to="`/app/item/${heroItem.id}`" class="btn btn--accent">開啟閱讀 →</NuxtLink>
+                <button class="btn btn--accent" @click="openItemModal(heroItem.id)">開啟閱讀 →</button>
               </div>
             </div>
           </section>
@@ -610,11 +621,12 @@ function openShareModal(tagId: string) {
           <span class="tagrow__count">{{ untaggedItems.length }}</span>
         </header>
         <div class="tagrow__scroll">
-          <NuxtLink
+          <a
             v-for="item in untaggedItems.slice(0, 6)"
             :key="item.id"
             class="card"
-            :to="`/app/item/${item.id}`"
+            :href="`/app/item/${item.id}`"
+            @click.prevent="openItemModal(item.id)"
           >
             <div class="card__thumb">
               <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
@@ -630,7 +642,7 @@ function openShareModal(tagId: string) {
                 <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
               </div>
             </div>
-          </NuxtLink>
+          </a>
         </div>
       </section>
 
@@ -644,11 +656,12 @@ function openShareModal(tagId: string) {
           <NuxtLink :to="`/app/tag/${group.tag.id}`" class="tagrow__all">查看全部 →</NuxtLink>
         </header>
         <div class="tagrow__scroll">
-          <NuxtLink
+          <a
             v-for="item in group.items.slice(0, 6)"
             :key="item.id"
             class="card"
-            :to="`/app/item/${item.id}`"
+            :href="`/app/item/${item.id}`"
+            @click.prevent="openItemModal(item.id)"
           >
             <div class="card__thumb">
               <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
@@ -665,7 +678,7 @@ function openShareModal(tagId: string) {
                 <span v-else :class="`tag-chip tag-chip--${tagColor(i)}`">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
               </div>
             </div>
-          </NuxtLink>
+          </a>
           <NuxtLink v-if="group.items.length > 6" :to="`/app/tag/${group.tag.id}`" class="card--more">查看更多 +{{ group.items.length - 6 }}</NuxtLink>
         </div>
       </section>
