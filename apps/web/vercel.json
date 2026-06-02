@@ -1,5 +1,8 @@
 {
   "buildCommand": "pnpm run build",
   "outputDirectory": ".output/public",
-  "framework": "nuxtjs"
+  "framework": "nuxtjs",
+  "git": {
+    "deploymentEnabled": false
+  }
 }
