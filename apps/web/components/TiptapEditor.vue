@@ -4,7 +4,11 @@ import StarterKit from '@tiptap/starter-kit'
 import GlobalDragHandle from 'tiptap-extension-global-drag-handle'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { createLowlight, common } from 'lowlight'
+import Underline from '@tiptap/extension-underline'
+import { TextStyle, Color } from '@tiptap/extension-text-style'
+import Link from '@tiptap/extension-link'
 import CodeBlockView from './CodeBlockView.vue'
+import BubbleMenuBar from './BubbleMenuBar.vue'
 
 const lowlight = createLowlight(common)
 
@@ -23,6 +27,10 @@ const editor = useEditor({
     CodeBlockLowlight.configure({ lowlight }).extend({
       addNodeView() { return VueNodeViewRenderer(CodeBlockView) },
     }),
+    Underline,
+    TextStyle,
+    Color,
+    Link.configure({ openOnClick: false }),
     GlobalDragHandle.configure({ dragHandleWidth: 24 }),
   ],
   editable: !props.readonly,
@@ -194,6 +202,7 @@ defineExpose({ editor })
       class="tiptap-wrap"
       :class="{ 'tiptap-wrap--readonly': readonly, 'tiptap-wrap--edit': !readonly }"
     />
+    <BubbleMenuBar v-if="editor && !readonly" :editor="editor" />
 
     <Teleport to="body">
       <!-- Insert button -->
@@ -314,6 +323,25 @@ defineExpose({ editor })
   margin: 0.2em 0;
   color: var(--text);
   opacity: 0.9;
+}
+
+.tiptap-wrap :deep(u) { text-decoration: underline; }
+
+.tiptap-wrap :deep(a) {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.tiptap-wrap :deep(code) {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  font-family: 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 0.83em;
+  color: var(--accent);
 }
 
 .tiptap-wrap :deep(li::marker) {
