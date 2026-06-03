@@ -17,9 +17,17 @@ const confirmingSelected = ref(false)
 const archivingSelected = ref(false)
 const addingTagFor = ref<string | null>(null)
 const newTagInput = ref('')
+const newTagInputEl = ref<HTMLInputElement | null>(null)
 const openMenuId = ref<string | null>(null)
 
 function closeMenu() { openMenuId.value = null }
+
+async function startAddingTag(itemId: string) {
+  addingTagFor.value = itemId
+  newTagInput.value = ''
+  await nextTick()
+  newTagInputEl.value?.focus()
+}
 function toggleRowMenu(itemId: string, e: MouseEvent) {
   e.stopPropagation()
   openMenuId.value = openMenuId.value === itemId ? null : itemId
@@ -230,6 +238,11 @@ function stopHeroTimer() {
 function goHeroPage(page: number) {
   heroPage.value = page
   startHeroTimer()
+}
+
+function onHeroCardClick() {
+  if (import.meta.client && window.innerWidth < 768 && heroItem.value)
+    openItemModal(heroItem.value.id)
 }
 
 // Touch / mouse drag support for hero gallery
@@ -461,7 +474,7 @@ function openShareModal(tagId: string) {
           @mouseup="onDragEnd"
         >
           <!-- Slide 0: TODAY'S REVISIT -->
-          <section class="hero-slide hero" @click.stop="openItemModal(heroItem.id)">
+          <section class="hero-slide hero" @click.stop="onHeroCardClick">
             <div class="hero__media">
               <img v-if="heroItem.thumbnail_url" :src="heroItem.thumbnail_url" class="hero__img" alt="" />
               <div v-else class="placeholder placeholder--b">
@@ -588,10 +601,10 @@ function openShareModal(tagId: string) {
               </div>
               <template v-if="addingTagFor === item.id">
                 <input
+                  ref="newTagInputEl"
                   v-model="newTagInput"
                   class="pending-tag-input"
                   placeholder="標籤名稱"
-                  autofocus
                   @keydown.enter.stop="handleAddTag(item)"
                   @keydown.esc.stop="addingTagFor = null; newTagInput = ''"
                   @blur="handleAddTag(item)"
@@ -602,7 +615,7 @@ function openShareModal(tagId: string) {
                 v-else
                 class="pending-row__add"
                 title="新增標籤"
-                @click.stop="addingTagFor = item.id; newTagInput = ''"
+                @click.stop="startAddingTag(item.id)"
               >+</button>
             </div>
             <div class="pending-row__menu-wrap" @click.stop>
