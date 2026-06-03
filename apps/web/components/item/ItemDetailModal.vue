@@ -81,10 +81,10 @@ async function load(id: string) {
 
 watch(() => props.itemId, (id) => {
   if (id) {
-    document.body.style.overflow = 'hidden'
+    if (import.meta.client) document.body.style.overflow = 'hidden'
     load(id)
   } else if (!props.item) {
-    document.body.style.overflow = ''
+    if (import.meta.client) document.body.style.overflow = ''
     fetchedItem.value = null
     tags.value = []
     pendingTags.value = []
@@ -92,11 +92,14 @@ watch(() => props.itemId, (id) => {
 }, { immediate: true })
 
 watch(() => props.item, (v) => {
+  if (!import.meta.client) return
   if (v) document.body.style.overflow = 'hidden'
   else if (!props.itemId) document.body.style.overflow = ''
 }, { immediate: true })
 
-onUnmounted(() => { document.body.style.overflow = '' })
+onUnmounted(() => {
+  if (import.meta.client) document.body.style.overflow = ''
+})
 
 function doClose() {
   showArchiveConfirm.value = false
