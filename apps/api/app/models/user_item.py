@@ -33,6 +33,8 @@ class UserItem(Base):
     saved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    is_draft: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    is_public: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     last_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
