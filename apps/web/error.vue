@@ -20,11 +20,6 @@
     <main class="error-main">
       <p class="error-code">{{ error.statusCode }}</p>
       <h1 class="error-title">{{ is404 ? '找不到這個頁面' : '發生錯誤' }}</h1>
-      <p class="error-desc">
-        {{ is404
-          ? '這個頁面不存在或已被移除。'
-          : (error.message || '伺服器發生了未預期的錯誤，請稍後再試。') }}
-      </p>
       <button class="btn btn--accent error-back" @click="handleError">
         回到首頁
       </button>
@@ -44,7 +39,7 @@ function handleError() {
 }
 
 if (!is404.value) {
-  console.error('[error.vue]', props.error)
+  $fetch('/api/log-error', { method: 'POST', body: props.error }).catch(() => {})
 }
 </script>
 
@@ -84,13 +79,6 @@ if (!is404.value) {
   color: var(--text);
   margin: 0 0 12px;
   letter-spacing: -0.02em;
-}
-
-.error-desc {
-  font-size: 14px;
-  color: var(--text-mid);
-  margin: 0 0 32px;
-  max-width: 360px;
 }
 
 .error-back {
