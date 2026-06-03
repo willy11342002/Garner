@@ -39,7 +39,7 @@ function handleError() {
 }
 
 if (!is404.value) {
-  $fetch('/api/log-error', { method: 'POST', body: props.error }).catch(() => {})
+  console.error('[error.vue]', props.error)
 }
 </script>
 
