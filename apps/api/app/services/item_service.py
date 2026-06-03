@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.models.content_object import ContentObject, SourceType, detect_source_type
-from app.schemas.item import ItemCreate, ItemRead, ItemSummaryUpdate, ItemUpdate
+from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemSummaryUpdate, ItemUpdate
 from app.workers.process_item import process_item
 
 
@@ -33,6 +33,9 @@ def _item_to_read(user_item, current_user_id: UUID | None = None) -> ItemRead:
         source_type=content.source_type,
         transcription_source=content.transcription_source,
         is_owner=is_owner,
+        content_md=content.content_md,
+        is_draft=user_item.is_draft,
+        is_public=user_item.is_public,
     )
 
 
@@ -47,19 +50,22 @@ async def create_item(
     data: ItemCreate,
     background_tasks: BackgroundTasks,
 ) -> ItemRead:
-    # In-app note: generate an internal URL and create content owned by this user
+    # In-app article: generate URL from pre-allocated user_item id
     if data.url is None:
-        note_url = f"/note/{uuid4()}"
+        item_id = uuid4()
+        article_url = f"/app/item/{item_id}"
         content = ContentObject(
-            url=note_url,
+            url=article_url,
             source_type=SourceType.article,
-            title=data.title or "未命名筆記",
+            title=data.title or "未命名文章",
             created_by_user_id=user_id,
-            summary_i18n={"zh-TW": {"type": "doc", "content": []}},
         )
         db.add(content)
         await db.flush()
-        user_item = await crud_items.create(db, user_id, content)
+        from app.models.user_item import UserItem as UserItemModel
+        user_item = UserItemModel(id=item_id, user_id=user_id, content_id=content.id, is_draft=True)
+        db.add(user_item)
+        await db.flush()
         await db.commit()
         await db.refresh(user_item)
         await db.refresh(user_item.content)
@@ -185,3 +191,74 @@ async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     await crud_items.soft_delete(db, user_item)
     await db.commit()
+
+
+async def update_article(
+    db: AsyncSession, user_id: UUID, item_id: UUID, data: ArticleUpdate
+) -> ItemRead:
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    content = user_item.content
+    if not content.url.startswith("/app/item/") or content.created_by_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
+    if data.title is not None:
+        content.title = data.title
+    if data.content_md is not None:
+        content.content_md = data.content_md
+    if data.is_draft is not None:
+        user_item.is_draft = data.is_draft
+    if data.is_public is not None:
+        user_item.is_public = data.is_public
+    await db.commit()
+    await db.refresh(user_item)
+    return _item_to_read(user_item, user_id)
+
+
+async def publish_article(
+    db: AsyncSession,
+    user_id: UUID,
+    item_id: UUID,
+    background_tasks: BackgroundTasks,
+) -> ItemRead:
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    content = user_item.content
+    if not content.url.startswith("/app/item/") or content.created_by_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
+    user_item.is_draft = False
+    await db.commit()
+    await db.refresh(user_item)
+    # trigger AI pipeline (summary + embedding) only if not yet processed
+    if content.parsed_at is None:
+        background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, content.url)
+    return _item_to_read(user_item, user_id)
+
+
+async def upload_article_cover(
+    db: AsyncSession,
+    user_id: UUID,
+    item_id: UUID,
+    image_bytes: bytes,
+    content_type: str,
+) -> ItemRead:
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    content = user_item.content
+    if content.created_by_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
+    from app.services.thumbnail_service import _get_supabase
+    from app.core.config import settings
+    supabase = await _get_supabase()
+    ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
+    path = f"thumbnails/{content.id}.{ext}"
+    await supabase.storage.from_(settings.storage_bucket).upload(
+        path, image_bytes, {"content-type": content_type, "upsert": "true"}
+    )
+    thumbnail_url = supabase.storage.from_(settings.storage_bucket).get_public_url(path)
+    content.thumbnail_url = thumbnail_url
+    await db.commit()
+    await db.refresh(user_item)
+    return _item_to_read(user_item, user_id)
