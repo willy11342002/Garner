@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ ssr: false })
+definePageMeta({ ssr: false, layout: 'write' })
 
 const router = useRouter()
 const { createArticle } = useArticles()
