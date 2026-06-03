@@ -34,6 +34,9 @@ const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const analyzing = ref(false)
 const isDirty = ref(false)
 
+const originalTitle = ref('')
+const originalContent = ref('')
+
 // AI 分析抽屜
 const drawerOpen = ref(false)
 const drawerHasResult = ref(false)
@@ -126,11 +129,13 @@ onMounted(async () => {
     const data: Item = await apiFetch(`/articles/${id}`)
     article.value = data
     title.value = data.title ?? ''
+    originalTitle.value = data.title ?? ''
     isPublic.value = data.is_public
     isDraft.value = data.is_draft
     if (data.content_md) {
       try { editorContent.value = JSON.parse(data.content_md) } catch { /* ignore */ }
     }
+    originalContent.value = data.content_md ?? ''
     if (data.parsed_at) {
       drawerHasResult.value = true
       await fetchTags()
@@ -142,8 +147,8 @@ onMounted(async () => {
   }
 })
 
-watch(title, () => { isDirty.value = true })
-watch(editorContent, () => { isDirty.value = true }, { deep: true })
+watch(title, (val) => { isDirty.value = val !== originalTitle.value || JSON.stringify(editorContent.value) !== originalContent.value })
+watch(editorContent, (val) => { isDirty.value = title.value !== originalTitle.value || JSON.stringify(val) !== originalContent.value }, { deep: true })
 
 function handleBeforeUnload(e: BeforeUnloadEvent) {
   if (!isDirty.value) return
@@ -171,6 +176,8 @@ async function handleAnalyze() {
       content_md: JSON.stringify(editorContent.value),
       is_public: isPublic.value,
     })
+    originalTitle.value = title.value || '未命名文章'
+    originalContent.value = JSON.stringify(editorContent.value)
     isDirty.value = false
     const updated = await publishArticle(id)
     isDraft.value = updated.is_draft
