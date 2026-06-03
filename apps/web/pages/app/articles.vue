@@ -1,7 +1,8 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false })
 
-const { listArticles } = useArticles()
+const { listArticles, publishArticle } = useArticles()
+const apiFetch = useApiFetch()
 const router = useRouter()
 
 const articles = ref<Awaited<ReturnType<typeof listArticles>>>([])
@@ -19,8 +20,57 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-function openArticle(id: string) {
-  router.push(`/app/write/${id}?from=/app/articles`)
+// ── 選擇模式 ──────────────────────────────────────────────────────────────────
+const selected = ref<Set<string>>(new Set())
+const selectMode = computed(() => selected.value.size > 0)
+
+function toggleSelect(id: string) {
+  const s = new Set(selected.value)
+  if (s.has(id)) { s.delete(id) } else { s.add(id) }
+  selected.value = s
+}
+
+function clearSelect() {
+  selected.value = new Set()
+}
+
+function handleCardClick(id: string) {
+  if (selectMode.value) {
+    toggleSelect(id)
+  } else {
+    router.push(`/app/write/${id}?from=/app/articles`)
+  }
+}
+
+// ── 批次 AI 分析 ──────────────────────────────────────────────────────────────
+const analyzing = ref(false)
+
+async function batchAnalyze() {
+  if (analyzing.value) return
+  analyzing.value = true
+  try {
+    await Promise.allSettled([...selected.value].map(id => publishArticle(id)))
+    // 重新 fetch 更新狀態
+    articles.value = await listArticles()
+    clearSelect()
+  } finally {
+    analyzing.value = false
+  }
+}
+
+// ── 批次刪除 ──────────────────────────────────────────────────────────────────
+const deleting = ref(false)
+
+async function batchDelete() {
+  if (deleting.value) return
+  deleting.value = true
+  try {
+    await Promise.allSettled([...selected.value].map(id => apiFetch(`/items/${id}`, { method: 'DELETE' })))
+    articles.value = articles.value.filter(a => !selected.value.has(a.id))
+    clearSelect()
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -59,21 +109,46 @@ function openArticle(id: string) {
         v-for="article in articles"
         :key="article.id"
         class="article-card"
-        @click="openArticle(article.id)"
+        :class="{ 'article-card--selected': selected.has(article.id) }"
+        @click="handleCardClick(article.id)"
+        @contextmenu.prevent="toggleSelect(article.id)"
       >
+        <!-- 選取勾勾 -->
+        <div class="article-card__check" @click.stop="toggleSelect(article.id)">
+          <svg v-if="selected.has(article.id)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+
         <div class="article-card__cover">
           <img v-if="article.thumbnail_url" :src="article.thumbnail_url" alt="">
           <div v-else class="placeholder placeholder--b"><div class="placeholder__stripes"></div></div>
         </div>
         <div class="article-card__body">
           <span class="article-card__status" :class="article.is_draft ? 'article-card__status--draft' : 'article-card__status--pub'">
-            {{ article.is_draft ? '草稿' : '已發布' }}
+            {{ article.is_draft ? '草稿' : '已分析' }}
           </span>
           <h3 class="article-card__title">{{ article.title || '未命名文章' }}</h3>
           <span class="article-card__date mono">{{ formatDate(article.saved_at) }}</span>
         </div>
       </button>
     </div>
+
+    <!-- 批次操作 floating bar -->
+    <Transition name="batch-bar">
+      <div v-if="selectMode" class="batch-bar">
+        <span class="batch-bar__count">已選 {{ selected.size }} 篇</span>
+        <div class="batch-bar__actions">
+          <button class="batch-bar__btn batch-bar__btn--ghost" @click="clearSelect">取消</button>
+          <button class="batch-bar__btn batch-bar__btn--analyze" :disabled="analyzing" @click="batchAnalyze">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+            {{ analyzing ? '分析中…' : 'AI 分析' }}
+          </button>
+          <button class="batch-bar__btn batch-bar__btn--delete" :disabled="deleting" @click="batchDelete">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            {{ deleting ? '刪除中…' : '刪除' }}
+          </button>
+        </div>
+      </div>
+    </Transition>
   </main>
 </template>
 
@@ -106,6 +181,7 @@ function openArticle(id: string) {
   gap: 16px;
 }
 
+/* ── Card ── */
 .article-card {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -115,11 +191,41 @@ function openArticle(id: string) {
   text-align: left;
   transition: border-color 0.15s, box-shadow 0.15s;
   padding: 0;
+  position: relative;
 }
 
 .article-card:hover {
   border-color: var(--accent);
   box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.article-card--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bdr);
+}
+
+/* ── 選取勾勾 ── */
+.article-card__check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  transition: background 0.12s, border-color 0.12s;
+  color: #fff;
+}
+
+.article-card--selected .article-card__check {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .article-card__cover {
@@ -212,5 +318,88 @@ function openArticle(id: string) {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* ── 批次操作 floating bar ── */
+.batch-bar {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  white-space: nowrap;
+}
+
+.batch-bar__count {
+  font-size: 12.5px;
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  padding-right: 6px;
+  border-right: 1px solid var(--border2);
+}
+
+.batch-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.batch-bar__btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity 0.15s, background 0.15s;
+}
+.batch-bar__btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.batch-bar__btn--ghost {
+  background: transparent;
+  border-color: var(--border2);
+  color: var(--text-mid);
+}
+.batch-bar__btn--ghost:hover { background: var(--surface2); }
+
+.batch-bar__btn--analyze {
+  background: var(--accent-dim);
+  border-color: var(--accent-bdr);
+  color: var(--accent);
+}
+.batch-bar__btn--analyze:not(:disabled):hover { opacity: 0.85; }
+
+.batch-bar__btn--delete {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+.batch-bar__btn--delete:not(:disabled):hover { opacity: 0.85; }
+
+/* floating bar 動畫 */
+.batch-bar-enter-active,
+.batch-bar-leave-active {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s ease;
+}
+.batch-bar-enter-from,
+.batch-bar-leave-to {
+  transform: translateX(-50%) translateY(16px);
+  opacity: 0;
+}
+.batch-bar-enter-to,
+.batch-bar-leave-from {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
 }
 </style>

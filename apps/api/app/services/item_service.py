@@ -271,10 +271,16 @@ async def upload_article_cover(
     supabase = await _get_supabase()
     ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
     path = f"thumbnails/{content.id}.{ext}"
-    await supabase.storage.from_(settings.storage_bucket).upload(
-        path, image_bytes, {"content-type": content_type, "upsert": "true"}
-    )
-    thumbnail_url = supabase.storage.from_(settings.storage_bucket).get_public_url(path)
+    try:
+        await supabase.storage.from_(settings.storage_bucket).upload(
+            path, image_bytes, {"content-type": content_type, "upsert": "true"}
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Storage upload failed: {e}",
+        )
+    thumbnail_url = await supabase.storage.from_(settings.storage_bucket).get_public_url(path)
     content.thumbnail_url = thumbnail_url
     await db.commit()
     await db.refresh(user_item)

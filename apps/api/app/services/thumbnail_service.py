@@ -66,7 +66,7 @@ async def fetch_and_cache_thumbnail(content_id: str, source_url: str) -> str | N
             image_bytes,
             {"content-type": "image/jpeg", "upsert": "true"},
         )
-        result = supabase.storage.from_(settings.storage_bucket).get_public_url(path)
+        result = await supabase.storage.from_(settings.storage_bucket).get_public_url(path)
         return result
     except Exception:
         return origin_url
