@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Item } from '~/types/api'
+import type { Item, Tag } from '~/types/api'
 
 definePageMeta({ ssr: false, layout: 'write' })
 
@@ -30,9 +30,20 @@ const isPublic = ref(false)
 const isDraft = ref(true)
 
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
-const publishing = ref(false)
+const analyzing = ref(false)
+
+// AI 分析抽屜
+const drawerOpen = ref(false)
+const drawerHasResult = ref(false)
+const tags = ref<Tag[]>([])
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+async function fetchTags() {
+  try {
+    tags.value = await apiFetch(`/items/${id}/tags`)
+  } catch { /* ignore */ }
+}
 
 onMounted(async () => {
   try {
@@ -43,6 +54,11 @@ onMounted(async () => {
     isDraft.value = data.is_draft
     if (data.content_md) {
       try { editorContent.value = JSON.parse(data.content_md) } catch { /* ignore */ }
+    }
+    // 若已分析過，標記抽屜有結果
+    if (data.parsed_at) {
+      drawerHasResult.value = true
+      await fetchTags()
     }
   } catch {
     loadError.value = true
@@ -79,16 +95,19 @@ async function togglePublic() {
   await updateArticle(id, { is_public: isPublic.value })
 }
 
-async function handlePublish() {
-  if (publishing.value) return
-  publishing.value = true
+async function handleAnalyze() {
+  if (analyzing.value) return
+  analyzing.value = true
   if (saveTimer) { clearTimeout(saveTimer); await doSave() }
   try {
     const updated = await publishArticle(id)
     isDraft.value = updated.is_draft
     article.value = updated
+    drawerHasResult.value = true
+    drawerOpen.value = true
+    await fetchTags()
   } finally {
-    publishing.value = false
+    analyzing.value = false
   }
 }
 
@@ -113,7 +132,7 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
 </script>
 
 <template>
-  <div class="write-page">
+  <div class="write-page" :class="{ 'write-page--drawer-open': drawerOpen }">
 
     <!-- Top bar -->
     <header class="write-bar">
@@ -141,11 +160,12 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
           <span class="write-bar__pill-label">{{ isPublic ? '公開' : '私有' }}</span>
         </button>
 
+        <!-- AI 分析按鈕 -->
         <button
           class="write-bar__publish"
-          :disabled="publishing"
-          @click="handlePublish"
-        >{{ publishing ? '發布中…' : isDraft ? '發布文章' : '重新發布' }}</button>
+          :disabled="analyzing"
+          @click="handleAnalyze"
+        >{{ analyzing ? '分析中…' : isDraft ? 'AI 分析' : '重新分析' }}</button>
       </div>
     </header>
 
@@ -160,8 +180,11 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
       <NuxtLink to="/app" class="btn btn--ghost">← 返回首頁</NuxtLink>
     </div>
 
-    <!-- Editor -->
+    <!-- Editor + Drawer wrapper -->
     <main v-else class="write-main">
+
+      <!-- Editor body -->
+      <div class="write-editor-body">
 
       <!-- Cover -->
       <div
@@ -214,6 +237,47 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
           <TiptapEditor v-model="editorContent" />
         </div>
       </div>
+      </div><!-- end write-editor-body -->
+
+      <!-- AI 分析抽屜（always rendered，用 class 控制開關） -->
+      <aside class="write-drawer" :class="{ 'write-drawer--open': drawerOpen }">
+        <!-- handle 黏在抽屜左緣，跟著滑動 -->
+        <button
+          class="write-panel-toggle"
+          :class="{ 'write-panel-toggle--dot': drawerHasResult && !drawerOpen }"
+          @click="drawerOpen = !drawerOpen"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+            <path v-if="drawerOpen" d="M9 18l6-6-6-6"/>
+            <path v-else d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+
+        <div class="write-drawer__head">
+          <span class="write-drawer__title">AI 分析結果</span>
+        </div>
+
+        <div class="write-drawer__body">
+          <template v-if="!drawerHasResult">
+            <p class="write-drawer__empty">尚未分析，點擊「AI 分析」產生摘要與標籤。</p>
+          </template>
+          <template v-else>
+            <section class="write-drawer__section">
+              <div class="write-drawer__section-label">摘要</div>
+              <p v-if="article?.summary" class="write-drawer__summary">{{ article.summary }}</p>
+              <p v-else class="write-drawer__empty-sm">分析中，請稍候…</p>
+            </section>
+
+            <section class="write-drawer__section">
+              <div class="write-drawer__section-label">標籤</div>
+              <div v-if="tags.length" class="write-drawer__tags">
+                <span v-for="tag in tags" :key="tag.id" class="write-drawer__tag">{{ tag.name }}</span>
+              </div>
+              <p v-else class="write-drawer__empty-sm">分析中，請稍候…</p>
+            </section>
+          </template>
+        </div>
+      </aside>
     </main>
 
   </div>
@@ -226,6 +290,178 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   flex-direction: column;
   min-height: 100vh;
   background: var(--bg);
+}
+
+/* ─── Main area ─── */
+.write-main {
+  display: flex;
+  flex: 1;
+}
+
+.write-editor-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ─── AI 分析抽屜（固定右側 overlay，桌面 + 手機通用） ─── */
+.write-drawer {
+  position: fixed;
+  top: 44px;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  overflow: visible; /* handle 需要往左突出 */
+  z-index: 30;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.write-drawer--open {
+  transform: translateX(0);
+}
+/* 讓抽屜內容本身可以 scroll */
+.write-drawer__body,
+.write-drawer__head {
+  overflow-y: auto;
+}
+
+.write-drawer__head {
+  display: flex;
+  align-items: center;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.write-drawer__title {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.write-drawer__close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  transition: background 0.12s, color 0.12s;
+}
+.write-drawer__close:hover { background: var(--surface2); color: var(--text); }
+
+.write-drawer__body {
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.write-drawer__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.write-drawer__section-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.write-drawer__summary {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-mid);
+  line-height: 1.75;
+}
+
+.write-drawer__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.write-drawer__tag {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-bdr);
+  font-family: var(--font-mono);
+}
+
+.write-drawer__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+
+.write-drawer__empty-sm {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+
+/* ─── 右邊緣 drawer handle（黏在抽屜左緣，跟著滑動） ─── */
+.write-panel-toggle {
+  position: absolute;
+  top: 50%;
+  left: -22px;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 22px;
+  height: 48px;
+  background: var(--surface);
+  color: var(--text-mid);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.write-panel-toggle:hover { background: var(--surface2); color: var(--text); }
+.write-panel-toggle:active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+/* 小綠點提示有結果 */
+.write-panel-toggle--dot::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--surface);
 }
 
 /* ─── Top bar ─── */
@@ -358,12 +594,6 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
 }
 .write-center__msg { margin: 0; font-size: 14px; }
 
-/* ─── Main layout ─── */
-.write-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
 
 /* ─── Cover ─── */
 .write-cover {
@@ -622,5 +852,7 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   .write-title { font-size: 1.9rem; }
   .write-cover { height: 180px; }
   .write-bar__back span { display: none; }
+
+  .write-drawer { width: 280px; }
 }
 </style>
