@@ -12,6 +12,11 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
+@router.get("/", response_model=list[ItemRead])
+async def list_articles(current_user: CurrentUser, db: DbSession):
+    return await item_service.list_articles(db, UUID(current_user["sub"]))
+
+
 @router.post("/", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
 async def create_article(current_user: CurrentUser, db: DbSession, background_tasks: BackgroundTasks):
     return await item_service.create_item(db, UUID(current_user["sub"]), ItemCreate(), background_tasks)

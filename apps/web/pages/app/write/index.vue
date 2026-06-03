@@ -2,13 +2,15 @@
 definePageMeta({ ssr: false, layout: 'write' })
 
 const router = useRouter()
+const route = useRoute()
 const { createArticle } = useArticles()
 const error = ref(false)
 
 onMounted(async () => {
   try {
     const article = await createArticle()
-    router.replace(`/app/write/${article.id}`)
+    const from = route.query.from ? `?from=${route.query.from}` : ''
+    router.replace(`/app/write/${article.id}${from}`)
   } catch {
     error.value = true
   }

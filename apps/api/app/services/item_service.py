@@ -193,6 +193,23 @@ async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> None:
     await db.commit()
 
 
+async def list_articles(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
+    from sqlalchemy.orm import joinedload
+    from app.models.user_item import UserItem as UserItemModel
+    result = await db.execute(
+        select(UserItemModel)
+        .join(UserItemModel.content)
+        .where(
+            UserItemModel.user_id == user_id,
+            UserItemModel.deleted_at.is_(None),
+            ContentObject.created_by_user_id == user_id,
+        )
+        .options(joinedload(UserItemModel.content))
+        .order_by(UserItemModel.saved_at.desc())
+    )
+    return [_item_to_read(ui, user_id) for ui in result.scalars().all()]
+
+
 async def update_article(
     db: AsyncSession, user_id: UUID, item_id: UUID, data: ArticleUpdate
 ) -> ItemRead:

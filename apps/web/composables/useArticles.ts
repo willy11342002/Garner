@@ -3,6 +3,10 @@ import type { ArticleUpdate, Item } from '~/types/api'
 export function useArticles() {
   const apiFetch = useApiFetch()
 
+  function listArticles(): Promise<Item[]> {
+    return apiFetch('/articles/')
+  }
+
   function createArticle(): Promise<Item> {
     return apiFetch('/articles/', { method: 'POST' })
   }
@@ -22,7 +26,7 @@ export function useArticles() {
     return apiFetch(`/articles/${id}/cover`, { method: 'POST', body: form })
   }
 
-  return { createArticle, updateArticle, publishArticle, uploadCover }
+  return { listArticles, createArticle, updateArticle, publishArticle, uploadCover }
 }
 
 async function compressImage(file: File): Promise<Blob> {

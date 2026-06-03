@@ -7,6 +7,16 @@ const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
 
+const FROM_LABELS: Record<string, string> = {
+  '/app/articles': '我的文章',
+  '/app/chat': '對話',
+  '/app/collections': '我的集合',
+  '/app/archive': '封存庫',
+}
+const backPath = computed(() => (route.query.from as string) || '/app')
+const backLabel = computed(() => FROM_LABELS[backPath.value] ?? '首頁')
+
+
 const { updateArticle, publishArticle, uploadCover } = useArticles()
 const apiFetch = useApiFetch()
 
@@ -107,9 +117,9 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
 
     <!-- Top bar -->
     <header class="write-bar">
-      <button class="write-bar__back" @click="router.push('/app')">
+      <button class="write-bar__back" @click="router.push(backPath)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-        首頁
+        {{ backLabel }}
       </button>
 
       <div class="write-bar__meta">
