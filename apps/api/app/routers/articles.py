@@ -17,6 +17,11 @@ async def create_article(current_user: CurrentUser, db: DbSession, background_ta
     return await item_service.create_item(db, UUID(current_user["sub"]), ItemCreate(), background_tasks)
 
 
+@router.get("/{item_id}", response_model=ItemRead)
+async def get_article(item_id: UUID, current_user: CurrentUser, db: DbSession):
+    return await item_service.get_item(db, UUID(current_user["sub"]), item_id)
+
+
 @router.patch("/{item_id}", response_model=ItemRead)
 async def update_article(item_id: UUID, data: ArticleUpdate, current_user: CurrentUser, db: DbSession):
     return await item_service.update_article(db, UUID(current_user["sub"]), item_id, data)
