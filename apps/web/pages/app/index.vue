@@ -17,7 +17,7 @@ const confirmingSelected = ref(false)
 const archivingSelected = ref(false)
 const addingTagFor = ref<string | null>(null)
 const newTagInput = ref('')
-const newTagInputEl = ref<HTMLInputElement | null>(null)
+let newTagInputEl: HTMLInputElement | null = null
 const openMenuId = ref<string | null>(null)
 
 function closeMenu() { openMenuId.value = null }
@@ -26,7 +26,7 @@ async function startAddingTag(itemId: string) {
   addingTagFor.value = itemId
   newTagInput.value = ''
   await nextTick()
-  newTagInputEl.value?.focus()
+  newTagInputEl?.focus()
 }
 function toggleRowMenu(itemId: string, e: MouseEvent) {
   e.stopPropagation()
@@ -601,7 +601,7 @@ function openShareModal(tagId: string) {
               </div>
               <template v-if="addingTagFor === item.id">
                 <input
-                  ref="newTagInputEl"
+                  :ref="(el) => { newTagInputEl = el as HTMLInputElement | null }"
                   v-model="newTagInput"
                   class="pending-tag-input"
                   placeholder="標籤名稱"
