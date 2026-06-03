@@ -23,6 +23,21 @@ async def get_one(db: AsyncSession, user_id: UUID, tag_id: UUID) -> Tag | None:
     return result.scalar_one_or_none()
 
 
+async def get_top_tags(
+    db: AsyncSession,
+    user_id: UUID,
+    limit: int = 50,
+) -> list[Tag]:
+    """取用戶使用頻率最高的 tag，作為 LLM 正規化的候選清單。"""
+    result = await db.execute(
+        select(Tag)
+        .where(Tag.user_id == user_id)
+        .order_by(Tag.item_count.desc(), Tag.last_used_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def get_or_create(
     db: AsyncSession,
     user_id: UUID,

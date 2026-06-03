@@ -59,7 +59,10 @@ async def process_item(
 
     if raw_content is not None:
         try:
-            analysis = await ai_service.analyze_content(raw_content)
+            candidate_tags = await crud_tags.get_top_tags(db, user_id, limit=50)
+            candidate_names = [t.name for t in candidate_tags]
+
+            analysis = await ai_service.analyze_content(raw_content, candidate_tags=candidate_names)
             summary_i18n: dict = analysis.get("summary", {})      # Tiptap JSON per locale
             summary_md: dict[str, str] = analysis.get("summary_md", {})  # Markdown per locale
             content.summary_i18n = summary_i18n
@@ -76,7 +79,7 @@ async def process_item(
                 chunk_records.append({"text": chunk, "embedding": emb})
             await crud_chunks.replace_chunks(db, content_id, chunk_records)
 
-            # Create and attach AI-generated tags
+            # Create and attach AI-generated tags (with candidate normalization)
             tags_i18n: dict[str, list[str]] = analysis.get("tags", {})
             zh_tags = tags_i18n.get("zh-TW", [])
             en_tags = tags_i18n.get("en", [])

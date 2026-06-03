@@ -82,6 +82,34 @@ Rules for tags:
 Content:
 """
 
+_TAGS_WITH_CANDIDATES_PROMPT = """\
+Analyze the following content and return ONLY a JSON object.
+
+The user already has these existing tags (zh-TW names):
+{candidates}
+
+Rules for tags:
+- Choose 3–7 short labels (1–3 words each)
+- PREFER existing tags from the list above when they fit — this keeps the user's tag space clean
+- Only create NEW tags when no existing tag adequately covers the concept (max 2 new tags)
+- BROAD, REUSABLE categories — themes, domains, concepts that apply across many items
+- AVOID specific proper nouns or one-off details
+- For existing tags: use the exact zh-TW name from the list; derive the English equivalent yourself
+- Tags must be conceptually paired (same index = same concept across languages)
+- Return ONLY the JSON object, no markdown fences, no extra text
+
+Output format:
+{{
+  "embed_text": "A concise 2-3 sentence English description of the main topic, for semantic search",
+  "tags": {{
+    "zh-TW": ["標籤1", "標籤2", "標籤3"],
+    "en": ["tag1", "tag2", "tag3"]
+  }}
+}}
+
+Content:
+"""
+
 
 async def _llm_call(prompt: str, timeout: int = 90) -> str:
     async with httpx.AsyncClient() as client:
@@ -155,13 +183,20 @@ def md_to_tiptap(md: str) -> dict:
     return {"type": "doc", "content": nodes}
 
 
-async def analyze_content(content: str) -> dict:
+async def analyze_content(content: str, candidate_tags: list[str] | None = None) -> dict:
     """Returns {summary: {zh-TW: <tiptap_doc>}, summary_md: {zh-TW: <markdown>}, embed_text: str, tags: {zh-TW, en}}."""
     import asyncio
 
     truncated = content[:32000]
+
+    if candidate_tags:
+        candidates_str = "、".join(candidate_tags)
+        tags_prompt = _TAGS_WITH_CANDIDATES_PROMPT.format(candidates=candidates_str) + truncated
+    else:
+        tags_prompt = _TAGS_PROMPT + truncated
+
     notes_task = asyncio.create_task(_llm_call(_NOTES_PROMPT + truncated))
-    tags_task = asyncio.create_task(_llm_call(_TAGS_PROMPT + truncated))
+    tags_task = asyncio.create_task(_llm_call(tags_prompt))
 
     zh_md, tags_raw = await asyncio.gather(notes_task, tags_task)
     tags_data = _parse_json(tags_raw)
