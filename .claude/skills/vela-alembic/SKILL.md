@@ -52,14 +52,39 @@ downgrade 會修改 DB schema，**一律要求用戶確認後才執行**。
 ### revision（建立新 migration）
 
 ```bash
-cd apps/api && alembic revision --autogenerate -m "描述"
+cd apps/api && alembic revision -m "XXXX_描述"
+```
+
+**重要：禁止使用 `--autogenerate`**，一律手動撰寫 migration 內容。
+
+#### 序號規則
+
+1. 先查看現有最大序號：
+   ```bash
+   ls apps/api/alembic/versions/
+   ```
+2. 新序號 = 現有最大序號 + 1，補零至四位（例如最大是 `0017`，新的就是 `0018`）
+3. 建立後**立即將檔案重新命名**為 `XXXX_description.py` 格式（alembic 預設產生隨機 hash 檔名）
+
+#### 建立流程
+
+```bash
+# 1. 查看現有序號
+ls apps/api/alembic/versions/
+
+# 2. 建立空白 migration（不加 --autogenerate）
+cd apps/api && alembic revision -m "描述"
+
+# 3. 找到剛產生的檔案（在 alembic/versions/ 下，hash 開頭）
+# 4. 重新命名為 XXXX_description.py
+# 5. 在檔案內手動撰寫 upgrade() 和 downgrade() 函式
 ```
 
 - 如果用戶沒有提供描述訊息，詢問：「這個 migration 要叫什麼名稱？（例如：add_user_avatar_url）」
 - 建立後提醒用戶：
-  - 新檔案在 `apps/api/alembic/versions/` 下
-  - 確認四位數字前綴是否正確
-  - 建議先用 `alembic current` 確認目前版本，再檢視產生的 migration 內容，最後才執行 `upgrade head`
+  - 新檔案在 `apps/api/alembic/versions/` 下，已重新命名為正確格式
+  - **需要手動填寫 `upgrade()` 和 `downgrade()` 函式**
+  - 建議先審查 migration 內容，再執行 `upgrade head`
 
 ### 查詢狀態
 
@@ -96,14 +121,14 @@ stamp 用於：Supabase dashboard 直接建好 schema 後想跳過 migration、�
 | `downgrade -1` / `downgrade base` | **是**，明確說明會回滾哪個 migration |
 | `stamp` | **是**，說明這不會修改 schema 只是更新版本記錄 |
 | `current` / `history` / `heads` | 否，唯讀 |
-| `revision --autogenerate` | 否，只產生檔案不改 DB |
+| `revision`（不加 `--autogenerate`） | 否，只產生空白檔案不改 DB |
 
 ## 輸出格式
 
 執行後：
 - 顯示原始輸出
 - `upgrade`/`downgrade`：說明哪些 migration 被套用或回滾
-- `revision --autogenerate`：顯示新檔案路徑，提醒用戶先審查再執行 upgrade
+- `revision`：顯示新檔案路徑，提醒用戶填寫 `upgrade()` / `downgrade()` 後再執行 upgrade
 - 發生錯誤（連線失敗、env 未設定）：清楚說明錯誤，建議檢查 `apps/api/.env` 和 `DATABASE_URL` 設定
 
 ## Windows 注意事項
