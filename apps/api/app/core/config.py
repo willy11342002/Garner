@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     storage_bucket: str = "thumbnails"
     sentry_dsn: str = ""
     free_whisper_daily_seconds: int = 3600  # 60 min for free plan
+    allowed_origins: str = "http://localhost:3000"
 
 
 settings = Settings()
