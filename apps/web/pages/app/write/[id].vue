@@ -41,7 +41,6 @@ const originalContent = ref('')
 interface OutlineItem { level: number; text: string; index: number }
 
 const outlineOpen = ref(false)
-const tiptapRef = ref<{ editor: import('@tiptap/vue-3').Editor | undefined } | null>(null)
 const editorBodyRef = ref<HTMLElement | null>(null)
 
 const outline = computed<OutlineItem[]>(() => {
@@ -65,25 +64,14 @@ const outline = computed<OutlineItem[]>(() => {
 })
 
 function scrollToHeading(headingIndex: number) {
-  const editor = tiptapRef.value?.editor
   const container = editorBodyRef.value
-  if (!editor || !container) return
-  let count = 0
-  editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === 'heading') {
-      if (count === headingIndex) {
-        const dom = editor.view.nodeDOM(pos) as HTMLElement | null
-        if (dom) {
-          const domRect = dom.getBoundingClientRect()
-          const containerRect = container.getBoundingClientRect()
-          const scrollTarget = container.scrollTop + (domRect.top - containerRect.top) - 24
-          container.scrollTo({ top: scrollTarget, behavior: 'smooth' })
-        }
-        return false
-      }
-      count++
-    }
-  })
+  if (!container) return
+  const headings = container.querySelectorAll<HTMLElement>('.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4')
+  const dom = headings[headingIndex]
+  if (!dom) return
+  // write-page uses min-height (not height), so window is the real scroll container
+  const top = window.scrollY + dom.getBoundingClientRect().top - 68 // 44px topbar + 24px padding
+  window.scrollTo({ top, behavior: 'smooth' })
 }
 
 // AI 分析抽屜
@@ -453,7 +441,7 @@ async function handleDeleteCover(e: Event) {
 
         <!-- Body -->
         <div class="write-body">
-          <TiptapEditor ref="tiptapRef" v-model="editorContent" />
+          <TiptapEditor v-model="editorContent" />
         </div>
       </div>
       </div><!-- end write-editor-body -->
