@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { useEditor, EditorContent } from '@tiptap/vue-3'
+import { useEditor, EditorContent, VueNodeViewRenderer } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import GlobalDragHandle from 'tiptap-extension-global-drag-handle'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { createLowlight, common } from 'lowlight'
+import CodeBlockView from './CodeBlockView.vue'
+
+const lowlight = createLowlight(common)
 
 const props = defineProps<{
   modelValue: Record<string, unknown> | null | undefined
@@ -14,7 +19,10 @@ const emit = defineEmits<{
 
 const editor = useEditor({
   extensions: [
-    StarterKit,
+    StarterKit.configure({ codeBlock: false }),
+    CodeBlockLowlight.configure({ lowlight }).extend({
+      addNodeView() { return VueNodeViewRenderer(CodeBlockView) },
+    }),
     GlobalDragHandle.configure({ dragHandleWidth: 24 }),
   ],
   editable: !props.readonly,
@@ -39,65 +47,113 @@ watch(() => props.readonly, (val) => {
   editor.value?.setEditable(!val)
 })
 
-// ── Insert button & block tracking ──
+// ── Insert button ──
 const insertVisible = ref(false)
 const insertX = ref(0)
 const insertY = ref(0)
-let editorEl: HTMLElement | null = null
+let dragHandleEl: HTMLElement | null = null
 
-function getTopLevelBlock(target: HTMLElement): HTMLElement | null {
-  if (!editorEl) return null
-  let el: HTMLElement | null = target
-  while (el && el.parentElement !== editorEl) {
-    el = el.parentElement as HTMLElement | null
-  }
-  return el && el !== editorEl ? el : null
-}
-
-function onEditorMouseMove(e: MouseEvent) {
+// Document-level mousemove fires AFTER the ProseMirror extension has processed the
+// event (set style.left/top and called showDragHandle), so we read the final state here.
+function onDocMouseMove() {
   if (props.readonly) return
-  const block = getTopLevelBlock(e.target as HTMLElement)
-  if (!block) { insertVisible.value = false; return }
-  const rect = block.getBoundingClientRect()
+  if (!dragHandleEl) dragHandleEl = document.querySelector('.drag-handle')
+  if (!dragHandleEl || dragHandleEl.classList.contains('hide') || !dragHandleEl.style.left) {
+    insertVisible.value = false
+    return
+  }
+  const left = parseInt(dragHandleEl.style.left, 10)
+  const top  = parseInt(dragHandleEl.style.top,  10)
+  if (isNaN(left) || isNaN(top)) { insertVisible.value = false; return }
   insertVisible.value = true
-  // 垂直置中於 block 第一行
-  const lineH = 28
-  insertY.value = rect.top + Math.min(rect.height / 2, lineH / 2) - lineH / 2
-  // handle 在 block 左邊，insert 再往左 28px
-  insertX.value = rect.left - 56
-}
-
-function onEditorMouseLeave() {
-  insertVisible.value = false
+  insertX.value = left - 28
+  insertY.value = top
 }
 
 // ── Block menu (handle click) ──
 const menuVisible = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
+let menuBlockPos: number | null = null
 
-function openMenu(e: MouseEvent) {
+function resolveHandleBlockPos(): number | null {
+  if (!editor.value || !dragHandleEl?.style.left) return null
+  const left = parseInt(dragHandleEl.style.left, 10)
+  const top  = parseInt(dragHandleEl.style.top,  10)
+  if (isNaN(left) || isNaN(top)) return null
+  const posData = editor.value.view.posAtCoords({ left: left + 34, top: top + 12 })
+  if (!posData) return null
+  const $pos = editor.value.state.doc.resolve(posData.pos)
+  return $pos.depth >= 1 ? $pos.before(1) : null
+}
+
+async function openMenu(e: MouseEvent) {
   e.preventDefault()
   e.stopPropagation()
-  menuVisible.value = true
+  menuBlockPos = resolveHandleBlockPos()
   menuX.value = e.clientX + 8
   menuY.value = e.clientY - 4
+  menuVisible.value = true
+
+  // After render, clamp menu inside viewport
+  await nextTick()
+  const menuEl = document.querySelector('.tiptap-block-menu') as HTMLElement | null
+  if (menuEl) {
+    const rect = menuEl.getBoundingClientRect()
+    if (rect.bottom > window.innerHeight - 8) {
+      menuY.value = e.clientY - rect.height - 4
+    }
+    if (rect.right > window.innerWidth - 8) {
+      menuX.value = e.clientX - rect.width - 8
+    }
+  }
 }
 
 function closeMenu() { menuVisible.value = false }
 
-function insertBlockBelow() {
-  editor.value?.chain().focus().createParagraphNear().run()
+function applyBlockType(command: () => void) {
+  if (!editor.value) return
+  if (menuBlockPos !== null) {
+    editor.value.chain().focus().setNodeSelection(menuBlockPos).run()
+  } else {
+    editor.value.commands.focus()
+  }
+  command()
   closeMenu()
 }
 
-function convertToBlockquote() {
-  editor.value?.chain().focus().setBlockquote().run()
+function deleteMenuBlock() {
+  if (!editor.value || menuBlockPos === null) return
+  editor.value.chain().focus().setNodeSelection(menuBlockPos).deleteSelection().run()
   closeMenu()
 }
 
 function onInsertClick() {
-  editor.value?.chain().focus().createParagraphNear().run()
+  if (!editor.value || !dragHandleEl) return
+
+  const handleLeft = parseInt(dragHandleEl.style.left, 10)
+  const handleTop  = parseInt(dragHandleEl.style.top,  10)
+  if (isNaN(handleLeft) || isNaN(handleTop)) return
+
+  // Sample a point inside the block content (handle sits at blockLeft - 24)
+  const posData = editor.value.view.posAtCoords({
+    left: handleLeft + 34,
+    top: handleTop + 12,
+  })
+  if (!posData) return
+
+  const $pos = editor.value.state.doc.resolve(posData.pos)
+  if ($pos.depth < 1) return
+
+  // Insert a new paragraph right after the top-level block
+  const insertAt = $pos.after(1)
+  editor.value
+    .chain()
+    .focus()
+    .insertContentAt(insertAt, { type: 'paragraph' })
+    .setTextSelection(insertAt + 1)
+    .run()
+
   insertVisible.value = false
 }
 
@@ -116,14 +172,12 @@ const wrapRef = ref<HTMLElement | null>(null)
 
 onMounted(() => {
   document.addEventListener('click', onDocClick, true)
-  // 找到 ProseMirror 元素
-  nextTick(() => {
-    editorEl = wrapRef.value?.querySelector('.ProseMirror') ?? null
-  })
+  document.addEventListener('mousemove', onDocMouseMove)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick, true)
+  document.removeEventListener('mousemove', onDocMouseMove)
   editor.value?.destroy()
 })
 
@@ -134,8 +188,6 @@ defineExpose({ editor })
   <div
     ref="wrapRef"
     class="tiptap-root"
-    @mousemove="onEditorMouseMove"
-    @mouseleave="onEditorMouseLeave"
   >
     <EditorContent
       :editor="editor"
@@ -150,6 +202,7 @@ defineExpose({ editor })
         class="tiptap-insert-btn"
         :style="{ top: `${insertY}px`, left: `${insertX}px` }"
         title="在下方插入區塊"
+        @mousedown.prevent
         @click="onInsertClick"
         @mouseenter="insertVisible = true"
       >
@@ -162,13 +215,53 @@ defineExpose({ editor })
         class="tiptap-block-menu"
         :style="{ top: `${menuY}px`, left: `${menuX}px` }"
       >
-        <button class="tiptap-block-menu__item" @click="insertBlockBelow">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          在下方插入區塊
+        <div class="tiptap-block-menu__section-label">轉換為</div>
+
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().setParagraph().run())">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+          正文
         </button>
-        <button class="tiptap-block-menu__item" @click="convertToBlockquote">
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().setHeading({ level: 1 }).run())">
+          <span class="tiptap-block-menu__badge">H1</span>
+          標題 1
+        </button>
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().setHeading({ level: 2 }).run())">
+          <span class="tiptap-block-menu__badge">H2</span>
+          標題 2
+        </button>
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().setHeading({ level: 3 }).run())">
+          <span class="tiptap-block-menu__badge">H3</span>
+          標題 3
+        </button>
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().setHeading({ level: 4 }).run())">
+          <span class="tiptap-block-menu__badge">H4</span>
+          標題 4
+        </button>
+
+        <div class="tiptap-block-menu__separator"/>
+
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().toggleBulletList().run())">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
+          項目清單
+        </button>
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().toggleOrderedList().run())">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4" stroke-linejoin="round"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+          編號清單
+        </button>
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().setBlockquote().run())">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
-          引用區塊
+          引用
+        </button>
+        <button class="tiptap-block-menu__item" @mousedown.prevent @click="applyBlockType(() => editor?.chain().setCodeBlock().run())">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          程式碼區塊
+        </button>
+
+        <div class="tiptap-block-menu__separator"/>
+
+        <button class="tiptap-block-menu__item tiptap-block-menu__item--danger" @mousedown.prevent @click="deleteMenuBlock">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          刪除區塊
         </button>
       </div>
     </Teleport>
@@ -239,6 +332,34 @@ defineExpose({ editor })
 .tiptap-wrap--edit :deep(.ProseMirror:focus) {
   border-color: var(--accent-bdr);
 }
+
+/* ── Code block hljs token colours (structure/bg handled by CodeBlockView.vue) ── */
+/* hljs tokens */
+.tiptap-wrap :deep(.hljs-comment),
+.tiptap-wrap :deep(.hljs-quote)       { color: #6c7086; font-style: italic; }
+.tiptap-wrap :deep(.hljs-keyword),
+.tiptap-wrap :deep(.hljs-selector-tag),
+.tiptap-wrap :deep(.hljs-addition)    { color: #cba6f7; }
+.tiptap-wrap :deep(.hljs-number),
+.tiptap-wrap :deep(.hljs-literal),
+.tiptap-wrap :deep(.hljs-link)        { color: #fab387; }
+.tiptap-wrap :deep(.hljs-string),
+.tiptap-wrap :deep(.hljs-doctag)      { color: #a6e3a1; }
+.tiptap-wrap :deep(.hljs-title),
+.tiptap-wrap :deep(.hljs-section),
+.tiptap-wrap :deep(.hljs-selector-id),
+.tiptap-wrap :deep(.hljs-built_in)   { color: #89b4fa; }
+.tiptap-wrap :deep(.hljs-type),
+.tiptap-wrap :deep(.hljs-class .hljs-title) { color: #f38ba8; }
+.tiptap-wrap :deep(.hljs-attr),
+.tiptap-wrap :deep(.hljs-variable),
+.tiptap-wrap :deep(.hljs-template-variable) { color: #f5c2e7; }
+.tiptap-wrap :deep(.hljs-regexp),
+.tiptap-wrap :deep(.hljs-symbol)      { color: #94e2d5; }
+.tiptap-wrap :deep(.hljs-tag)         { color: #89dceb; }
+.tiptap-wrap :deep(.hljs-punctuation),
+.tiptap-wrap :deep(.hljs-operator)    { color: #89dceb; }
+.tiptap-wrap :deep(.hljs-meta)        { color: #f9e2af; }
 
 /* Drag handle – 讓 extension JS 控制 opacity */
 .tiptap-wrap :deep(.drag-handle) {
@@ -332,5 +453,46 @@ defineExpose({ editor })
 .tiptap-block-menu__item svg {
   color: var(--text-mid);
   flex-shrink: 0;
+}
+
+.tiptap-block-menu__section-label {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-mid);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.tiptap-block-menu__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-mid);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.tiptap-block-menu__separator {
+  height: 1px;
+  background: var(--border2);
+  margin: 4px 0;
+}
+
+.tiptap-block-menu__item--danger {
+  color: #e57373;
+}
+
+.tiptap-block-menu__item--danger svg {
+  color: #e57373;
+}
+
+.tiptap-block-menu__item--danger:hover {
+  background: rgba(229, 115, 115, 0.1);
 }
 </style>
