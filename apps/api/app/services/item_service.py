@@ -14,13 +14,15 @@ from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemSummaryUpd
 from app.workers.process_item import process_item
 
 
-def _item_to_read(user_item, current_user_id: UUID | None = None) -> ItemRead:
+def _item_to_read(user_item, current_user_id: UUID | None = None, tags=None) -> ItemRead:
     content = user_item.content
     is_owner = (
         current_user_id is not None
         and content.created_by_user_id is not None
         and content.created_by_user_id == current_user_id
     )
+    from app.schemas.tag import TagRead as _TagRead
+    resolved_tags = [_TagRead.model_validate(t) for t in (tags or [])]
     return ItemRead(
         id=user_item.id,
         content_id=content.id,
@@ -39,6 +41,7 @@ def _item_to_read(user_item, current_user_id: UUID | None = None) -> ItemRead:
         content_md=content.content_md,
         is_draft=user_item.is_draft,
         is_public=user_item.is_public,
+        tags=resolved_tags,
     )
 
 
@@ -120,7 +123,10 @@ async def create_item(
 
 async def list_items(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
     user_items = await crud_items.get_all(db, user_id)
-    return [_item_to_read(ui, user_id) for ui in user_items]
+    return [
+        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags if it.confirmed])
+        for ui in user_items
+    ]
 
 
 async def get_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> ItemRead:

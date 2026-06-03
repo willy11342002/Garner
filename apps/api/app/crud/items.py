@@ -19,10 +19,13 @@ async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
             UserItem.deleted_at.is_(None),
             UserItem.status == UserItemStatus.active,
         )
-        .options(joinedload(UserItem.content))
+        .options(
+            joinedload(UserItem.content),
+            selectinload(UserItem.item_tags).joinedload(ItemTag.tag),
+        )
         .order_by(UserItem.saved_at.desc())
     )
-    return list(result.scalars().all())
+    return list(result.scalars().unique().all())
 
 
 async def get_archived(db: AsyncSession, user_id: UUID) -> list[UserItem]:

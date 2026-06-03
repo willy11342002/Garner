@@ -40,6 +40,7 @@ class ItemRead(BaseModel):
     content_md: str | None = None
     is_draft: bool = True
     is_public: bool = False
+    tags: list[TagRead] = []
 
     model_config = {"from_attributes": True}
 

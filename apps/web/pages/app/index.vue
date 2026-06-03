@@ -398,15 +398,10 @@ onMounted(async () => {
   document.addEventListener('click', closeMenu)
   startHeroTimer()
   await itemStore.load()
-  const [, pending] = await Promise.all([
-    Promise.all(
-      itemStore.items.map(async item => {
-        itemTagsMap.value[item.id] = await getItemTags(item.id)
-      })
-    ),
-    getPendingReview(),
-  ])
-  pendingItems.value = pending
+  for (const item of itemStore.items) {
+    itemTagsMap.value[item.id] = item.tags
+  }
+  pendingItems.value = await getPendingReview()
   loading.value = false
 })
 

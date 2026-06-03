@@ -37,6 +37,55 @@ const isDirty = ref(false)
 const originalTitle = ref('')
 const originalContent = ref('')
 
+// ── Outline ──────────────────────────────────────────────────────────────────
+interface OutlineItem { level: number; text: string; index: number }
+
+const outlineOpen = ref(false)
+const tiptapRef = ref<{ editor: import('@tiptap/vue-3').Editor | undefined } | null>(null)
+const editorBodyRef = ref<HTMLElement | null>(null)
+
+const outline = computed<OutlineItem[]>(() => {
+  const content = (editorContent.value?.content as any[]) ?? []
+  const items: OutlineItem[] = []
+  let idx = 0
+  for (const node of content) {
+    if (node.type === 'heading') {
+      const level: number = node.attrs?.level ?? 1
+      if (level >= 1 && level <= 4) {
+        const text = ((node.content ?? []) as any[])
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text as string)
+          .join('')
+        items.push({ level, text, index: idx })
+      }
+      idx++
+    }
+  }
+  return items
+})
+
+function scrollToHeading(headingIndex: number) {
+  const editor = tiptapRef.value?.editor
+  const container = editorBodyRef.value
+  if (!editor || !container) return
+  let count = 0
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'heading') {
+      if (count === headingIndex) {
+        const dom = editor.view.nodeDOM(pos) as HTMLElement | null
+        if (dom) {
+          const domRect = dom.getBoundingClientRect()
+          const containerRect = container.getBoundingClientRect()
+          const scrollTarget = container.scrollTop + (domRect.top - containerRect.top) - 24
+          container.scrollTo({ top: scrollTarget, behavior: 'smooth' })
+        }
+        return false
+      }
+      count++
+    }
+  })
+}
+
 // AI 分析抽屜
 const drawerOpen = ref(false)
 const drawerHasResult = ref(false)
@@ -324,8 +373,33 @@ async function handleDeleteCover(e: Event) {
     <!-- Editor + Drawer wrapper -->
     <main v-else class="write-main">
 
+      <!-- 左側大綱 -->
+      <aside class="write-outline" :class="{ 'write-outline--open': outlineOpen }">
+        <button class="write-outline-toggle" @click="outlineOpen = !outlineOpen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+            <path v-if="outlineOpen" d="M15 18l-6-6 6-6"/>
+            <path v-else d="M9 18l6-6-6-6"/>
+          </svg>
+        </button>
+        <div class="write-outline__head">
+          <span class="write-outline__title">大綱</span>
+        </div>
+        <div class="write-outline__body">
+          <p v-if="!outline.length" class="write-outline__empty">尚無標題</p>
+          <nav v-else class="write-outline__nav">
+            <button
+              v-for="item in outline"
+              :key="item.index"
+              class="write-outline__item"
+              :class="`write-outline__item--h${item.level}`"
+              @click="scrollToHeading(item.index)"
+            >{{ item.text || '（無標題）' }}</button>
+          </nav>
+        </div>
+      </aside>
+
       <!-- Editor body -->
-      <div class="write-editor-body">
+      <div ref="editorBodyRef" class="write-editor-body">
 
       <!-- Cover -->
       <div
@@ -379,7 +453,7 @@ async function handleDeleteCover(e: Event) {
 
         <!-- Body -->
         <div class="write-body">
-          <TiptapEditor v-model="editorContent" />
+          <TiptapEditor ref="tiptapRef" v-model="editorContent" />
         </div>
       </div>
       </div><!-- end write-editor-body -->
@@ -494,6 +568,116 @@ async function handleDeleteCover(e: Event) {
   flex-direction: column;
   min-width: 0;
 }
+
+/* ─── 左側大綱 ─── */
+.write-outline {
+  position: fixed;
+  top: 96px;
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  overflow: visible;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.08);
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: adjust-top linear both;
+  animation-timeline: scroll(root);
+  animation-range: 0px 52px;
+  z-index: 10;
+}
+.write-outline--open {
+  transform: translateX(0);
+}
+
+.write-outline-toggle {
+  position: absolute;
+  top: 50%;
+  right: -22px;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 22px;
+  height: 48px;
+  background: var(--surface);
+  color: var(--text-mid);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.write-outline-toggle:hover { background: var(--surface2); color: var(--text); }
+.write-outline-toggle:active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.write-outline__head {
+  display: flex;
+  align-items: center;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.write-outline__title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.write-outline__body {
+  padding: 12px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.write-outline__empty {
+  margin: 0;
+  padding: 0 18px;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.write-outline__nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.write-outline__item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-mid);
+  padding: 5px 18px;
+  cursor: pointer;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.write-outline__item:hover { background: var(--surface2); color: var(--text); }
+.write-outline__item--h1 { padding-left: 14px; font-weight: 600; font-size: 13px; color: var(--text); }
+.write-outline__item--h2 { padding-left: 22px; font-weight: 500; }
+.write-outline__item--h3 { padding-left: 30px; font-size: 12px; }
+.write-outline__item--h4 { padding-left: 38px; font-size: 11.5px; color: var(--text-dim); }
 
 /* ─── AI 分析抽屜（桌面：flow item；手機：fixed overlay） ─── */
 @keyframes adjust-top {

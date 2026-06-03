@@ -23,6 +23,7 @@ export interface Item {
   content_md: string | null
   is_draft: boolean
   is_public: boolean
+  tags: Tag[]
 }
 
 export interface ArticleUpdate {
