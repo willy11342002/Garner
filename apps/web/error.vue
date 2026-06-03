@@ -28,6 +28,12 @@
       <button class="btn btn--accent error-back" @click="handleError">
         回到首頁
       </button>
+
+      <!-- Debug 資訊：方便排查問題，確認穩定後可移除 -->
+      <details class="error-debug">
+        <summary>Debug 資訊</summary>
+        <pre>{{ JSON.stringify(error, null, 2) }}</pre>
+      </details>
     </main>
   </div>
 </template>
@@ -105,5 +111,32 @@ function handleError() {
 .error-back:hover {
   filter: brightness(1.08);
   transform: translateY(-1px);
+}
+
+.error-debug {
+  margin-top: 32px;
+  width: 100%;
+  max-width: 640px;
+  text-align: left;
+}
+.error-debug summary {
+  font-size: 12px;
+  color: var(--text-mid);
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 8px;
+}
+.error-debug pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: auto;
+  max-height: 300px;
 }
 </style>
