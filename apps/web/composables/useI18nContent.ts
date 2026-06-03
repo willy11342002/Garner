@@ -11,5 +11,5 @@ export const useI18nContent = () => {
     return fallback ?? null
   }
 
-  return { localize }
+  return { localize, locale }
 }

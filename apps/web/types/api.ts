@@ -12,17 +12,18 @@ export interface Item {
   url: string
   title: string | null
   summary: string | null
-  summary_i18n: Record<string, string> | null
+  summary_i18n: Record<string, unknown> | null
   thumbnail_url: string | null
   saved_at: string
   deleted_at: string | null
   parsed_at: string | null
   status: string | null
   source_type: string | null
+  is_owner: boolean
 }
 
 export interface ItemCreate {
-  url: string
+  url?: string        // omit to create an in-app note
   title?: string
   raw_content?: string
 }

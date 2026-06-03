@@ -60,12 +60,12 @@ async def process_item(
     if raw_content is not None:
         try:
             analysis = await ai_service.analyze_content(raw_content)
-            summary_i18n: dict[str, str] = analysis.get("summary", {})
+            summary_i18n: dict = analysis.get("summary", {})      # Tiptap JSON per locale
+            summary_md: dict[str, str] = analysis.get("summary_md", {})  # Markdown per locale
             content.summary_i18n = summary_i18n
-            # Keep summary as zh-TW fallback for backward compatibility
-            content.summary = summary_i18n.get("zh-TW") or summary_i18n.get("en", "")
-            # Embed the English summary for fallback / explore_service
-            embed_text = summary_i18n.get("en") or content.summary
+            content.summary = summary_md.get("zh-TW", "")
+            # Use dedicated embed_text (short English) for semantic search quality
+            embed_text = analysis.get("embed_text") or content.summary[:500]
             content.embedding = await ai_service.embed(embed_text)
 
             # Chunk raw_content and embed each chunk for fine-grained RAG

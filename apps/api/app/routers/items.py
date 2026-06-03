@@ -9,7 +9,7 @@ from app.core import events
 from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
-from app.schemas.item import ItemCreate, ItemPendingReviewRead, ItemRead, ItemUpdate
+from app.schemas.item import ItemCreate, ItemPendingReviewRead, ItemRead, ItemSummaryUpdate, ItemUpdate
 from app.schemas.tag import TagCreate, TagRead
 from app.services import item_service
 
@@ -60,6 +60,11 @@ async def get_item(item_id: UUID, current_user: CurrentUser, db: DbSession):
 @router.patch("/{item_id}", response_model=ItemRead)
 async def update_item(item_id: UUID, data: ItemUpdate, current_user: CurrentUser, db: DbSession):
     return await item_service.update_item(db, UUID(current_user["sub"]), item_id, data)
+
+
+@router.patch("/{item_id}/summary", response_model=ItemRead)
+async def update_item_summary(item_id: UUID, data: ItemSummaryUpdate, current_user: CurrentUser, db: DbSession):
+    return await item_service.update_item_summary(db, UUID(current_user["sub"]), item_id, data)
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -155,6 +160,21 @@ async def confirm_item_tag(item_id: UUID, tag_id: UUID, current_user: CurrentUse
     if not found:
         raise HTTPException(status_code=404, detail="Pending tag not found")
     await db.commit()
+
+
+@router.post("/{item_id}/translate/{locale}", response_model=ItemRead)
+async def translate_item_notes(
+    item_id: UUID,
+    locale: str,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Generate notes in the requested locale if not yet available. Currently supports: en."""
+    SUPPORTED = {"en"}
+    if locale not in SUPPORTED:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=400, detail=f"Unsupported locale '{locale}'. Supported: {sorted(SUPPORTED)}")
+    return await item_service.translate_item_notes(db, UUID(current_user["sub"]), item_id, locale)
 
 
 @router.delete("/{item_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)

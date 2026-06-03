@@ -3,7 +3,7 @@ import type { Item, ItemPendingReview, Tag } from '~/types/api'
 
 const itemStore = useItemStore()
 const { getItemTags, getPendingReview, confirmItemTag, detachTag, attachTag } = useItems()
-const { localize } = useI18nContent()
+const { localize, locale } = useI18nContent()
 const { t } = useI18n()
 
 const loading = ref(true)
@@ -185,6 +185,14 @@ const heroItem = computed(() => {
 const heroDaysAgo = computed(() =>
   heroItem.value ? Math.round((Date.now() - new Date(heroItem.value.saved_at).getTime()) / 86400000) : 0
 )
+
+const heroTiptapDoc = computed(() => {
+  const i18n = heroItem.value?.summary_i18n as Record<string, unknown> | null
+  if (!i18n) return null
+  const doc = i18n[locale.value] ?? i18n['zh-TW']
+  if (doc && typeof doc === 'object' && (doc as any).type === 'doc') return doc as Record<string, unknown>
+  return null
+})
 
 const heroEyebrow = computed(() => {
   const d = heroDaysAgo.value
@@ -453,7 +461,7 @@ function openShareModal(tagId: string) {
           @mouseup="onDragEnd"
         >
           <!-- Slide 0: TODAY'S REVISIT -->
-          <section class="hero-slide hero">
+          <section class="hero-slide hero" @click.stop="openItemModal(heroItem.id)">
             <div class="hero__media">
               <img v-if="heroItem.thumbnail_url" :src="heroItem.thumbnail_url" class="hero__img" alt="" />
               <div v-else class="placeholder placeholder--b">
@@ -465,7 +473,6 @@ function openShareModal(tagId: string) {
             <div class="hero__body">
               <span class="hero__eyebrow">{{ heroEyebrow }}</span>
               <h1 class="hero__title">{{ cardTitle(heroItem.url, heroItem.title) }}</h1>
-              <p v-if="heroItem.summary || heroItem.summary_i18n" class="hero__summary">{{ localize(heroItem.summary_i18n, heroItem.summary) }}</p>
               <div v-if="heroTags.length > 0" class="hero__chips">
                 <span v-for="(tag, i) in heroTags" :key="tag.id" :class="`tag-chip tag-chip--${tagColor(i)}`">
                   {{ localize(tag.name_i18n, tag.name) }}

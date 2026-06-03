@@ -33,27 +33,49 @@ def _llm() -> str:
 def _emb() -> str:
     return _model_cache["embedding"]
 
-_ANALYZE_PROMPT = """\
-Analyze the following content and return ONLY a JSON object with this exact structure:
+_NOTES_PROMPT = """\
+You are a knowledge base assistant. Read the following content and produce structured notes in Traditional Chinese Markdown.
+
+Use EXACTLY these section headers, in this order:
+
+## 核心主題
+One or two paragraphs explaining what this content is about and why it matters.
+
+## 重點整理
+- Key point 1
+- Key point 2
+(3–8 bullet points, each a complete, standalone insight)
+
+## 內容詳解
+Organize into 2–5 thematic subsections using ### headers. Each subsection captures a coherent chunk of ideas — organized knowledge, not a transcript. Omit filler and repetition.
+
+## 關鍵洞察
+- Insight or implication worth remembering
+(1–4 bullets on the deeper "so what")
+
+Rules:
+- Write entirely in Traditional Chinese
+- Do NOT include the video/article title as a heading
+- Be thorough but organized — capture all meaningful ideas
+- Return ONLY the Markdown, no extra commentary, no code fences
+
+Content:
+"""
+
+_TAGS_PROMPT = """\
+Analyze the following content and return ONLY a JSON object:
 {
-  "summary": {
-    "zh-TW": "2-3 sentence summary in Traditional Chinese",
-    "en": "2-3 sentence summary in English"
-  },
+  "embed_text": "A concise 2-3 sentence English description of the main topic, for semantic search",
   "tags": {
     "zh-TW": ["標籤1", "標籤2", "標籤3"],
     "en": ["tag1", "tag2", "tag3"]
   }
 }
 
-Rules:
-- Summary: 2-3 sentences capturing the main ideas
-- Tags: 3-7 short topic labels (1-3 words each)
-- Tags must be BROAD, REUSABLE categories — themes, genres, domains, or concepts that apply across many pieces of content
-- AVOID specific proper nouns (character names, place names, episode titles, technique names)
-- AVOID overly narrow descriptors that only describe one specific detail
-- PREFER general concepts: e.g. "穿越" over "穿越規則", "反派" over a specific villain's name, "戀愛" over "告白場景"
-- A good tag should be usable to label dozens of different items on the same topic
+Rules for tags:
+- 3–7 short labels (1–3 words each)
+- BROAD, REUSABLE categories — themes, domains, concepts that apply across many items
+- AVOID specific proper nouns or one-off details
 - Tags must be conceptually paired (same index = same concept across languages)
 - Return ONLY the JSON object, no markdown fences, no extra text
 
@@ -61,29 +83,117 @@ Content:
 """
 
 
-async def analyze_content(content: str) -> dict:
+async def _llm_call(prompt: str, timeout: int = 90) -> str:
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
                 "model": _llm(),
-                "messages": [{"role": "user", "content": _ANALYZE_PROMPT + content[:8000]}],
+                "messages": [{"role": "user", "content": prompt}],
             },
-            timeout=60,
+            timeout=timeout,
         )
         if resp.status_code == 401:
             raise RuntimeError("OpenRouter service unavailable")
         resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
 
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
-    # Strip markdown code fences if model wraps the JSON
+
+def _parse_json(raw: str) -> dict:
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
         raw = raw.strip()
     return json.loads(raw)
+
+
+def md_to_tiptap(md: str) -> dict:
+    """Convert AI-generated Markdown to Tiptap JSON doc format."""
+    lines = md.splitlines()
+    nodes: list[dict] = []
+    current_list_items: list[dict] = []
+
+    def flush_list() -> None:
+        if current_list_items:
+            nodes.append({"type": "bulletList", "content": list(current_list_items)})
+            current_list_items.clear()
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            flush_list()
+            continue
+        if stripped.startswith("## "):
+            flush_list()
+            nodes.append({
+                "type": "heading",
+                "attrs": {"level": 2},
+                "content": [{"type": "text", "text": stripped[3:].strip()}],
+            })
+        elif stripped.startswith("### "):
+            flush_list()
+            nodes.append({
+                "type": "heading",
+                "attrs": {"level": 3},
+                "content": [{"type": "text", "text": stripped[4:].strip()}],
+            })
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            current_list_items.append({
+                "type": "listItem",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": stripped[2:].strip()}]}],
+            })
+        else:
+            flush_list()
+            nodes.append({
+                "type": "paragraph",
+                "content": [{"type": "text", "text": stripped}],
+            })
+
+    flush_list()
+    return {"type": "doc", "content": nodes}
+
+
+async def analyze_content(content: str) -> dict:
+    """Returns {summary: {zh-TW: <tiptap_doc>}, summary_md: {zh-TW: <markdown>}, embed_text: str, tags: {zh-TW, en}}."""
+    import asyncio
+
+    truncated = content[:32000]
+    notes_task = asyncio.create_task(_llm_call(_NOTES_PROMPT + truncated))
+    tags_task = asyncio.create_task(_llm_call(_TAGS_PROMPT + truncated))
+
+    zh_md, tags_raw = await asyncio.gather(notes_task, tags_task)
+    tags_data = _parse_json(tags_raw)
+
+    return {
+        "summary_md": {"zh-TW": zh_md},
+        "summary": {"zh-TW": md_to_tiptap(zh_md)},
+        "embed_text": tags_data.get("embed_text", ""),
+        "tags": tags_data.get("tags", {"zh-TW": [], "en": []}),
+    }
+
+
+_TRANSLATE_NOTES_PROMPT = """\
+Translate the following Traditional Chinese structured Markdown notes into English.
+
+Rules:
+- Keep the EXACT same Markdown structure (same ## and ### headers, same bullet format)
+- Translate section headers into natural English equivalents:
+  - ## 核心主題 → ## Core Topic
+  - ## 重點整理 → ## Key Points
+  - ## 內容詳解 → ## Detailed Notes
+  - ## 關鍵洞察 → ## Key Insights
+  - Translate any ### subsection titles naturally
+- Translate all content faithfully — do not summarize or add new content
+- Return ONLY the translated Markdown, no extra commentary
+
+Notes to translate:
+"""
+
+
+async def translate_notes(zh_md: str) -> str:
+    return await _llm_call(_TRANSLATE_NOTES_PROMPT + zh_md)
 
 
 _FOCUS_SYSTEM = """\

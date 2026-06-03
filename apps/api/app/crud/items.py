@@ -52,14 +52,14 @@ async def get_one(db: AsyncSession, user_id: UUID, item_id: UUID) -> UserItem | 
     return result.scalar_one_or_none()
 
 
-async def get_by_content_id(db: AsyncSession, user_id: UUID, content_id: UUID) -> UserItem | None:
+async def get_by_content_id(
+    db: AsyncSession, user_id: UUID, content_id: UUID, include_deleted: bool = False
+) -> UserItem | None:
+    filters = [UserItem.content_id == content_id, UserItem.user_id == user_id]
+    if not include_deleted:
+        filters.append(UserItem.deleted_at.is_(None))
     result = await db.execute(
-        select(UserItem)
-        .where(
-            UserItem.content_id == content_id,
-            UserItem.user_id == user_id,
-            UserItem.deleted_at.is_(None),
-        )
+        select(UserItem).options(joinedload(UserItem.content)).where(*filters)
     )
     return result.scalar_one_or_none()
 

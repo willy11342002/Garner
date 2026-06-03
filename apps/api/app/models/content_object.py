@@ -50,6 +50,7 @@ class ContentObject(Base):
         Enum(TranscriptionSource, name="transcription_source_enum"), nullable=True
     )
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
 
     user_items: Mapped[list["UserItem"]] = relationship(back_populates="content")
     collection_items: Mapped[list["CollectionItem"]] = relationship(back_populates="content")
