@@ -171,6 +171,7 @@ input, textarea { font-family: inherit; color: inherit; }
   transition: background .12s, color .12s, border-color .12s;
 }
 .nav__add:hover { background: var(--surface); color: var(--text); border-color: var(--text-dim); }
+.nav__login { width: auto; height: auto; padding: 6px 14px; border-radius: 20px; font-size: 13px; white-space: nowrap; }
 .nav__avatar {
   width: 32px; height: 32px;
   border-radius: 50%;
@@ -504,7 +505,7 @@ input, textarea { font-family: inherit; color: inherit; }
   .nav__tab { padding: 6px 10px; font-size: 12px; }
   .nav__search { display: none; }
   .nav__right { gap: 6px; }
-  .nav__add span { display: none; }
+  .nav__add:not(.nav__login) span { display: none; }
   .shell { padding: 18px 16px 48px; }
   .shell--tight { padding: 14px 16px; }
 }
