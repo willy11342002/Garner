@@ -19,7 +19,7 @@ class ItemTag(Base):
     user_item_id: Mapped[UUID] = mapped_column(
         ForeignKey("user_items.id"), primary_key=True
     )
-    tag_id: Mapped[UUID] = mapped_column(ForeignKey("tags.id"), primary_key=True)
+    tag_id: Mapped[UUID] = mapped_column(ForeignKey("tags.id"), primary_key=True, index=True)
     source: Mapped[TagSource] = mapped_column(
         Enum(TagSource, name="tag_source_enum"), nullable=False
     )

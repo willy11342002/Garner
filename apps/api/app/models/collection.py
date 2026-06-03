@@ -19,7 +19,7 @@ class Collection(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    source_tag_id: Mapped[UUID | None] = mapped_column(ForeignKey("tags.id"), nullable=True)
+    source_tag_id: Mapped[UUID | None] = mapped_column(ForeignKey("tags.id"), nullable=True, index=True)
     fork_from_collection_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("collections.id"), nullable=True
     )

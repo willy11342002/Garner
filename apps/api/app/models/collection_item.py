@@ -14,7 +14,7 @@ class CollectionItem(Base):
         ForeignKey("collections.id"), primary_key=True
     )
     content_id: Mapped[UUID] = mapped_column(
-        ForeignKey("content_objects.id"), primary_key=True
+        ForeignKey("content_objects.id"), primary_key=True, index=True
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     added_at: Mapped[datetime] = mapped_column(
