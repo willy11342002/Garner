@@ -10,11 +10,11 @@ const loading = ref(true)
 const itemTagsMap = ref<Record<string, Tag[]>>({})
 
 const pendingItems = ref<ItemPendingReview[]>([])
-const pendingCollapsed = ref(false)
 const selectedPendingIds = reactive(new Set<string>())
 const tagDismissing = ref<Record<string, boolean>>({})
 const confirmingSelected = ref(false)
 const archivingSelected = ref(false)
+const confirmingAll = ref(false)
 const addingTagFor = ref<string | null>(null)
 const newTagInput = ref('')
 let newTagInputEl: HTMLInputElement | null = null
@@ -97,6 +97,25 @@ async function handleConfirmSelected() {
     }
   } finally {
     confirmingSelected.value = false
+  }
+}
+
+async function handleConfirmAll() {
+  confirmingAll.value = true
+  try {
+    for (const item of [...pendingItems.value]) {
+      for (const tag of [...item.pending_tags]) {
+        await confirmItemTag(item.id, tag.id)
+      }
+      const existing = itemTagsMap.value[item.id] ?? []
+      const merged = [...existing, ...item.pending_tags.filter(pt => !existing.some(t => t.id === pt.id))]
+      itemTagsMap.value = { ...itemTagsMap.value, [item.id]: merged }
+      pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
+      getItemTags(item.id).then(tags => { itemTagsMap.value = { ...itemTagsMap.value, [item.id]: tags } })
+    }
+    selectedPendingIds.clear()
+  } finally {
+    confirmingAll.value = false
   }
 }
 
@@ -542,9 +561,11 @@ function openShareModal(tagId: string) {
         <header class="pending-section__head">
           <span class="pending-section__dot"></span>
           <span class="pending-section__count">{{ t('home.pending_count', { n: pendingItems.length }) }}</span>
-          <button class="pending-section__toggle mono" @click="pendingCollapsed = !pendingCollapsed">
-            {{ pendingCollapsed ? t('home.pending_expand') : t('home.pending_collapse') }}
-          </button>
+          <button
+            class="pending-section__confirm-all"
+            :disabled="confirmingAll || confirmingSelected || archivingSelected"
+            @click="handleConfirmAll"
+          >{{ confirmingAll ? '確認中...' : '全部確認' }}</button>
         </header>
 
         <!-- Selbar -->
@@ -565,7 +586,7 @@ function openShareModal(tagId: string) {
           </div>
         </div>
 
-        <div v-if="!pendingCollapsed" class="pending-list">
+        <div class="pending-list">
           <div
             v-for="item in pendingItems"
             :key="item.id"

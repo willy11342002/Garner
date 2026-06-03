@@ -23,16 +23,21 @@
   font-size: 13px;
   color: var(--text);
 }
-.pending-section__toggle {
+.pending-section__confirm-all {
   margin-left: auto;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
   padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  font-size: 11.5px;
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: opacity .15s;
 }
-.pending-section__toggle:hover { color: var(--text); }
+.pending-section__confirm-all:hover { color: var(--text); border-color: var(--border); }
+.pending-section__confirm-all:disabled { opacity: 0.4; pointer-events: none; }
 
 .pending-list { display: flex; flex-direction: column; }
 .pending-row {
