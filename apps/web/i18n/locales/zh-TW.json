@@ -47,7 +47,9 @@
     "step1": "獲取影片資訊",
     "step2": "讀取內容（字幕 / 語音辨識）",
     "step3": "AI 分析摘要與標籤",
-    "step4": "建立語意索引"
+    "step4": "建立語意索引",
+    "orDivider": "或",
+    "writeArticle": "寫一篇文章"
   },
   "nav": {
     "explore": "探索",
@@ -273,6 +275,7 @@
     "pending_count": "{n} 筆待確認",
     "pending_expand": "展開 ↓",
     "pending_collapse": "收起 ↑",
+    "open_read": "開啟閱讀 →",
     "trend_badge": "◈ 主題趨勢",
     "trend_when": "本週",
     "trend_top_tag": "本週你最關注「{tag}」",

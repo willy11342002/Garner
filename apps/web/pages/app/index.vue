@@ -511,7 +511,7 @@ function openShareModal(tagId: string) {
                 </span>
               </div>
               <div class="hero__actions">
-                <button class="btn btn--accent" @click="openItemModal(heroItem.id)">開啟閱讀 →</button>
+                <button class="btn btn--accent" @click="openItemModal(heroItem.id)">{{ t('home.open_read') }}</button>
               </div>
             </div>
           </section>

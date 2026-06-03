@@ -352,6 +352,38 @@ const isLoggedIn = computed(() => !!supabaseUser.value)
   color: var(--danger);
 }
 
+.add-modal__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.add-modal__divider::before,
+.add-modal__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.add-modal__write-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: center;
+}
+.add-modal__write-btn:hover {
+  border-color: var(--accent-bdr);
+  background: var(--surface2);
+}
+
 .add-modal__processing {
   display: flex;
   align-items: center;

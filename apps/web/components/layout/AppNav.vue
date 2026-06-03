@@ -318,6 +318,10 @@
               </button>
             </div>
             <p v-if="addError" class="add-modal__error">{{ addError }}</p>
+            <div class="add-modal__divider"><span>{{ t('add.orDivider') }}</span></div>
+            <button class="add-modal__write-btn" @click="closeAdd(); navigateTo('/app/write')">
+              {{ t('add.writeArticle') }}
+            </button>
           </template>
         </div>
       </div>
