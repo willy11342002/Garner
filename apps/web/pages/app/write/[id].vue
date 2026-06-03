@@ -17,7 +17,8 @@ const backPath = computed(() => (route.query.from as string) || '/app')
 const backLabel = computed(() => FROM_LABELS[backPath.value] ?? '首頁')
 
 
-const { updateArticle, publishArticle, uploadCover } = useArticles()
+const { updateArticle, publishArticle, uploadCover, deleteCover } = useArticles()
+const { attachTag, detachTag, confirmItemTag, getPendingItemTags, getItemTags } = useItems()
 const apiFetch = useApiFetch()
 
 const article = ref<Item | null>(null)
@@ -31,17 +32,92 @@ const isDraft = ref(true)
 
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const analyzing = ref(false)
+const isDirty = ref(false)
 
 // AI 分析抽屜
 const drawerOpen = ref(false)
 const drawerHasResult = ref(false)
-const tags = ref<Tag[]>([])
+const confirmedTags = ref<Tag[]>([])
+const pendingTags = ref<Tag[]>([])
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null
+const { locale } = useI18nContent()
+const localizedTiptap = computed(() => {
+  const i18n = article.value?.summary_i18n
+  if (i18n && typeof i18n === 'object') {
+    const doc = (i18n as Record<string, unknown>)[locale.value]
+      ?? (i18n as Record<string, unknown>)['zh-TW']
+    if (doc && typeof doc === 'object') return doc as Record<string, unknown>
+  }
+  return null
+})
+
+// ── 標籤操作 ──────────────────────────────────────────────────────────────────
+const tagRemoving = ref<Record<string, boolean>>({})
+const tagConfirming = ref<Record<string, boolean>>({})
+const addingTag = ref(false)
+const newTagInput = ref('')
+const tagAdding = ref(false)
+const tagInputRef = ref<HTMLInputElement | null>(null)
+
+async function startAddingTag() {
+  addingTag.value = true
+  await nextTick()
+  tagInputRef.value?.focus()
+}
+
+async function handleAddTag() {
+  const name = newTagInput.value.trim()
+  addingTag.value = false
+  newTagInput.value = ''
+  if (!name) return
+  tagAdding.value = true
+  try {
+    const tag = await attachTag(id, name, false)
+    if (tag) confirmedTags.value.push(tag)
+  } finally {
+    tagAdding.value = false
+  }
+}
+
+async function handleRemoveConfirmedTag(tag: Tag) {
+  tagRemoving.value[tag.id] = true
+  try {
+    await detachTag(id, tag.id)
+    confirmedTags.value = confirmedTags.value.filter(t => t.id !== tag.id)
+  } finally {
+    delete tagRemoving.value[tag.id]
+  }
+}
+
+async function handleConfirmTag(tag: Tag) {
+  tagConfirming.value[tag.id] = true
+  try {
+    await confirmItemTag(id, tag.id)
+    pendingTags.value = pendingTags.value.filter(t => t.id !== tag.id)
+    confirmedTags.value.push(tag)
+  } finally {
+    delete tagConfirming.value[tag.id]
+  }
+}
+
+async function handleRemovePendingTag(tag: Tag) {
+  tagRemoving.value[tag.id] = true
+  try {
+    await detachTag(id, tag.id)
+    pendingTags.value = pendingTags.value.filter(t => t.id !== tag.id)
+  } finally {
+    delete tagRemoving.value[tag.id]
+  }
+}
 
 async function fetchTags() {
   try {
-    tags.value = await apiFetch(`/items/${id}/tags`)
+    const [confirmed, pending] = await Promise.all([
+      getItemTags(id),
+      getPendingItemTags(id),
+    ])
+    confirmedTags.value = confirmed
+    pendingTags.value = pending
   } catch { /* ignore */ }
 }
 
@@ -55,7 +131,6 @@ onMounted(async () => {
     if (data.content_md) {
       try { editorContent.value = JSON.parse(data.content_md) } catch { /* ignore */ }
     }
-    // 若已分析過，標記抽屜有結果
     if (data.parsed_at) {
       drawerHasResult.value = true
       await fetchTags()
@@ -67,28 +142,20 @@ onMounted(async () => {
   }
 })
 
-function scheduleSave() {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveStatus.value = 'saving'
-  saveTimer = setTimeout(doSave, 1500)
-}
+watch(title, () => { isDirty.value = true })
+watch(editorContent, () => { isDirty.value = true }, { deep: true })
 
-async function doSave() {
-  try {
-    await updateArticle(id, {
-      title: title.value || '未命名文章',
-      content_md: JSON.stringify(editorContent.value),
-      is_public: isPublic.value,
-    })
-    saveStatus.value = 'saved'
-    setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = 'idle' }, 2500)
-  } catch {
-    saveStatus.value = 'error'
-  }
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (!isDirty.value) return
+  e.preventDefault()
 }
+onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 
-watch(title, scheduleSave)
-watch(editorContent, scheduleSave, { deep: true })
+onBeforeRouteLeave(() => {
+  if (!isDirty.value) return true
+  return window.confirm('有未保存的變更，確定要離開嗎？')
+})
 
 async function togglePublic() {
   isPublic.value = !isPublic.value
@@ -98,16 +165,73 @@ async function togglePublic() {
 async function handleAnalyze() {
   if (analyzing.value) return
   analyzing.value = true
-  if (saveTimer) { clearTimeout(saveTimer); await doSave() }
   try {
+    await updateArticle(id, {
+      title: title.value || '未命名文章',
+      content_md: JSON.stringify(editorContent.value),
+      is_public: isPublic.value,
+    })
+    isDirty.value = false
     const updated = await publishArticle(id)
     isDraft.value = updated.is_draft
     article.value = updated
     drawerHasResult.value = true
     drawerOpen.value = true
-    await fetchTags()
+    // 等待背景 AI 分析完成
+    await waitForAnalysis(id)
+  } catch {
+    saveStatus.value = 'error'
   } finally {
     analyzing.value = false
+    if (saveStatus.value !== 'error') {
+      saveStatus.value = 'saved'
+      setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = 'idle' }, 2500)
+    }
+  }
+}
+
+async function waitForAnalysis(itemId: string) {
+  const config = useRuntimeConfig()
+  const session = useSupabaseSession()
+  const token = session.value?.access_token
+  if (!token) return
+
+  let response: Response
+  try {
+    response = await fetch(
+      `${config.public.apiBase}/items/${itemId}/stream`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+  } catch { return }
+
+  if (!response.ok || !response.body) return
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const msg = JSON.parse(line.slice(6))
+          if (msg.status === 'done' && msg.item) {
+            article.value = msg.item
+            isDraft.value = msg.item.is_draft
+            await fetchTags()
+            return
+          }
+        } catch { /* ignore malformed line */ }
+      }
+    }
+  } finally {
+    reader.cancel()
   }
 }
 
@@ -128,7 +252,17 @@ async function handleCoverChange(e: Event) {
   }
 }
 
-onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
+async function handleDeleteCover(e: Event) {
+  e.stopPropagation()
+  coverUploading.value = true
+  try {
+    const updated = await deleteCover(id)
+    if (article.value) article.value.thumbnail_url = updated.thumbnail_url
+  } finally {
+    coverUploading.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -165,7 +299,7 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
           class="write-bar__publish"
           :disabled="analyzing"
           @click="handleAnalyze"
-        >{{ analyzing ? '分析中…' : isDraft ? 'AI 分析' : '重新分析' }}</button>
+        >{{ analyzing ? '儲存中…' : '保存' }}</button>
       </div>
     </header>
 
@@ -209,6 +343,10 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
           <span class="write-cover__change">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             更換封面
+          </span>
+          <span class="write-cover__delete" @click="handleDeleteCover">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            刪除封面
           </span>
         </div>
         <input
@@ -254,25 +392,69 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
         </button>
 
         <div class="write-drawer__head">
-          <span class="write-drawer__title">AI 分析結果</span>
+          <span class="write-drawer__title">元資料</span>
         </div>
 
         <div class="write-drawer__body">
           <template v-if="!drawerHasResult">
-            <p class="write-drawer__empty">尚未分析，點擊「AI 分析」產生摘要與標籤。</p>
+            <p class="write-drawer__empty">點擊「保存」產生摘要與標籤。</p>
           </template>
           <template v-else>
-            <section class="write-drawer__section">
-              <div class="write-drawer__section-label">摘要</div>
-              <p v-if="article?.summary" class="write-drawer__summary">{{ article.summary }}</p>
-              <p v-else class="write-drawer__empty-sm">分析中，請稍候…</p>
-            </section>
-
+            <!-- 標籤 -->
             <section class="write-drawer__section">
               <div class="write-drawer__section-label">標籤</div>
-              <div v-if="tags.length" class="write-drawer__tags">
-                <span v-for="tag in tags" :key="tag.id" class="write-drawer__tag">{{ tag.name }}</span>
+              <div class="write-drawer__tags">
+                <!-- AI 待確認 -->
+                <template v-if="pendingTags.length">
+                  <div class="write-drawer__tags-pending-label">AI 建議</div>
+                  <span
+                    v-for="tag in pendingTags"
+                    :key="tag.id"
+                    class="write-drawer__tag write-drawer__tag--pending"
+                    :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
+                  >
+                    {{ tag.name }}
+                    <button class="write-drawer__tag-confirm" title="確認" @click="handleConfirmTag(tag)">✓</button>
+                    <button class="write-drawer__tag-remove" @click="handleRemovePendingTag(tag)">×</button>
+                  </span>
+                </template>
+
+                <!-- 已確認 -->
+                <span
+                  v-for="tag in confirmedTags"
+                  :key="tag.id"
+                  class="write-drawer__tag"
+                  :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
+                >
+                  {{ tag.name }}
+                  <button class="write-drawer__tag-remove" @click="handleRemoveConfirmedTag(tag)">×</button>
+                </span>
+
+                <!-- 新增輸入 -->
+                <input
+                  v-if="addingTag"
+                  ref="tagInputRef"
+                  v-model="newTagInput"
+                  class="write-drawer__tag-input"
+                  placeholder="標籤名稱"
+                  @keydown.enter="handleAddTag"
+                  @keydown.esc.stop="addingTag = false; newTagInput = ''"
+                  @blur="handleAddTag"
+                />
+                <button v-else class="write-drawer__tag-add" :disabled="tagAdding" @click="startAddingTag">
+                  + 新增
+                </button>
               </div>
+              <p v-if="!pendingTags.length && !confirmedTags.length && !addingTag" class="write-drawer__empty-sm">分析中，請稍候…</p>
+            </section>
+
+            <!-- 摘要 -->
+            <section class="write-drawer__section">
+              <div class="write-drawer__section-label">摘要</div>
+              <template v-if="localizedTiptap">
+                <TiptapEditor :model-value="localizedTiptap" :readonly="true" class="write-drawer__tiptap" />
+              </template>
+              <p v-else-if="article?.summary" class="write-drawer__summary">{{ article.summary }}</p>
               <p v-else class="write-drawer__empty-sm">分析中，請稍候…</p>
             </section>
           </template>
@@ -306,22 +488,36 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   min-width: 0;
 }
 
-/* ─── AI 分析抽屜（固定右側 overlay，桌面 + 手機通用） ─── */
+/* ─── AI 分析抽屜（桌面：flow item；手機：fixed overlay） ─── */
+@keyframes adjust-top {
+  from {
+    /* 捲動最上方時：44px + 52px = 96px */
+    top: 96px; 
+  }
+  to {
+    /* 捲動超過 52px 後，頂部固定在 44px */
+    top: 44px; 
+  }
+}
 .write-drawer {
   position: fixed;
-  top: 44px;
+  top: 96px; /* fallback：scroll animation 會覆蓋此值 */
   right: 0;
   bottom: 0;
   width: 300px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
   background: var(--bg);
   overflow: visible; /* handle 需要往左突出 */
-  z-index: 30;
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
   transform: translateX(100%);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  animation: adjust-top linear both;
+  animation-timeline: scroll(root); /* 監聽整個網頁的滾動 */
+  animation-range: 0px 52px;       /* 動畫只在滾動 0 到 52px 之間發生 */
 }
 .write-drawer--open {
   transform: translateX(0);
@@ -399,14 +595,76 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   gap: 6px;
 }
 
+.write-drawer__tags-pending-label {
+  width: 100%;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
 .write-drawer__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 12px;
-  padding: 3px 10px;
+  padding: 3px 6px 3px 10px;
   border-radius: 20px;
   background: var(--accent-dim);
   color: var(--accent);
   border: 1px solid var(--accent-bdr);
   font-family: var(--font-mono);
+}
+
+.write-drawer__tag--pending {
+  background: var(--surface2);
+  color: var(--text-mid);
+  border-color: var(--border2);
+  border-style: dashed;
+}
+
+.write-drawer__tag-confirm,
+.write-drawer__tag-remove {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.1s, background 0.1s;
+}
+.write-drawer__tag-confirm { color: var(--accent); }
+.write-drawer__tag-confirm:hover { background: var(--accent-dim); }
+.write-drawer__tag-remove { color: var(--text-dim); }
+.write-drawer__tag-remove:hover { color: var(--danger); background: var(--danger-dim, color-mix(in srgb, var(--danger) 10%, transparent)); }
+
+.write-drawer__tag-add {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px dashed var(--border2);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.write-drawer__tag-add:hover { color: var(--accent); border-color: var(--accent-bdr); }
+.write-drawer__tag-add:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.write-drawer__tag-input {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--accent-bdr);
+  font-family: var(--font-mono);
+  outline: none;
+  width: 100px;
 }
 
 .write-drawer__empty {
@@ -422,6 +680,34 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   color: var(--text-dim);
   font-style: italic;
 }
+
+/* TiptapEditor 在抽屜內的樣式收斂 */
+.write-drawer__tiptap :deep(.tiptap-wrap) {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-mid);
+}
+.write-drawer__tiptap :deep(.tiptap-wrap--edit .ProseMirror),
+.write-drawer__tiptap :deep(.ProseMirror) {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  outline: none;
+}
+.write-drawer__tiptap :deep(p) { margin: 0 0 0.4em; }
+.write-drawer__tiptap :deep(h1),
+.write-drawer__tiptap :deep(h2),
+.write-drawer__tiptap :deep(h3) {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0.6em 0 0.2em;
+}
+.write-drawer__tiptap :deep(ul),
+.write-drawer__tiptap :deep(ol) {
+  padding-left: 1.2em;
+  margin: 0.2em 0;
+}
+.write-drawer__tiptap :deep(.ProseMirror > *:hover) { background: transparent; }
 
 
 /* ─── 右邊緣 drawer handle（黏在抽屜左緣，跟著滑動） ─── */
@@ -599,11 +885,16 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
 .write-cover {
   position: relative;
   width: 100%;
-  height: 260px;
-  background: var(--surface2);
+  height: 49px;
+  background: transparent;
   cursor: pointer;
   overflow: hidden;
   flex-shrink: 0;
+  transition: height 0.2s ease;
+}
+.write-cover--has-img {
+  height: 260px;
+  background: var(--surface2);
 }
 
 .write-cover__img {
@@ -620,18 +911,19 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 13px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 96px;
+  font-size: 12.5px;
   color: var(--text-dim);
   border-bottom: 1px dashed var(--border2);
   transition: color 0.15s, background 0.15s;
 }
 .write-cover:hover .write-cover__empty {
   color: var(--text-mid);
-  background: var(--surface3);
+  background: var(--surface2);
 }
 
 /* Hover overlay when has image */
@@ -642,13 +934,15 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
+  gap: 8px;
   padding: 14px 18px;
   opacity: 0;
   transition: opacity 0.2s;
 }
 .write-cover:hover .write-cover__overlay { opacity: 1; }
 
-.write-cover__change {
+.write-cover__change,
+.write-cover__delete {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -660,6 +954,14 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
   font-size: 12px;
   color: #fff;
   font-weight: 500;
+  cursor: pointer;
+}
+.write-cover__delete {
+  background: rgba(220, 38, 38, 0.45);
+  border-color: rgba(220, 38, 38, 0.5);
+}
+.write-cover__delete:hover {
+  background: rgba(220, 38, 38, 0.65);
 }
 
 .write-cover__input { display: none; }
@@ -850,9 +1152,17 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
 @media (max-width: 768px) {
   .write-content { padding: 32px 20px 80px 20px; }
   .write-title { font-size: 1.9rem; }
-  .write-cover { height: 180px; }
+  .write-cover--has-img { height: 180px; }
+  .write-cover__empty { padding: 0 20px; }
   .write-bar__back span { display: none; }
 
-  .write-drawer { width: 280px; }
+  .write-drawer {
+    position: fixed;
+    top: 44px;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    width: 280px;
+  }
 }
 </style>

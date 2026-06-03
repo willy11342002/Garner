@@ -1,4 +1,7 @@
+import logging
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import select
@@ -41,7 +44,13 @@ def _item_to_read(user_item, current_user_id: UUID | None = None) -> ItemRead:
 
 async def _run_process_item(content_id: UUID, user_id: UUID, user_item_id: UUID, url: str) -> None:
     async with AsyncSessionLocal() as db:
-        await process_item(db, content_id, user_id, user_item_id, url)
+        try:
+            await process_item(db, content_id, user_id, user_item_id, url)
+        except Exception:
+            logger.exception(
+                "process_item failed: content_id=%s user_id=%s user_item_id=%s",
+                content_id, user_id, user_item_id,
+            )
 
 
 async def create_item(
@@ -247,9 +256,8 @@ async def publish_article(
     user_item.is_draft = False
     await db.commit()
     await db.refresh(user_item)
-    # trigger AI pipeline (summary + embedding) only if not yet processed
-    if content.parsed_at is None:
-        background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, content.url)
+    # user-written articles always re-run AI (content changes every save)
+    background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, content.url)
     return _item_to_read(user_item, user_id)
 
 
@@ -284,4 +292,31 @@ async def upload_article_cover(
     content.thumbnail_url = thumbnail_url
     await db.commit()
     await db.refresh(user_item)
+    return _item_to_read(user_item, user_id)
+
+
+async def delete_article_cover(
+    db: AsyncSession,
+    user_id: UUID,
+    item_id: UUID,
+) -> ItemRead:
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    content = user_item.content
+    if content.created_by_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
+    if content.thumbnail_url:
+        from app.services.thumbnail_service import _get_supabase
+        from app.core.config import settings
+        supabase = await _get_supabase()
+        for ext in ("jpg", "png", "webp"):
+            path = f"thumbnails/{content.id}.{ext}"
+            try:
+                await supabase.storage.from_(settings.storage_bucket).remove([path])
+            except Exception:
+                pass
+        content.thumbnail_url = None
+        await db.commit()
+        await db.refresh(user_item)
     return _item_to_read(user_item, user_id)

@@ -49,3 +49,8 @@ async def upload_cover(item_id: UUID, file: UploadFile, current_user: CurrentUse
     return await item_service.upload_article_cover(
         db, UUID(current_user["sub"]), item_id, image_bytes, file.content_type
     )
+
+
+@router.delete("/{item_id}/cover", response_model=ItemRead)
+async def delete_cover(item_id: UUID, current_user: CurrentUser, db: DbSession):
+    return await item_service.delete_article_cover(db, UUID(current_user["sub"]), item_id)

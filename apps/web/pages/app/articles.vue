@@ -21,8 +21,8 @@ function formatDate(iso: string) {
 }
 
 // ── 選擇模式 ──────────────────────────────────────────────────────────────────
+const selecting = ref(false)
 const selected = ref<Set<string>>(new Set())
-const selectMode = computed(() => selected.value.size > 0)
 
 function toggleSelect(id: string) {
   const s = new Set(selected.value)
@@ -30,12 +30,17 @@ function toggleSelect(id: string) {
   selected.value = s
 }
 
-function clearSelect() {
+function enterSelectMode() {
+  selecting.value = true
+}
+
+function exitSelectMode() {
+  selecting.value = false
   selected.value = new Set()
 }
 
 function handleCardClick(id: string) {
-  if (selectMode.value) {
+  if (selecting.value) {
     toggleSelect(id)
   } else {
     router.push(`/app/write/${id}?from=/app/articles`)
@@ -50,9 +55,8 @@ async function batchAnalyze() {
   analyzing.value = true
   try {
     await Promise.allSettled([...selected.value].map(id => publishArticle(id)))
-    // 重新 fetch 更新狀態
     articles.value = await listArticles()
-    clearSelect()
+    exitSelectMode()
   } finally {
     analyzing.value = false
   }
@@ -67,7 +71,7 @@ async function batchDelete() {
   try {
     await Promise.allSettled([...selected.value].map(id => apiFetch(`/items/${id}`, { method: 'DELETE' })))
     articles.value = articles.value.filter(a => !selected.value.has(a.id))
-    clearSelect()
+    exitSelectMode()
   } finally {
     deleting.value = false
   }
@@ -86,6 +90,9 @@ async function batchDelete() {
       <button class="btn btn--accent" @click="router.push('/app/write')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         新增文章
+      </button>
+      <button class="btn btn--ghost" :class="{ 'btn--ghost-active': selecting }" @click="selecting ? exitSelectMode() : enterSelectMode()">
+        {{ selecting ? '取消選擇' : '選擇' }}
       </button>
     </div>
 
@@ -109,12 +116,11 @@ async function batchDelete() {
         v-for="article in articles"
         :key="article.id"
         class="article-card"
-        :class="{ 'article-card--selected': selected.has(article.id) }"
+        :class="{ 'article-card--selected': selected.has(article.id), 'article-card--selecting': selecting }"
         @click="handleCardClick(article.id)"
-        @contextmenu.prevent="toggleSelect(article.id)"
       >
-        <!-- 選取勾勾 -->
-        <div class="article-card__check" @click.stop="toggleSelect(article.id)">
+        <!-- 選取勾勾（只在選擇模式顯示） -->
+        <div v-if="selecting" class="article-card__check" @click.stop="toggleSelect(article.id)">
           <svg v-if="selected.has(article.id)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
 
@@ -124,7 +130,7 @@ async function batchDelete() {
         </div>
         <div class="article-card__body">
           <span class="article-card__status" :class="article.is_draft ? 'article-card__status--draft' : 'article-card__status--pub'">
-            {{ article.is_draft ? '草稿' : '已分析' }}
+            {{ article.is_draft ? '草稿' : '已發布' }}
           </span>
           <h3 class="article-card__title">{{ article.title || '未命名文章' }}</h3>
           <span class="article-card__date mono">{{ formatDate(article.saved_at) }}</span>
@@ -134,10 +140,10 @@ async function batchDelete() {
 
     <!-- 批次操作 floating bar -->
     <Transition name="batch-bar">
-      <div v-if="selectMode" class="batch-bar">
+      <div v-if="selecting" class="batch-bar">
         <span class="batch-bar__count">已選 {{ selected.size }} 篇</span>
         <div class="batch-bar__actions">
-          <button class="batch-bar__btn batch-bar__btn--ghost" @click="clearSelect">取消</button>
+          <button class="batch-bar__btn batch-bar__btn--ghost" @click="exitSelectMode">取消</button>
           <button class="batch-bar__btn batch-bar__btn--analyze" :disabled="analyzing" @click="batchAnalyze">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
             {{ analyzing ? '分析中…' : 'AI 分析' }}
@@ -175,6 +181,11 @@ async function batchDelete() {
   margin-bottom: 24px;
 }
 
+.btn--ghost-active {
+  background: var(--surface2);
+  color: var(--text);
+}
+
 .articles-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -202,6 +213,10 @@ async function batchDelete() {
 .article-card--selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-bdr);
+}
+
+.article-card--selecting {
+  cursor: default;
 }
 
 /* ── 選取勾勾 ── */

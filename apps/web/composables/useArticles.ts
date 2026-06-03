@@ -26,7 +26,11 @@ export function useArticles() {
     return apiFetch(`/articles/${id}/cover`, { method: 'POST', body: form })
   }
 
-  return { listArticles, createArticle, updateArticle, publishArticle, uploadCover }
+  function deleteCover(id: string): Promise<Item> {
+    return apiFetch(`/articles/${id}/cover`, { method: 'DELETE' })
+  }
+
+  return { listArticles, createArticle, updateArticle, publishArticle, uploadCover, deleteCover }
 }
 
 async function compressImage(file: File): Promise<Blob> {
