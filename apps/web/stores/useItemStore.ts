@@ -9,7 +9,7 @@ export const useItemStore = defineStore('item', () => {
     const { listItems } = useItems()
     items.value = await listItems()
     for (const item of items.value) {
-      if (!item.parsed_at) _watchProcessing(item.id)
+      if (!item.parsed_at && !item.url.startsWith('/')) _watchProcessing(item.id)
     }
   }
 
@@ -17,7 +17,7 @@ export const useItemStore = defineStore('item', () => {
     const { createItem } = useItems()
     const item = await createItem(data)
     items.value.unshift(item)
-    if (!item.parsed_at) {
+    if (!item.parsed_at && !item.url.startsWith('/')) {
       _watchProcessing(item.id)
     }
     return item
