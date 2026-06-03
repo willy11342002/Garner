@@ -2,6 +2,7 @@
 import type { Item, ItemPendingReview, Tag } from '~/types/api'
 
 const itemStore = useItemStore()
+const notifStore = useNotificationStore()
 const { getItemTags, getPendingReview, confirmItemTag, detachTag, attachTag } = useItems()
 const { localize, locale } = useI18nContent()
 const { t } = useI18n()
@@ -43,6 +44,7 @@ async function handleConfirmItem(item: ItemPendingReview) {
   const merged = [...existing, ...item.pending_tags.filter(pt => !existing.some(t => t.id === pt.id))]
   itemTagsMap.value = { ...itemTagsMap.value, [item.id]: merged }
   pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
+  markNotifReadForItem(item.id)
   // 背景同步：用伺服器最新狀態覆蓋
   getItemTags(item.id).then(tags => { itemTagsMap.value = { ...itemTagsMap.value, [item.id]: tags } })
 }
@@ -53,6 +55,13 @@ async function handleArchiveItem(item: ItemPendingReview) {
   const idx = itemStore.items.findIndex(i => i.id === item.id)
   if (idx !== -1) itemStore.items.splice(idx, 1)
   pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
+}
+
+function markNotifReadForItem(itemId: string) {
+  const ids = notifStore.items
+    .filter(n => n.item_id === itemId && !n.is_read)
+    .map(n => n.id)
+  if (ids.length) notifStore.markRead(ids)
 }
 
 function pendingKey(itemId: string, tagId: string) {
@@ -92,6 +101,7 @@ async function handleConfirmSelected() {
       itemTagsMap.value = { ...itemTagsMap.value, [item.id]: merged }
       pendingItems.value = pendingItems.value.filter(i => i.id !== itemId)
       selectedPendingIds.delete(itemId)
+      markNotifReadForItem(itemId)
       // 背景同步
       getItemTags(itemId).then(tags => { itemTagsMap.value = { ...itemTagsMap.value, [itemId]: tags } })
     }
@@ -111,6 +121,7 @@ async function handleConfirmAll() {
       const merged = [...existing, ...item.pending_tags.filter(pt => !existing.some(t => t.id === pt.id))]
       itemTagsMap.value = { ...itemTagsMap.value, [item.id]: merged }
       pendingItems.value = pendingItems.value.filter(i => i.id !== item.id)
+      markNotifReadForItem(item.id)
       getItemTags(item.id).then(tags => { itemTagsMap.value = { ...itemTagsMap.value, [item.id]: tags } })
     }
     selectedPendingIds.clear()
