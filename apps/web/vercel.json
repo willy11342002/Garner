@@ -1,6 +1,6 @@
 {
   "buildCommand": "pnpm run build",
-  "framework": "nuxtjs",
+  "framework": null,
   "git": {
     "deploymentEnabled": false
   }
