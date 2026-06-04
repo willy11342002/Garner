@@ -11,6 +11,7 @@ from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.models.content_object import ContentObject, SourceType, detect_source_type
 from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemSummaryUpdate, ItemUpdate
+from app.services.youtube_service import normalize_youtube_url
 from app.workers.process_item import process_item
 
 
@@ -85,7 +86,7 @@ async def create_item(
         await db.refresh(user_item.content)
         return _item_to_read(user_item, user_id)
 
-    url = data.url
+    url = normalize_youtube_url(data.url)
 
     result = await db.execute(select(ContentObject).where(ContentObject.url == url))
     content = result.scalar_one_or_none()

@@ -18,6 +18,14 @@ def extract_video_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
+def normalize_youtube_url(url: str) -> str:
+    """Return canonical watch?v= URL; pass non-YouTube URLs through unchanged."""
+    video_id = extract_video_id(url)
+    if video_id:
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return url
+
+
 async def _get_video_metadata(video_id: str) -> tuple[str | None, int | None]:
     """Get video title and duration via YouTube Data API v3."""
     import httpx
