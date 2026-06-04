@@ -61,40 +61,46 @@ async def process_item(
     if source_type == SourceType.article and raw_content is None and content.content_md:
         raw_content = _extract_text_from_tiptap(content.content_md)
 
-    if raw_content is not None:
-        candidate_tags = await crud_tags.get_top_tags(db, user_id, limit=50)
-        candidate_names = [t.name for t in candidate_tags]
+    if raw_content is None:
+        raise RuntimeError(f"No processable content for {url}")
 
-        analysis = await ai_service.analyze_content(raw_content, candidate_tags=candidate_names)
-        summary_i18n: dict = analysis.get("summary", {})      # Tiptap JSON per locale
-        summary_md: dict[str, str] = analysis.get("summary_md", {})  # Markdown per locale
-        content.summary_i18n = summary_i18n
-        content.summary = summary_md.get("zh-TW", "")
-        # Use dedicated embed_text (short English) for semantic search quality
-        embed_text = analysis.get("embed_text") or content.summary[:500]
-        content.embedding = await ai_service.embed(embed_text)
+    candidate_tags = await crud_tags.get_top_tags(db, user_id, limit=50)
+    candidate_names = [t.name for t in candidate_tags]
 
-        # Chunk raw_content and embed each chunk for fine-grained RAG
-        chunk_texts = ai_service.chunk_text(raw_content)
-        chunk_records: list[dict] = []
-        for chunk in chunk_texts:
-            emb = await ai_service.embed(chunk)
-            chunk_records.append({"text": chunk, "embedding": emb})
-        await crud_chunks.replace_chunks(db, content_id, chunk_records)
+    analysis = await ai_service.analyze_content(raw_content, candidate_tags=candidate_names)
+    summary_i18n: dict = analysis.get("summary", {})
+    summary_md: dict[str, str] = analysis.get("summary_md", {})
+    tags_i18n: dict[str, list[str]] = analysis.get("tags", {})
 
-        # Create and attach AI-generated tags (with candidate normalization)
-        tags_i18n: dict[str, list[str]] = analysis.get("tags", {})
-        zh_tags = tags_i18n.get("zh-TW", [])
-        en_tags = tags_i18n.get("en", [])
-        for zh_name, en_name in zip(zh_tags, en_tags):
-            tag = await crud_tags.get_or_create(
-                db, user_id, name=zh_name,
-                name_i18n={"zh-TW": zh_name, "en": en_name},
-            )
-            await crud_tags.attach_tag(db, user_item_id, tag.id, source=TagSource.ai)
+    if not summary_i18n or not summary_md.get("zh-TW") or not tags_i18n:
+        raise RuntimeError(
+            f"AI returned incomplete results for {url}: "
+            f"summary_i18n={bool(summary_i18n)}, summary={bool(summary_md.get('zh-TW'))}, tags={bool(tags_i18n)}"
+        )
 
-        if whisper_seconds is not None:
-            db.add(WhisperUsage(user_id=user_id, date=date.today(), used_seconds=whisper_seconds))
+    content.summary_i18n = summary_i18n
+    content.summary = summary_md.get("zh-TW", "")
+    embed_text = analysis.get("embed_text") or content.summary[:500]
+    content.embedding = await ai_service.embed(embed_text)
+
+    chunk_texts = ai_service.chunk_text(raw_content)
+    chunk_records: list[dict] = []
+    for chunk in chunk_texts:
+        emb = await ai_service.embed(chunk)
+        chunk_records.append({"text": chunk, "embedding": emb})
+    await crud_chunks.replace_chunks(db, content_id, chunk_records)
+
+    zh_tags = tags_i18n.get("zh-TW", [])
+    en_tags = tags_i18n.get("en", [])
+    for zh_name, en_name in zip(zh_tags, en_tags):
+        tag = await crud_tags.get_or_create(
+            db, user_id, name=zh_name,
+            name_i18n={"zh-TW": zh_name, "en": en_name},
+        )
+        await crud_tags.attach_tag(db, user_item_id, tag.id, source=TagSource.ai)
+
+    if whisper_seconds is not None:
+        db.add(WhisperUsage(user_id=user_id, date=date.today(), used_seconds=whisper_seconds))
 
     content.parsed_at = datetime.now(timezone.utc)
 

@@ -46,6 +46,7 @@ def _item_to_read(user_item, current_user_id: UUID | None = None, tags=None) -> 
 
 
 async def _run_process_item(content_id: UUID, user_id: UUID, user_item_id: UUID, url: str) -> None:
+    from app.core import events
     async with AsyncSessionLocal() as db:
         try:
             await process_item(db, content_id, user_id, user_item_id, url)
@@ -54,6 +55,7 @@ async def _run_process_item(content_id: UUID, user_id: UUID, user_item_id: UUID,
                 "process_item failed: content_id=%s user_id=%s user_item_id=%s",
                 content_id, user_id, user_item_id,
             )
+            events.notify(str(user_item_id))
 
 
 async def create_item(
@@ -108,6 +110,8 @@ async def create_item(
             await db.commit()
             await db.refresh(existing)
             await db.refresh(existing.content)
+        if content.parsed_at is None:
+            background_tasks.add_task(_run_process_item, content.id, user_id, existing.id, url)
         return _item_to_read(existing, user_id)
 
     user_item = await crud_items.create(db, user_id, content)
