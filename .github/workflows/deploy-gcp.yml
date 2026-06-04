@@ -14,9 +14,9 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/vela-transcriber
 
 jobs:
-  deploy:
+  build:
+    name: Build & Push Image
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
@@ -40,6 +40,12 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/vela-transcriber:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/vela-transcriber:latest
 
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
       - uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
