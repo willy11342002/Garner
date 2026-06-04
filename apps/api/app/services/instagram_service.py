@@ -104,12 +104,20 @@ async def _get_metadata(url: str, cookies: str | None) -> dict:
             description = info.get("description")
             uploader = info.get("uploader")
 
+            # Detect image posts (no video duration, at least one image entry)
+            IMAGE_EXTS = {"jpg", "jpeg", "png", "webp"}
+            entries = info.get("entries") or [info]
+            has_images = any((e.get("ext") or "").lower() in IMAGE_EXTS for e in entries)
+            has_video = bool(info.get("duration")) or any(e.get("duration") for e in entries)
+            is_image_post = has_images and not has_video
+
             return {
                 "title": _derive_title(raw_title, description, uploader),
                 "description": description,
                 "duration": info.get("duration"),
                 "thumbnail_bytes": thumbnail_bytes,
                 "uploader": uploader,
+                "is_image_post": is_image_post,
             }
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -119,6 +127,45 @@ async def _get_metadata(url: str, cookies: str | None) -> dict:
     except Exception:
         logger.exception("yt-dlp metadata failed for url=%s", url)
         return {}
+
+
+async def _download_images(url: str, cookies: str | None) -> list[bytes]:
+    """Download all images from an Instagram image post or carousel."""
+    import yt_dlp
+
+    def _fetch() -> list[bytes]:
+        tmpdir = tempfile.mkdtemp()
+        try:
+            opts = {
+                "outtmpl": os.path.join(tmpdir, "%(autonumber)03d.%(ext)s"),
+                "quiet": True,
+                "no_warnings": True,
+            }
+            if cookies:
+                cookies_path = os.path.join(tmpdir, "cookies.txt")
+                with open(cookies_path, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(cookies.replace("\r\n", "\n").replace("\r", "\n"))
+                opts["cookiefile"] = cookies_path
+
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+
+            IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+            images: list[bytes] = []
+            for fname in sorted(os.listdir(tmpdir)):
+                if os.path.splitext(fname)[1].lower() in IMAGE_EXTS:
+                    with open(os.path.join(tmpdir, fname), "rb") as f:
+                        images.append(f.read())
+            logger.info("IG downloaded %d image(s) for url=%s", len(images), url)
+            return images
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception:
+        logger.exception("Image download failed for url=%s", url)
+        return []
 
 
 async def _transcribe_with_whisper(url: str, cookies: str | None) -> tuple[str | None, int | None]:
@@ -229,10 +276,25 @@ async def fetch_content(
     description = metadata.get("description")
     thumbnail_bytes = metadata.get("thumbnail_bytes")
     duration = metadata.get("duration")
-    logger.info("IG metadata: title=%r description_len=%s duration=%s", title, len(description or ""), duration)
+    is_image_post = metadata.get("is_image_post", False)
+    logger.info("IG metadata: title=%r description_len=%s duration=%s is_image_post=%s", title, len(description or ""), duration, is_image_post)
 
     if stage_cb:
         stage_cb("fetching_content")
+
+    # Image post: download images and run vision AI, skip Whisper
+    if is_image_post:
+        images = await _download_images(url, cookies)
+        parts: list[str] = []
+        if description and description.strip():
+            parts.append(f"[Caption]\n{description.strip()}")
+        if images:
+            from app.services import ai_service
+            image_text = await ai_service.describe_images(images)
+            if image_text:
+                parts.append(f"[Images]\n{image_text}")
+        raw_content = "\n\n".join(parts) if parts else None
+        return raw_content, None, duration, title, thumbnail_bytes
 
     # Check Whisper quota before downloading
     if duration is not None:

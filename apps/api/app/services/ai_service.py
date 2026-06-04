@@ -558,6 +558,52 @@ def chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> list[str]
     return [c for c in chunks if c]
 
 
+_VISION_PROMPT = """\
+以下是一篇 Instagram 貼文的圖片（按順序排列）。
+請仔細辨識並轉錄每張圖片中的所有文字，同時描述視覺內容。
+若圖片中有資訊圖表、列表、時間表等結構化內容，請保留其結構。
+
+輸出格式（每張圖片一段）：
+[圖片 N]
+文字：（逐字轉錄圖中所有可見文字）
+描述：（簡短描述圖片視覺內容）
+
+請用繁體中文輸出，確保文字轉錄完整準確。
+"""
+
+
+async def describe_images(images: list[bytes]) -> str:
+    """Run vision AI on a list of image bytes, return combined text description."""
+    import base64
+
+    if not images:
+        return ""
+
+    content: list[dict] = []
+    for img_bytes in images[:10]:
+        b64 = base64.b64encode(img_bytes).decode()
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+        })
+    content.append({"type": "text", "text": _VISION_PROMPT})
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json={
+                "model": _llm(),
+                "messages": [{"role": "user", "content": content}],
+            },
+            timeout=120,
+        )
+        if resp.status_code == 401:
+            raise RuntimeError("OpenRouter service unavailable")
+        resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
 async def embed(text: str) -> list[float]:
     from openai import AsyncOpenAI
 
