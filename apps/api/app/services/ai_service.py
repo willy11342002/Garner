@@ -10,6 +10,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Fallbacks keep the service alive even if the table is empty.
 _model_cache: dict[str, str] = {
     "llm": "anthropic/claude-3-5-haiku",
+    "vision": "anthropic/claude-3-haiku",  # must support multimodal input; claude-3-5-haiku does NOT support vision via Bedrock
     "embedding": "openai/text-embedding-3-small",
 }
 
@@ -28,6 +29,14 @@ async def load_model_configs() -> None:
 
 def _llm() -> str:
     return _model_cache["llm"]
+
+
+def _vision_llm() -> str:
+    """Model used for image understanding. Must support multimodal input.
+    Note: claude-3-5-haiku does NOT support vision via Amazon Bedrock on OpenRouter.
+    Use claude-3-haiku or claude-3.5-sonnet instead.
+    """
+    return _model_cache.get("vision", "anthropic/claude-3-haiku")
 
 
 def _emb() -> str:
@@ -572,20 +581,70 @@ _VISION_PROMPT = """\
 """
 
 
+_TITLE_PROMPT = """\
+根據以下內容摘要，產生一個簡潔的繁體中文標題（不超過 20 字）。
+只輸出標題本身，不要加引號、標點或任何額外說明。
+
+摘要：
+"""
+
+
+async def generate_title(summary_md: str) -> str:
+    """Derive a concise zh-TW title from a Markdown summary."""
+    return await _llm_call(_TITLE_PROMPT + summary_md[:2000])
+
+
 async def describe_images(images: list[bytes]) -> str:
-    """Run vision AI on a list of image bytes, return combined text description."""
+    """Run vision AI on a list of image bytes, return combined text description.
+
+    Images are capped at 1 MB each and 4 MB total (base64) to stay within
+    OpenRouter's payload limits.  Uses the dedicated vision model which is
+    guaranteed to support multimodal input regardless of the main LLM setting.
+    """
     import base64
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
 
     if not images:
         return ""
 
+    MAX_PER_IMAGE = 1 * 1024 * 1024   # resize if larger than 1 MB
+    MAX_TOTAL    = 4 * 1024 * 1024    # 4 MB total base64 safety cap
+
+    def _resize(data: bytes) -> bytes:
+        """Shrink to ≤1024×1024 JPEG using Pillow (already a project dependency)."""
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(data))
+        img.thumbnail((1024, 1024), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+
     content: list[dict] = []
+    total = 0
     for img_bytes in images[:10]:
+        if len(img_bytes) > MAX_PER_IMAGE:
+            try:
+                img_bytes = _resize(img_bytes)
+                _log.info("describe_images: resized image to %d bytes", len(img_bytes))
+            except Exception:
+                _log.warning("describe_images: resize failed, skipping image", exc_info=True)
+                continue
+        if total + len(img_bytes) > MAX_TOTAL:
+            _log.warning("describe_images: reached total size cap, stopping at %d images", len(content))
+            break
         b64 = base64.b64encode(img_bytes).decode()
         content.append({
             "type": "image_url",
             "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
         })
+        total += len(img_bytes)
+
+    if not content:
+        return ""
+
     content.append({"type": "text", "text": _VISION_PROMPT})
 
     async with httpx.AsyncClient() as client:
@@ -593,13 +652,15 @@ async def describe_images(images: list[bytes]) -> str:
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": _llm(),
+                "model": _vision_llm(),
                 "messages": [{"role": "user", "content": content}],
             },
             timeout=120,
         )
         if resp.status_code == 401:
             raise RuntimeError("OpenRouter service unavailable")
+        if resp.status_code == 400:
+            _log.error("OpenRouter 400 for describe_images (model=%s): %s", _vision_llm(), resp.text)
         resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"].strip()
 

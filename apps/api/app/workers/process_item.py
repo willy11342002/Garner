@@ -33,6 +33,12 @@ async def process_item(
 
     fetch_result = await _fetch_content(db, user_id, url, content, user_item_id)
     analysis    = await _analyze_content(fetch_result.raw_content, db, user_id, user_item_id)
+
+    if not fetch_result.title:
+        summary_md = analysis.get("summary_md", {}).get("zh-TW", "")
+        if summary_md:
+            fetch_result.title = await ai_service.generate_title(summary_md)
+
     await _embed_and_save(db, content_id, content, user_id, user_item_id, url, fetch_result, analysis)
 
 
