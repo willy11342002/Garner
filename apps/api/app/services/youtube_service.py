@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import re
 from datetime import date
 from uuid import UUID
@@ -69,15 +70,13 @@ async def _get_cookies_content(db: AsyncSession) -> str | None:
     return content if content and content.strip() else None
 
 
-async def _get_transcript(video_id: str, db: AsyncSession) -> str | None:
-    """Get transcript via yt-dlp with cookies from DB."""
+async def _get_transcript(video_id: str, cookies: str | None) -> str | None:
+    """Get transcript via yt-dlp with cookies."""
     import json
     import os
     import tempfile
 
     import yt_dlp
-
-    cookies = await _get_cookies_content(db)
 
     def _fetch_ytdlp():
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -128,26 +127,56 @@ async def _get_transcript(video_id: str, db: AsyncSession) -> str | None:
         return None
 
 
-async def _transcribe_with_whisper(url: str) -> str | None:
-    """Transcribe audio by calling the Cloud Run transcriber service."""
-    import httpx
+async def _transcribe_with_whisper(url: str, cookies: str | None) -> str | None:
+    import shutil
+    import tempfile
 
-    if not settings.transcriber_url:
-        logger.warning("TRANSCRIBER_URL not set, skipping Whisper")
+    import yt_dlp
+    from groq import AsyncGroq
+
+    if not settings.groq_api_key:
+        logger.warning("GROQ_API_KEY not set, skipping Whisper")
         return None
+
+    tmpdir = tempfile.mkdtemp()
+    audio_base = os.path.join(tmpdir, "audio")
+
+    def _download():
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": audio_base,
+            "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "32"}],
+            "quiet": True,
+            "no_warnings": True,
+        }
+        if cookies:
+            cookies_path = os.path.join(tmpdir, "cookies.txt")
+            with open(cookies_path, "w", encoding="utf-8") as f:
+                f.write(cookies)
+            ydl_opts["cookiefile"] = cookies_path
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            return info.get("duration") if info else None
 
     try:
-        async with httpx.AsyncClient(timeout=300) as client:
-            r = await client.post(
-                f"{settings.transcriber_url.rstrip('/')}/transcribe",
-                json={"url": url},
-                headers={"x-api-key": settings.transcriber_secret},
+        duration = await asyncio.to_thread(_download)
+        audio_path = audio_base + ".mp3"
+        if not os.path.exists(audio_path):
+            return None
+
+        client = AsyncGroq(api_key=settings.groq_api_key)
+        with open(audio_path, "rb") as f:
+            result = await client.audio.transcriptions.create(
+                model="whisper-large-v3-turbo",
+                file=f,
             )
-            r.raise_for_status()
-            return r.json().get("text")
+        return result.text
     except Exception:
-        logger.exception("Cloud Run transcriber failed for url=%s", url)
+        logger.exception("Whisper transcription failed for url=%s", url)
         return None
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 async def _get_whisper_daily_limit(db: AsyncSession, user_id: UUID) -> int:
@@ -194,8 +223,9 @@ async def fetch_content(
 
     # Always fetch metadata (title + duration) — these are stored regardless of AI result
     title, duration = await _get_video_metadata(video_id)
+    cookies = await _get_cookies_content(db)
 
-    transcript = await _get_transcript(video_id, db)
+    transcript = await _get_transcript(video_id, cookies)
     if transcript:
         return transcript, None, duration, title, "transcript"
 
@@ -219,7 +249,7 @@ async def fetch_content(
         return None, None, duration, title, None
 
     logger.info("Starting Whisper transcription for video_id=%s", video_id)
-    text = await _transcribe_with_whisper(url)
+    text = await _transcribe_with_whisper(url, cookies)
     if text is None:
         logger.warning("Whisper transcription returned None for video_id=%s", video_id)
         return None, None, duration, title, None
