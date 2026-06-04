@@ -60,44 +60,66 @@ def _parse_iso8601_duration(duration: str) -> int:
     return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
-async def _get_transcript_via_cloud_run(video_id: str) -> str | None:
-    """Fetch subtitles via Cloud Run (avoids Railway IP block)."""
-    import httpx
+async def _get_transcript(video_id: str) -> str | None:
+    """Get transcript via yt-dlp, fallback to youtube-transcript-api."""
+    import json
+    import os
+    import tempfile
 
-    if not settings.transcriber_url:
+    import yt_dlp
+
+    def _fetch_ytdlp():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ydl_opts = {
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "subtitleslangs": ["zh-Hant", "zh-TW", "zh-Hans", "zh-CN", "en"],
+                "subtitlesformat": "json3",
+                "outtmpl": os.path.join(tmpdir, "%(id)s"),
+                "quiet": True,
+                "no_warnings": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+
+            files = os.listdir(tmpdir)
+            for lang in ["zh-Hant", "zh-TW", "zh-Hans", "zh-CN", "en"]:
+                for fname in files:
+                    if f".{lang}." in fname and fname.endswith(".json3"):
+                        return _parse_json3(os.path.join(tmpdir, fname))
+            for fname in files:
+                if fname.endswith(".json3"):
+                    return _parse_json3(os.path.join(tmpdir, fname))
         return None
+
+    def _parse_json3(path: str) -> str | None:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        texts = [
+            seg.get("utf8", "").strip()
+            for event in data.get("events", [])
+            for seg in event.get("segs", [])
+            if seg.get("utf8", "").strip() not in ("", "\n")
+        ]
+        return " ".join(texts) or None
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            r = await client.post(
-                f"{settings.transcriber_url.rstrip('/')}/subtitles",
-                json={"video_id": video_id},
-                headers={"x-api-key": settings.transcriber_secret},
-            )
-            r.raise_for_status()
-            return r.json().get("text")
+        result = await asyncio.to_thread(_fetch_ytdlp)
+        if result:
+            return result
     except Exception:
-        logger.exception("Cloud Run subtitle fetch failed for video_id=%s", video_id)
-        return None
-
-
-async def _get_transcript(video_id: str) -> str | None:
-    """Get transcript: tries Cloud Run (yt-dlp) first, falls back to youtube-transcript-api."""
-    result = await _get_transcript_via_cloud_run(video_id)
-    if result:
-        return result
-
-    logger.warning("Cloud Run subtitles failed, falling back to youtube-transcript-api for video_id=%s", video_id)
+        logger.warning("yt-dlp transcript failed for video_id=%s, falling back", video_id)
 
     from youtube_transcript_api import YouTubeTranscriptApi
 
-    def _fetch():
+    def _fetch_api():
         api = YouTubeTranscriptApi()
         transcript = api.fetch(video_id)
         return " ".join(s.text for s in transcript)
 
     try:
-        return await asyncio.to_thread(_fetch)
+        return await asyncio.to_thread(_fetch_api)
     except Exception:
         return None
 
