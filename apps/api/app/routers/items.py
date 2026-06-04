@@ -10,7 +10,7 @@ from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
 from app.schemas.item import ItemCreate, ItemPendingReviewRead, ItemRead, ItemSummaryUpdate, ItemUpdate
-from app.schemas.tag import TagCreate, TagRead
+from app.schemas.tag import TagBulkConfirm, TagCreate, TagRead, TagSingleConfirm
 from app.services import item_service
 
 router = APIRouter()
@@ -167,11 +167,17 @@ async def attach_tag(
     return tag
 
 
-@router.post("/{item_id}/tags/{tag_id}/confirm", status_code=status.HTTP_204_NO_CONTENT)
-async def confirm_item_tag(item_id: UUID, tag_id: UUID, current_user: CurrentUser, db: DbSession):
-    found = await crud_tags.confirm_item_tag(db, item_id, tag_id)
+@router.post("/{item_id}/tags/confirm/single", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_item_tag(item_id: UUID, body: TagSingleConfirm, current_user: CurrentUser, db: DbSession):
+    found = await crud_tags.confirm_item_tag(db, item_id, body.tag_id)
     if not found:
         raise HTTPException(status_code=404, detail="Pending tag not found")
+    await db.commit()
+
+
+@router.post("/{item_id}/tags/confirm/bulk", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_item_tags_bulk(item_id: UUID, body: TagBulkConfirm, current_user: CurrentUser, db: DbSession):
+    await crud_tags.confirm_item_tags_bulk(db, item_id, body.tag_ids)
     await db.commit()
 
 

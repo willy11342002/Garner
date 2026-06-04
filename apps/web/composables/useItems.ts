@@ -49,7 +49,11 @@ export function useItems() {
   }
 
   function confirmItemTag(itemId: string, tagId: string): Promise<void> {
-    return apiFetch(`/items/${itemId}/tags/${tagId}/confirm`, { method: 'POST' })
+    return apiFetch(`/items/${itemId}/tags/confirm/single`, { method: 'POST', body: { tag_id: tagId } })
+  }
+
+  function confirmItemTagsBulk(itemId: string, tagIds: string[]): Promise<void> {
+    return apiFetch(`/items/${itemId}/tags/confirm/bulk`, { method: 'POST', body: { tag_ids: tagIds } })
   }
 
   function updateItemSummary(id: string, summaryI18n: Record<string, unknown>): Promise<Item> {
@@ -59,7 +63,7 @@ export function useItems() {
   return {
     listItems, createItem, getItem, updateItem, deleteItem,
     getItemTags, getPendingItemTags, attachTag, detachTag,
-    listArchivedItems, getPendingReview, confirmItemTag,
+    listArchivedItems, getPendingReview, confirmItemTag, confirmItemTagsBulk,
     updateItemSummary,
   }
 }

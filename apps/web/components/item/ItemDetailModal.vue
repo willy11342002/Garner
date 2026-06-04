@@ -14,7 +14,7 @@ const isOpen = computed(() => !!(props.itemId || props.item))
 // 是否為唯讀公開模式
 const readonly = computed(() => !props.itemId)
 
-const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, updateItemSummary } = useItems()
+const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, confirmItemTagsBulk, updateItemSummary } = useItems()
 const { localize, locale } = useI18nContent()
 
 const localizedTiptap = computed(() => {
@@ -198,7 +198,7 @@ async function handleConfirmAll() {
   if (!item.value || !pendingTags.value.length) return
   confirmingAll.value = true
   try {
-    await Promise.all(pendingTags.value.map(t => confirmItemTag(item.value!.id, t.id)))
+    await confirmItemTagsBulk(item.value.id, pendingTags.value.map(t => t.id))
     tags.value.push(...pendingTags.value)
     pendingTags.value = []
   } finally {

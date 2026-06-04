@@ -3,7 +3,7 @@ import type { Item, ItemPendingReview, Tag } from '~/types/api'
 
 const itemStore = useItemStore()
 const notifStore = useNotificationStore()
-const { getItemTags, getPendingReview, confirmItemTag, detachTag, attachTag } = useItems()
+const { getItemTags, getPendingReview, confirmItemTag, confirmItemTagsBulk, detachTag, attachTag } = useItems()
 const { localize, locale } = useI18nContent()
 const { t } = useI18n()
 
@@ -94,9 +94,7 @@ async function handleConfirmSelected() {
     for (const itemId of [...selectedPendingIds]) {
       const item = pendingItems.value.find(i => i.id === itemId)
       if (!item) continue
-      for (const tag of [...item.pending_tags]) {
-        await confirmItemTag(item.id, tag.id)
-      }
+      await confirmItemTagsBulk(item.id, item.pending_tags.map(t => t.id))
       // 樂觀更新
       const existing = itemTagsMap.value[item.id] ?? []
       const merged = [...existing, ...item.pending_tags.filter(pt => !existing.some(t => t.id === pt.id))]
@@ -116,9 +114,7 @@ async function handleConfirmAll() {
   confirmingAll.value = true
   try {
     for (const item of [...pendingItems.value]) {
-      for (const tag of [...item.pending_tags]) {
-        await confirmItemTag(item.id, tag.id)
-      }
+      await confirmItemTagsBulk(item.id, item.pending_tags.map(t => t.id))
       const existing = itemTagsMap.value[item.id] ?? []
       const merged = [...existing, ...item.pending_tags.filter(pt => !existing.some(t => t.id === pt.id))]
       itemTagsMap.value = { ...itemTagsMap.value, [item.id]: merged }

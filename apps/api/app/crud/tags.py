@@ -199,3 +199,30 @@ async def confirm_item_tag(
 
     await db.flush()
     return True
+
+
+async def confirm_item_tags_bulk(
+    db: AsyncSession, user_item_id: UUID, tag_ids: list[UUID]
+) -> int:
+    result = await db.execute(
+        select(ItemTag).where(
+            ItemTag.user_item_id == user_item_id,
+            ItemTag.tag_id.in_(tag_ids),
+            ItemTag.confirmed == False,  # noqa: E712
+        )
+    )
+    item_tags = result.scalars().all()
+    confirmed_tag_ids = [it.tag_id for it in item_tags]
+    for item_tag in item_tags:
+        item_tag.confirmed = True
+
+    if confirmed_tag_ids:
+        tags_result = await db.execute(
+            select(Tag).where(Tag.id.in_(confirmed_tag_ids))
+        )
+        for tag in tags_result.scalars().all():
+            tag.item_count += 1
+            tag.last_used_at = datetime.now(timezone.utc)
+
+    await db.flush()
+    return len(item_tags)
