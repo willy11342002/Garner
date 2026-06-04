@@ -1,3 +1,4 @@
+import re
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,12 +20,12 @@ class YouTubeProvider(ContentProvider):
         content: ContentObject,
         stage_cb=None,
     ) -> FetchResult:
-        from app.services import thumbnail_service, youtube_service
+        from app.services import youtube_service
 
         raw, whisper_sec, duration, title, ts_str = await youtube_service.fetch_content(
             db, user_id, url, stage_cb=stage_cb
         )
-        thumbnail_url = await thumbnail_service.fetch_and_cache_thumbnail(str(content.id), url)
+        thumbnail_url = await self.fetch_thumbnail(str(content.id), url)
         ts = TranscriptionSource(ts_str) if ts_str else None
         return FetchResult(
             raw_content=raw,
@@ -34,3 +35,13 @@ class YouTubeProvider(ContentProvider):
             whisper_seconds=whisper_sec,
             thumbnail_url=thumbnail_url,
         )
+
+    async def fetch_thumbnail(self, content_id: str, url: str) -> str | None:
+        match = re.search(r"(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})", url)
+        if not match:
+            return await super().fetch_thumbnail(content_id, url)
+        yt_url = f"https://img.youtube.com/vi/{match.group(1)}/maxresdefault.jpg"
+        image_bytes = await self._download_bytes(yt_url)
+        if not image_bytes:
+            return yt_url
+        return await self._cache_thumbnail(content_id, image_bytes) or yt_url

@@ -10,7 +10,7 @@ from app.providers.base import ContentProvider, FetchResult
 class ArticleProvider(ContentProvider):
     @classmethod
     def matches(cls, url: str) -> bool:
-        return True  # fallback
+        return not url.startswith("http")  # internal content (URL starts with /)
 
     async def fetch(
         self,
@@ -20,10 +20,8 @@ class ArticleProvider(ContentProvider):
         content: ContentObject,
         stage_cb=None,
     ) -> FetchResult:
-        from app.services import thumbnail_service
-
         raw = _extract_text_from_tiptap(content.content_md) if content.content_md else None
-        thumbnail_url = await thumbnail_service.fetch_and_cache_thumbnail(str(content.id), url)
+        thumbnail_url = await self.fetch_thumbnail(str(content.id), url)
         return FetchResult(raw_content=raw, thumbnail_url=thumbnail_url)
 
 

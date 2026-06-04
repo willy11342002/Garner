@@ -19,7 +19,7 @@ class InstagramProvider(ContentProvider):
         content: ContentObject,
         stage_cb=None,
     ) -> FetchResult:
-        from app.services import instagram_service, thumbnail_service
+        from app.services import instagram_service
 
         raw, whisper_sec, duration, title, thumbnail_bytes = await instagram_service.fetch_content(
             db, user_id, url, stage_cb=stage_cb
@@ -27,7 +27,7 @@ class InstagramProvider(ContentProvider):
 
         thumbnail_url = None
         if thumbnail_bytes:
-            thumbnail_url = await thumbnail_service.cache_thumbnail_bytes(str(content.id), thumbnail_bytes)
+            thumbnail_url = await self._cache_thumbnail(str(content.id), thumbnail_bytes)
 
         return FetchResult(
             raw_content=raw,

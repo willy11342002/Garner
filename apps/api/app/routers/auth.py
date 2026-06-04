@@ -68,7 +68,7 @@ async def update_me(body: UserUpdate, current_user: CurrentUser, db: DbSession):
 @router.delete("/me", status_code=204)
 async def delete_me(current_user: CurrentUser, db: DbSession):
     from uuid import UUID
-    from app.services.thumbnail_service import _get_supabase
+    from app.core.supabase import get_supabase
 
     user_id = current_user["sub"]
     user = await crud_users.get_by_id(db, UUID(user_id))
@@ -80,7 +80,7 @@ async def delete_me(current_user: CurrentUser, db: DbSession):
 
     # 從 Supabase Auth 刪除用戶
     try:
-        supabase = await _get_supabase()
+        supabase = await get_supabase()
         await supabase.auth.admin.delete_user(user_id)
     except Exception:
         pass

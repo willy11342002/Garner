@@ -27,6 +27,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "Pillow>=11.0.0",
     "instaloader>=4.13",
+    "trafilatura>=2.0.0",
 ]
 
 [project.optional-dependencies]

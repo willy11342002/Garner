@@ -286,9 +286,9 @@ async def upload_article_cover(
     content = user_item.content
     if content.created_by_user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
-    from app.services.thumbnail_service import _get_supabase
+    from app.core.supabase import get_supabase
     from app.core.config import settings
-    supabase = await _get_supabase()
+    supabase = await get_supabase()
     ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
     path = f"thumbnails/{content.id}.{ext}"
     try:
@@ -319,9 +319,9 @@ async def delete_article_cover(
     if content.created_by_user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
     if content.thumbnail_url:
-        from app.services.thumbnail_service import _get_supabase
+        from app.core.supabase import get_supabase
         from app.core.config import settings
-        supabase = await _get_supabase()
+        supabase = await get_supabase()
         for ext in ("jpg", "png", "webp"):
             path = f"thumbnails/{content.id}.{ext}"
             try:
