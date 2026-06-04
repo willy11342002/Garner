@@ -40,24 +40,10 @@ async def _download_bytes(url: str) -> bytes | None:
         return None
 
 
-async def fetch_and_cache_thumbnail(content_id: str, source_url: str) -> str | None:
-    """
-    Downloads thumbnail and caches to Supabase Storage. Falls back to origin URL on failure.
-    """
-    youtube_id = _extract_youtube_id(source_url)
-    origin_url = (
-        f"https://img.youtube.com/vi/{youtube_id}/maxresdefault.jpg"
-        if youtube_id
-        else await _fetch_og_image(source_url)
-    )
-
-    if not origin_url:
-        return None
-
-    image_bytes = await _download_bytes(origin_url)
-    if not image_bytes:
-        return origin_url
-
+async def cache_thumbnail_bytes(content_id: str, image_bytes: bytes) -> str | None:
+    """Upload pre-fetched image bytes to Supabase Storage and return the public URL."""
+    import logging
+    logger = logging.getLogger(__name__)
     try:
         supabase = await _get_supabase()
         path = f"thumbnails/{content_id}.jpg"
@@ -66,7 +52,35 @@ async def fetch_and_cache_thumbnail(content_id: str, source_url: str) -> str | N
             image_bytes,
             {"content-type": "image/jpeg", "upsert": "true"},
         )
-        result = await supabase.storage.from_(settings.storage_bucket).get_public_url(path)
-        return result
+        url = await supabase.storage.from_(settings.storage_bucket).get_public_url(path)
+        logger.info("Thumbnail cached: %s", url)
+        return url
     except Exception:
+        logger.warning("Thumbnail upload failed for content_id=%s", content_id, exc_info=True)
+        return None
+
+
+async def fetch_and_cache_thumbnail(
+    content_id: str, source_url: str, fallback_url: str | None = None
+) -> str | None:
+    """
+    Downloads thumbnail and caches to Supabase Storage. Falls back to origin URL on failure.
+    Pass fallback_url to skip URL discovery (e.g. when the caller already has the thumbnail URL).
+    """
+    youtube_id = _extract_youtube_id(source_url)
+    if fallback_url:
+        origin_url = fallback_url
+    elif youtube_id:
+        origin_url = f"https://img.youtube.com/vi/{youtube_id}/maxresdefault.jpg"
+    else:
+        origin_url = await _fetch_og_image(source_url)
+
+    if not origin_url:
+        return None
+
+    image_bytes = await _download_bytes(origin_url)
+    if not image_bytes:
         return origin_url
+
+    cached = await cache_thumbnail_bytes(content_id, image_bytes)
+    return cached or origin_url

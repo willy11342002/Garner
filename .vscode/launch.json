@@ -5,7 +5,7 @@
       "name": "API (FastAPI)",
       "type": "debugpy",
       "request": "launch",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "python": "${workspaceFolder}/apps/api/.venv/Scripts/python.exe",
       "module": "uvicorn",
       "args": ["app.main:app", "--reload", "--port", "8000"],
       "cwd": "${workspaceFolder}/apps/api",
