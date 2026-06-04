@@ -20,21 +20,47 @@ def extract_video_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
-async def _get_video_metadata(url: str) -> tuple[str | None, int | None]:
-    """Get video title and duration via yt-dlp (no download)."""
-    import yt_dlp
+async def _get_video_metadata(video_id: str) -> tuple[str | None, int | None]:
+    """Get video title and duration via YouTube Data API v3."""
+    import httpx
 
-    def _fetch():
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if info:
-                return info.get("title"), info.get("duration")
+    if not settings.youtube_api_key:
+        logger.warning("YOUTUBE_API_KEY not set, cannot fetch video metadata")
+        return None, None
+
+    api_url = (
+        "https://www.googleapis.com/youtube/v3/videos"
+        f"?part=snippet,contentDetails&id={video_id}&key={settings.youtube_api_key}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(api_url)
+            r.raise_for_status()
+            data = r.json()
+
+        items = data.get("items", [])
+        if not items:
             return None, None
 
-    try:
-        return await asyncio.to_thread(_fetch)
+        item = items[0]
+        title = item["snippet"]["title"]
+        duration = _parse_iso8601_duration(item["contentDetails"]["duration"])
+        return title, duration
+
     except Exception:
+        logger.exception("YouTube Data API failed for video_id=%s", video_id)
         return None, None
+
+
+def _parse_iso8601_duration(duration: str) -> int:
+    """Convert ISO 8601 duration (PT1H2M3S) to seconds."""
+    match = re.fullmatch(
+        r"P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration
+    )
+    if not match:
+        return 0
+    days, hours, minutes, seconds = (int(x or 0) for x in match.groups())
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 async def _get_transcript(video_id: str) -> str | None:
@@ -140,7 +166,7 @@ async def fetch_content(
         return None, None, None, None, None
 
     # Always fetch metadata (title + duration) — these are stored regardless of AI result
-    title, duration = await _get_video_metadata(url)
+    title, duration = await _get_video_metadata(video_id)
 
     transcript = await _get_transcript(video_id)
     if transcript:

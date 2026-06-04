@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     supabase_service_key: str
     openrouter_api_key: str
     groq_api_key: str = ""
+    youtube_api_key: str = ""
     storage_bucket: str = "thumbnails"
     sentry_dsn: str = ""
     free_whisper_daily_seconds: int = 3600  # 60 min for free plan
