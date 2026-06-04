@@ -11,7 +11,7 @@
       "cwd": "${workspaceFolder}/apps/api",
       "envFile": "${workspaceFolder}/apps/api/.env",
       "console": "integratedTerminal",
-      "preLaunchTask": "uv sync (API)"
+      "preLaunchTask": "Alembic Migrate"
     },
     {
       "name": "Web (Nuxt)",

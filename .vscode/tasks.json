@@ -12,19 +12,19 @@
         "reveal": "silent",
         "panel": "shared"
       },
-      "dependsOn": "Start DB"
     },
     {
-      "label": "Start DB",
+      "label": "Alembic Migrate",
       "type": "shell",
-      "command": "docker compose up db -d",
+      "command": "uv run alembic upgrade head",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}/apps/api"
       },
       "presentation": {
         "reveal": "silent",
         "panel": "shared"
-      }
+      },
+      "dependsOn": "uv sync (API)"
     }
   ]
 }
