@@ -306,6 +306,7 @@ const weeklyTagGroups = computed(() => {
 const totalWeeklyCount = computed(() =>
   weeklyTagGroups.value.reduce((s, g) => s + g.count, 0) || 1
 )
+const maxWeeklyCount = computed(() => weeklyTagGroups.value[0]?.count || 1)
 
 const TAGROWS_PER_PAGE = 3
 const visibleTagCount = ref(TAGROWS_PER_PAGE)
@@ -536,7 +537,7 @@ function openShareModal(tagId: string) {
                   <div
                     class="topic-bar__col"
                     :data-pct="Math.round(g.count / totalWeeklyCount * 100)"
-                    :style="{ height: Math.max(16, g.count / totalWeeklyCount * 100) + '%', background: `var(--tag-${tagColor(i)})` }"
+                    :style="{ height: Math.max(16, g.count / maxWeeklyCount * 100) + '%', background: `var(--tag-${tagColor(i)})` }"
                   ></div>
                   <div class="topic-bar__label">{{ localize(g.tag.name_i18n, g.tag.name) }}</div>
                 </div>
