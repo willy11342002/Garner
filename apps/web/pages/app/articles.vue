@@ -62,18 +62,20 @@ async function batchAnalyze() {
   }
 }
 
-// ── 批次刪除 ──────────────────────────────────────────────────────────────────
-const deleting = ref(false)
+// ── 批次封存 ──────────────────────────────────────────────────────────────────
+const archiving = ref(false)
 
-async function batchDelete() {
-  if (deleting.value) return
-  deleting.value = true
+async function batchArchive() {
+  if (archiving.value) return
+  archiving.value = true
   try {
-    await Promise.allSettled([...selected.value].map(id => apiFetch(`/items/${id}`, { method: 'DELETE' })))
+    await Promise.allSettled(
+      [...selected.value].map(id => apiFetch(`/items/${id}`, { method: 'PATCH', body: { status: 'archived' } }))
+    )
     articles.value = articles.value.filter(a => !selected.value.has(a.id))
     exitSelectMode()
   } finally {
-    deleting.value = false
+    archiving.value = false
   }
 }
 </script>
@@ -146,11 +148,11 @@ async function batchDelete() {
           <button class="batch-bar__btn batch-bar__btn--ghost" @click="exitSelectMode">取消</button>
           <button class="batch-bar__btn batch-bar__btn--analyze" :disabled="analyzing" @click="batchAnalyze">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-            {{ analyzing ? '分析中…' : 'AI 分析' }}
+            {{ analyzing ? '分析中…' : '保存' }}
           </button>
-          <button class="batch-bar__btn batch-bar__btn--delete" :disabled="deleting" @click="batchDelete">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-            {{ deleting ? '刪除中…' : '刪除' }}
+          <button class="batch-bar__btn batch-bar__btn--archive" :disabled="archiving" @click="batchArchive">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            {{ archiving ? '封存中…' : '封存' }}
           </button>
         </div>
       </div>
@@ -395,12 +397,12 @@ async function batchDelete() {
 }
 .batch-bar__btn--analyze:not(:disabled):hover { opacity: 0.85; }
 
-.batch-bar__btn--delete {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.25);
-  color: #ef4444;
+.batch-bar__btn--archive {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.25);
+  color: #b45309;
 }
-.batch-bar__btn--delete:not(:disabled):hover { opacity: 0.85; }
+.batch-bar__btn--archive:not(:disabled):hover { opacity: 0.85; }
 
 /* floating bar 動畫 */
 .batch-bar-enter-active,

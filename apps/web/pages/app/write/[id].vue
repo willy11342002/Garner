@@ -18,7 +18,7 @@ const backLabel = computed(() => FROM_LABELS[backPath.value] ?? '首頁')
 
 
 const { updateArticle, publishArticle, uploadCover, deleteCover } = useArticles()
-const { attachTag, detachTag, confirmItemTag, getPendingItemTags, getItemTags } = useItems()
+const { attachTag, detachTag, confirmItemTag, getPendingItemTags, getItemTags, deleteItem } = useItems()
 const apiFetch = useApiFetch()
 
 const article = ref<Item | null>(null)
@@ -33,6 +33,7 @@ const isDraft = ref(true)
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const analyzing = ref(false)
 const isDirty = ref(false)
+const archiving = ref(false)
 
 const originalTitle = ref('')
 const originalContent = ref('')
@@ -40,7 +41,7 @@ const originalContent = ref('')
 // ── Outline ──────────────────────────────────────────────────────────────────
 interface OutlineItem { level: number; text: string; index: number }
 
-const outlineOpen = ref(false)
+const outlineOpen = ref(window.innerWidth > 768)
 const editorBodyRef = ref<HTMLElement | null>(null)
 
 const outline = computed<OutlineItem[]>(() => {
@@ -75,7 +76,7 @@ function scrollToHeading(headingIndex: number) {
 }
 
 // AI 分析抽屜
-const drawerOpen = ref(false)
+const drawerOpen = ref(window.innerWidth > 768)
 const drawerHasResult = ref(false)
 const confirmedTags = ref<Tag[]>([])
 const pendingTags = ref<Tag[]>([])
@@ -198,6 +199,19 @@ onBeforeRouteLeave(() => {
   if (!isDirty.value) return true
   return window.confirm('有未保存的變更，確定要離開嗎？')
 })
+
+async function handleArchive() {
+  if (!window.confirm('確定要封存這篇文章嗎？封存後可在封存庫找回。')) return
+  archiving.value = true
+  isDirty.value = false
+  try {
+    await deleteItem(id)
+    router.push(backPath.value)
+  } catch {
+    isDirty.value = true
+    archiving.value = false
+  }
+}
 
 async function togglePublic() {
   isPublic.value = !isPublic.value
@@ -338,6 +352,13 @@ async function handleDeleteCover(e: Event) {
           <span class="write-bar__pill-label">{{ isPublic ? '公開' : '私有' }}</span>
         </button>
 
+        <!-- Archive button -->
+        <button
+          class="write-bar__archive"
+          :disabled="archiving || analyzing"
+          @click="handleArchive"
+        >封存</button>
+
         <!-- AI 分析按鈕 -->
         <button
           class="write-bar__publish"
@@ -451,7 +472,6 @@ async function handleDeleteCover(e: Event) {
         <!-- handle 黏在抽屜左緣，跟著滑動 -->
         <button
           class="write-panel-toggle"
-          :class="{ 'write-panel-toggle--dot': drawerHasResult && !drawerOpen }"
           @click="drawerOpen = !drawerOpen"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
@@ -563,7 +583,7 @@ async function handleDeleteCover(e: Event) {
   top: 96px;
   left: 0;
   bottom: 0;
-  width: 220px;
+  width: 260px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
@@ -683,7 +703,7 @@ async function handleDeleteCover(e: Event) {
   top: 96px; /* fallback：scroll animation 會覆蓋此值 */
   right: 0;
   bottom: 0;
-  width: 300px;
+  width: 360px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1030,6 +1050,22 @@ async function handleDeleteCover(e: Event) {
 }
 .write-bar__pill--on .write-bar__pill-label { color: var(--accent); }
 
+/* Archive button */
+.write-bar__archive {
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.write-bar__archive:disabled { opacity: 0.5; cursor: not-allowed; }
+.write-bar__archive:not(:disabled):hover { opacity: 0.88; }
+
 /* Publish button */
 .write-bar__publish {
   background: var(--accent);
@@ -1092,9 +1128,9 @@ async function handleDeleteCover(e: Event) {
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 6px;
-  padding: 0 96px;
+  padding: 0;
   font-size: 12.5px;
   color: var(--text-dim);
   border-bottom: 1px dashed var(--border2);
@@ -1147,11 +1183,8 @@ async function handleDeleteCover(e: Event) {
 
 /* ─── Content ─── */
 .write-content {
-  max-width: 760px;
-  width: 100%;
-  margin: 0 auto;
-  /* 左側 96px：handle 28px + 間距，右側對稱 64px */
-  padding: 48px 64px 120px 96px;
+  margin: 0px 360px 0px 300px;
+  padding: 48px;
 }
 
 /* ─── Title textarea ─── */
