@@ -2044,7 +2044,7 @@ requires-dist = [
     { name = "supabase", specifier = ">=2.10.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
     { name = "youtube-transcript-api", specifier = ">=0.6.0" },
-    { name = "yt-dlp", specifier = ">=2024.1.0" },
+    { name = "yt-dlp", specifier = ">=2025.1.1" },
 ]
 provides-extras = ["dev"]
 
