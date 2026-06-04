@@ -12,6 +12,7 @@ env:
   REGION: asia-east1
   SERVICE: vela-transcriber
   IMAGE: ghcr.io/${{ github.repository_owner }}/vela-transcriber
+  CLOUD_RUN_IMAGE: asia-east1-docker.pkg.dev/vela-497610/ghcr-proxy/${{ github.repository_owner }}/vela-transcriber
 
 jobs:
   build:
@@ -56,7 +57,7 @@ jobs:
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
-          image: ghcr.io/${{ github.repository_owner }}/vela-transcriber:${{ github.sha }}
+          image: ${{ env.CLOUD_RUN_IMAGE }}:${{ github.sha }}
           timeout: 300s
           env_vars: |
             GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
