@@ -32,6 +32,17 @@ const isDraft = ref(true)
 
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const analyzing = ref(false)
+const analysisStage = ref<string>('')
+
+const STAGE_LABELS: Record<string, string> = {
+  analyzing: 'AI 分析中',
+  embedding: '建立索引中',
+  failed:    '處理失敗',
+  timeout:   '處理逾時',
+}
+const analysisLabel = computed(() =>
+  STAGE_LABELS[analysisStage.value] ?? 'AI 處理中'
+)
 const isDirty = ref(false)
 const archiving = ref(false)
 
@@ -279,10 +290,15 @@ async function waitForAnalysis(itemId: string) {
         if (!line.startsWith('data: ')) continue
         try {
           const msg = JSON.parse(line.slice(6))
-          if (msg.status === 'done' && msg.item) {
+          if (msg.status === 'progress' && msg.stage) {
+            analysisStage.value = msg.stage
+          } else if (msg.status === 'done' && msg.item) {
             article.value = msg.item
             isDraft.value = msg.item.is_draft
             await fetchTags()
+            return
+          } else if (msg.status === 'failed' || msg.status === 'timeout') {
+            analysisStage.value = msg.status
             return
           }
         } catch { /* ignore malformed line */ }
@@ -364,7 +380,7 @@ async function handleDeleteCover(e: Event) {
           class="write-bar__publish"
           :disabled="analyzing"
           @click="handleAnalyze"
-        >{{ analyzing ? '儲存中…' : '保存' }}</button>
+        >{{ analyzing ? analysisLabel : '保存' }}</button>
       </div>
     </header>
 

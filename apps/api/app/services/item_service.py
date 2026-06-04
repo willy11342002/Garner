@@ -56,7 +56,7 @@ async def _run_process_item(content_id: UUID, user_id: UUID, user_item_id: UUID,
                 "process_item failed: content_id=%s user_id=%s user_item_id=%s",
                 content_id, user_id, user_item_id,
             )
-            events.notify(str(user_item_id))
+            events.fail(str(user_item_id))
 
 
 async def create_item(

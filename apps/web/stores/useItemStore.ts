@@ -4,6 +4,7 @@ import type { Item, ItemCreate, ItemUpdate } from '~/types/api'
 export const useItemStore = defineStore('item', () => {
   const items = ref<Item[]>([])
   const recentlyProcessed = ref<string | null>(null)
+  const processingStages = ref<Map<string, string>>(new Map())
 
   async function load() {
     const { listItems } = useItems()
@@ -44,15 +45,23 @@ export const useItemStore = defineStore('item', () => {
     const token = session.value?.access_token
     if (!token) return
 
+    processingStages.value.set(itemId, 'fetching')
+
     let response: Response
     try {
       response = await fetch(
         `${config.public.apiBase}/items/${itemId}/stream`,
         { headers: { Authorization: `Bearer ${token}` } },
       )
-    } catch { return }
+    } catch {
+      processingStages.value.delete(itemId)
+      return
+    }
 
-    if (!response.ok || !response.body) return
+    if (!response.ok || !response.body) {
+      processingStages.value.delete(itemId)
+      return
+    }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -71,13 +80,19 @@ export const useItemStore = defineStore('item', () => {
           if (!line.startsWith('data: ')) continue
           try {
             const msg = JSON.parse(line.slice(6))
-            if (msg.status === 'done') {
+
+            if (msg.status === 'progress' && msg.stage) {
+              processingStages.value.set(itemId, msg.stage)
+            } else if (msg.status === 'done') {
               const idx = items.value.findIndex(i => i.id === itemId)
               if (idx !== -1 && msg.item) items.value[idx] = msg.item
               recentlyProcessed.value = itemId
+              processingStages.value.delete(itemId)
+              return
+            } else if (msg.status === 'failed' || msg.status === 'timeout' || msg.status === 'error') {
+              processingStages.value.set(itemId, msg.status)
               return
             }
-            if (msg.status === 'timeout' || msg.status === 'error') return
           } catch { /* ignore malformed lines */ }
         }
       }
@@ -86,5 +101,5 @@ export const useItemStore = defineStore('item', () => {
     }
   }
 
-  return { items, load, add, remove, patch, recentlyProcessed }
+  return { items, load, add, remove, patch, recentlyProcessed, processingStages }
 })

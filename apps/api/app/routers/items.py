@@ -84,19 +84,32 @@ async def stream_item_status(item_id: UUID, current_user: CurrentUser, db: DbSes
             yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
             return
 
-        event = events.register(str(item_id))
-        yield 'data: {"status":"processing"}\n\n'
+        q = events.register(str(item_id))
 
         try:
-            await asyncio.wait_for(event.wait(), timeout=300)
-        except asyncio.TimeoutError:
-            yield 'data: {"status":"timeout"}\n\n'
-            return
+            while True:
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=300)
+                except asyncio.TimeoutError:
+                    yield 'data: {"status":"timeout"}\n\n'
+                    return
 
-        updated = await crud_items.get_one(db, UUID(current_user["sub"]), item_id)
-        if updated:
-            item_data = item_service._item_to_read(updated)
-            yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
+                stage = msg.get("stage")
+
+                if stage == "done":
+                    updated = await crud_items.get_one(db, UUID(current_user["sub"]), item_id)
+                    if updated:
+                        item_data = item_service._item_to_read(updated)
+                        yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
+                    return
+
+                if stage == "failed":
+                    yield 'data: {"status":"failed"}\n\n'
+                    return
+
+                yield f"data: {json.dumps({'status': 'progress', 'stage': stage})}\n\n"
+        finally:
+            events._queues.pop(str(item_id), None)
 
     return StreamingResponse(
         generator(),

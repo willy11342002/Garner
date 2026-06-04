@@ -10,6 +10,8 @@ const { t } = useI18n()
 const loading = ref(true)
 const itemTagsMap = ref<Record<string, Tag[]>>({})
 
+const processingHover = ref<string | null>(null)
+
 const pendingItems = ref<ItemPendingReview[]>([])
 const selectedPendingIds = reactive(new Set<string>())
 const tagDismissing = ref<Record<string, boolean>>({})
@@ -686,7 +688,20 @@ function openShareModal(tagId: string) {
               <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
               <div class="card__footer">
                 <span class="mono">{{ relativeTime(item.saved_at) }}</span>
-                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
+                <span
+                  v-if="!item.parsed_at"
+                  class="processing-badge"
+                  @mouseenter="processingHover = item.id"
+                  @mouseleave="processingHover = null"
+                >
+                  AI 處理中
+                  <ProcessingStatus
+                    v-if="processingHover === item.id"
+                    :item-id="item.id"
+                    :source-type="item.source_type"
+                    class="processing-badge__panel"
+                  />
+                </span>
               </div>
             </div>
           </a>
@@ -721,7 +736,20 @@ function openShareModal(tagId: string) {
               <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
               <div class="card__footer">
                 <span class="mono">{{ relativeTime(item.saved_at) }}</span>
-                <span v-if="!item.parsed_at" class="processing-badge">AI 處理中</span>
+                <span
+                  v-if="!item.parsed_at"
+                  class="processing-badge"
+                  @mouseenter="processingHover = item.id"
+                  @mouseleave="processingHover = null"
+                >
+                  AI 處理中
+                  <ProcessingStatus
+                    v-if="processingHover === item.id"
+                    :item-id="item.id"
+                    :source-type="item.source_type"
+                    class="processing-badge__panel"
+                  />
+                </span>
                 <span v-else :class="`tag-chip tag-chip--${tagColor(i)}`">{{ localize(group.tag.name_i18n, group.tag.name) }}</span>
               </div>
             </div>

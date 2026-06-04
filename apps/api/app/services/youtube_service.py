@@ -126,7 +126,8 @@ async def _get_transcript(video_id: str, cookies: str | None) -> str | None:
             for seg in event.get("segs", [])
             if seg.get("utf8", "").strip() not in ("", "\n")
         ]
-        return " ".join(texts) or None
+        result = " ".join(texts).strip()
+        return result if len(result) >= 20 else None
 
     try:
         return await asyncio.to_thread(_fetch_ytdlp)
@@ -180,7 +181,7 @@ async def _transcribe_with_whisper(url: str, cookies: str | None) -> str | None:
                 model="whisper-large-v3-turbo",
                 file=f,
             )
-        return result.text
+        return result.text.strip() or None
     except Exception:
         logger.exception("Whisper transcription failed for url=%s", url)
         return None
@@ -217,7 +218,10 @@ async def _get_today_used_seconds(db: AsyncSession, user_id: UUID) -> int:
 
 
 async def fetch_content(
-    db: AsyncSession, user_id: UUID, url: str
+    db: AsyncSession,
+    user_id: UUID,
+    url: str,
+    stage_cb=None,
 ) -> tuple[str | None, int | None, int | None, str | None, str | None]:
     """
     Fetch YouTube video content for summarization.
@@ -230,10 +234,12 @@ async def fetch_content(
     if not video_id:
         return None, None, None, None, None
 
+    if stage_cb: stage_cb("fetching_info")
     # Always fetch metadata (title + duration) — these are stored regardless of AI result
     title, duration = await _get_video_metadata(video_id)
     cookies = await _get_cookies_content(db)
 
+    if stage_cb: stage_cb("fetching_content")
     transcript = await _get_transcript(video_id, cookies)
     if transcript:
         return transcript, None, duration, title, "transcript"

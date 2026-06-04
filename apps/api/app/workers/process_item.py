@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import date, datetime, timezone
 from uuid import UUID
@@ -12,11 +11,13 @@ logger = logging.getLogger(__name__)
 from app.crud import chunks as crud_chunks
 from app.crud import notifications as crud_notifications
 from app.crud import tags as crud_tags
-from app.models.notification import NotificationType
-from app.models.content_object import ContentObject, SourceType, TranscriptionSource, detect_source_type
+from app.models.content_object import ContentObject
 from app.models.item_tag import TagSource
+from app.models.notification import NotificationType
 from app.models.whisper_usage import WhisperUsage
-from app.services import ai_service, thumbnail_service
+from app.providers import get_provider
+from app.providers.base import FetchResult
+from app.services import ai_service
 
 
 async def process_item(
@@ -26,70 +27,155 @@ async def process_item(
     user_item_id: UUID,
     url: str,
 ) -> None:
-    source_type = detect_source_type(url)
+    content = await _load_content(db, content_id, user_item_id)
+    if content is None:
+        return
 
-    raw_content: str | None = None
-    whisper_seconds: int | None = None
-    duration_sec: int | None = None
-    title: str | None = None
-    transcription_source: TranscriptionSource | None = None
+    fetch_result = await _fetch_content(db, user_id, url, content, user_item_id)
+    analysis    = await _analyze_content(fetch_result.raw_content, db, user_id, user_item_id)
+    await _embed_and_save(db, content_id, content, user_id, user_item_id, url, fetch_result, analysis)
 
-    if source_type == SourceType.youtube:
-        from app.services import youtube_service
-        raw_content, whisper_seconds, duration_sec, title, transcription_source_str = await youtube_service.fetch_content(
-            db, user_id, url
-        )
-        transcription_source = TranscriptionSource(transcription_source_str) if transcription_source_str else None
 
-    thumbnail_url = await thumbnail_service.fetch_and_cache_thumbnail(str(content_id), url)
+# ── Stage helpers ─────────────────────────────────────────────────────────────
 
+
+async def _load_content(
+    db: AsyncSession,
+    content_id: UUID,
+    user_item_id: UUID,
+) -> ContentObject | None:
+    """Load the ContentObject row; notify and return None if it has been deleted."""
     result = await db.execute(select(ContentObject).where(ContentObject.id == content_id))
     content = result.scalar_one_or_none()
     if content is None:
         events.notify(str(user_item_id))
-        return
+    return content
 
-    if thumbnail_url:
-        content.thumbnail_url = thumbnail_url
-    if title and not content.title:
-        content.title = title
-    if duration_sec is not None:
-        content.duration_sec = duration_sec
-    if transcription_source is not None:
-        content.transcription_source = transcription_source
 
-    if source_type == SourceType.article and raw_content is None and content.content_md:
-        raw_content = _extract_text_from_tiptap(content.content_md)
+async def _fetch_content(
+    db: AsyncSession,
+    user_id: UUID,
+    url: str,
+    content: ContentObject,
+    user_item_id: UUID,
+) -> FetchResult:
+    """Stage 1–2: fetch raw text from the source URL via the matching provider.
 
-    if raw_content is None:
+    YouTube emits two sub-stages:
+      • fetching_info    — YouTube Data API (title, duration, thumbnail)
+      • fetching_content — yt-dlp subtitles → Groq Whisper fallback
+
+    Other providers (article) skip straight to the AI stages.
+    Raises RuntimeError if the source yields no usable text.
+    """
+    provider = get_provider(url)
+    fetch_result = await provider.fetch(
+        db, user_id, url, content,
+        stage_cb=lambda stage: events.emit(str(user_item_id), stage),
+    )
+
+    if not fetch_result.raw_content or not fetch_result.raw_content.strip():
         raise RuntimeError(f"No processable content for {url}")
+
+    return fetch_result
+
+
+async def _analyze_content(
+    raw_content: str,
+    db: AsyncSession,
+    user_id: UUID,
+    user_item_id: UUID,
+) -> dict:
+    """Stage 3: send raw text to Claude via OpenRouter and get back:
+      • summary_md  — structured Markdown notes (zh-TW)
+      • summary     — same notes converted to Tiptap JSON
+      • embed_text  — short English description for semantic search
+      • tags        — 3–7 zh-TW / en label pairs
+
+    Candidate tags from the user's existing tag list are passed in so Claude
+    reuses known vocabulary instead of creating duplicates.
+    Raises RuntimeError if Claude returns an incomplete response.
+    """
+    events.emit(str(user_item_id), "analyzing")
 
     candidate_tags = await crud_tags.get_top_tags(db, user_id, limit=50)
     candidate_names = [t.name for t in candidate_tags]
 
     analysis = await ai_service.analyze_content(raw_content, candidate_tags=candidate_names)
-    summary_i18n: dict = analysis.get("summary", {})
-    summary_md: dict[str, str] = analysis.get("summary_md", {})
-    tags_i18n: dict[str, list[str]] = analysis.get("tags", {})
+
+    summary_i18n = analysis.get("summary", {})
+    summary_md   = analysis.get("summary_md", {})
+    tags_i18n    = analysis.get("tags", {})
 
     if not summary_i18n or not summary_md.get("zh-TW") or not tags_i18n:
         raise RuntimeError(
-            f"AI returned incomplete results for {url}: "
-            f"summary_i18n={bool(summary_i18n)}, summary={bool(summary_md.get('zh-TW'))}, tags={bool(tags_i18n)}"
+            f"AI returned incomplete results: "
+            f"summary_i18n={bool(summary_i18n)}, "
+            f"summary={bool(summary_md.get('zh-TW'))}, "
+            f"tags={bool(tags_i18n)}"
         )
 
-    content.summary_i18n = summary_i18n
-    content.summary = summary_md.get("zh-TW", "")
-    embed_text = analysis.get("embed_text") or content.summary[:500]
-    content.embedding = await ai_service.embed(embed_text)
+    return analysis
 
-    chunk_texts = ai_service.chunk_text(raw_content)
+
+async def _embed_and_save(
+    db: AsyncSession,
+    content_id: UUID,
+    content: ContentObject,
+    user_id: UUID,
+    user_item_id: UUID,
+    url: str,
+    fetch_result: FetchResult,
+    analysis: dict,
+) -> None:
+    """Stage 4: generate vector embeddings, write everything to DB, and commit.
+
+    Two kinds of embeddings are created:
+      • content.embedding  — single 1536-d vector of the summary (used for item-level search)
+      • ContentChunk rows  — 400-token chunks of raw_content, each with its own vector
+                             (used for fine-grained RAG retrieval)
+
+    Only after both embeddings succeed do we write metadata + AI results and
+    stamp parsed_at, so a failure here leaves the item in a retryable state.
+    """
+    events.emit(str(user_item_id), "embedding")
+
+    summary_i18n = analysis.get("summary", {})
+    summary_md   = analysis.get("summary_md", {})
+    tags_i18n    = analysis.get("tags", {})
+    embed_text   = analysis.get("embed_text") or summary_md.get("zh-TW", "")[:500]
+
+    # Item-level embedding (summary)
+    summary_embedding = await ai_service.embed(embed_text)
+
+    # Chunk-level embeddings (raw content split into ~400-token windows)
+    chunk_texts = ai_service.chunk_text(fetch_result.raw_content)
     chunk_records: list[dict] = []
     for chunk in chunk_texts:
         emb = await ai_service.embed(chunk)
         chunk_records.append({"text": chunk, "embedding": emb})
+
+    # ── All I/O succeeded — now write to DB ──────────────────────────────────
+
+    # Metadata from provider (title, thumbnail, duration come from YouTube Data API)
+    if fetch_result.thumbnail_url:
+        content.thumbnail_url = fetch_result.thumbnail_url
+    if fetch_result.title and not content.title:
+        content.title = fetch_result.title
+    if fetch_result.duration_sec is not None:
+        content.duration_sec = fetch_result.duration_sec
+    if fetch_result.transcription_source is not None:
+        content.transcription_source = fetch_result.transcription_source
+
+    # AI results
+    content.summary_i18n = summary_i18n
+    content.summary      = summary_md.get("zh-TW", "")
+    content.embedding    = summary_embedding
+
+    # Chunks (replace existing to stay in sync with latest content)
     await crud_chunks.replace_chunks(db, content_id, chunk_records)
 
+    # Tags: reuse existing tags where possible, create new ones if needed
     zh_tags = tags_i18n.get("zh-TW", [])
     en_tags = tags_i18n.get("en", [])
     for zh_name, en_name in zip(zh_tags, en_tags):
@@ -99,41 +185,22 @@ async def process_item(
         )
         await crud_tags.attach_tag(db, user_item_id, tag.id, source=TagSource.ai)
 
-    if whisper_seconds is not None:
-        db.add(WhisperUsage(user_id=user_id, date=date.today(), used_seconds=whisper_seconds))
+    # Record Whisper usage against the user's daily quota (only when Whisper was used)
+    if fetch_result.whisper_seconds is not None:
+        db.add(WhisperUsage(user_id=user_id, date=date.today(), used_seconds=fetch_result.whisper_seconds))
 
+    # Mark fully processed — parsed_at is the gate checked everywhere to decide
+    # whether an item needs (re-)processing. Set it last so any earlier failure
+    # leaves the item retryable.
     content.parsed_at = datetime.now(timezone.utc)
 
-    title_display = content.title or url
     await crud_notifications.create(
         db,
         user_id=user_id,
         type=NotificationType.item_processed,
-        title=title_display,
+        title=content.title or url,
         item_id=user_item_id,
     )
 
     await db.commit()
-
     events.notify(str(user_item_id))
-
-
-def _extract_text_from_tiptap(content_md: str) -> str | None:
-    try:
-        doc = json.loads(content_md)
-    except Exception:
-        return None
-
-    parts: list[str] = []
-
-    def walk(node: dict) -> None:
-        if node.get("type") == "text":
-            parts.append(node.get("text", ""))
-        for child in node.get("content", []):
-            walk(child)
-        if node.get("type") in ("paragraph", "heading", "blockquote", "listItem"):
-            parts.append("\n")
-
-    walk(doc)
-    text = "".join(parts).strip()
-    return text or None

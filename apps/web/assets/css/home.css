@@ -499,6 +499,7 @@ body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
 .tagrow__scroll { display: flex; gap: 12px; overflow-x: auto; padding: 4px 4px 8px; scrollbar-width: none; }
 .tagrow__scroll::-webkit-scrollbar { display: none; }
 .processing-badge {
+  position: relative;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--accent);
@@ -506,6 +507,14 @@ body.light .hero__media .placeholder__label { color: rgba(0,0,0,0.5); }
   border-radius: 8px;
   padding: 1px 7px;
   animation: pulse 1.5s ease-in-out infinite;
+  cursor: default;
+}
+.processing-badge__panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  animation: none;
 }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
