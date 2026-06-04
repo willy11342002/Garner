@@ -92,8 +92,8 @@ async def _get_transcript(video_id: str, cookies: str | None) -> str | None:
             }
             if cookies:
                 cookies_path = os.path.join(tmpdir, "cookies.txt")
-                with open(cookies_path, "w", encoding="utf-8") as f:
-                    f.write(cookies)
+                with open(cookies_path, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(cookies.replace("\r\n", "\n").replace("\r", "\n"))
                 ydl_opts["cookiefile"] = cookies_path
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -143,7 +143,8 @@ async def _transcribe_with_whisper(url: str, cookies: str | None) -> str | None:
 
     def _download():
         ydl_opts = {
-            "format": "bestaudio/best",
+            # bestaudio[ext=webm/m4a] covers Shorts which have no audio-only stream
+            "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best[height<=480]/best",
             "outtmpl": audio_base,
             "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "32"}],
             "quiet": True,
@@ -151,8 +152,8 @@ async def _transcribe_with_whisper(url: str, cookies: str | None) -> str | None:
         }
         if cookies:
             cookies_path = os.path.join(tmpdir, "cookies.txt")
-            with open(cookies_path, "w", encoding="utf-8") as f:
-                f.write(cookies)
+            with open(cookies_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(cookies.replace("\r\n", "\n").replace("\r", "\n"))
             ydl_opts["cookiefile"] = cookies_path
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
