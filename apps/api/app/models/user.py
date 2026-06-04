@@ -28,7 +28,7 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     memory_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    allow_public_chain: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    allow_public_chain: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
