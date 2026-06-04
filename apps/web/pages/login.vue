@@ -30,6 +30,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false })
+useHead({ title: 'Vela — 登入' })
 
 const { t } = useI18n()
 const client = useSupabaseClient()

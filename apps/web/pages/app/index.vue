@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Item, ItemPendingReview, Tag } from '~/types/api'
+useHead({ title: 'Vela — 我的知識庫' })
 
 const itemStore = useItemStore()
 const notifStore = useNotificationStore()

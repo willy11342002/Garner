@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Vela — 安全性' })
 const { t } = useI18n()
 const supabaseUser = useSupabaseUser()
 const client = useSupabaseClient()

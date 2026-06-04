@@ -1,5 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false, layout: 'write' })
+useHead({ title: 'Vela — 新文章' })
 
 const router = useRouter()
 const route = useRoute()

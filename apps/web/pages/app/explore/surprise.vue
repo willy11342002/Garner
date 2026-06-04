@@ -158,6 +158,7 @@
 
 <script setup lang="ts">
 import type { ChainHop, ChainItem } from '~/types/api'
+useHead({ title: 'Vela — 探索' })
 
 // ── Detail Modal ──────────────────────────────
 const detailItemId = ref<string | null>(null)

@@ -127,6 +127,7 @@
 
 <script setup lang="ts">
 import type { Item } from '~/types/api'
+useHead({ title: 'Vela — 封存' })
 
 const { listArchivedItems, updateItem, deleteItem } = useItems()
 

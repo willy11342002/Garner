@@ -201,6 +201,7 @@
 
 <script setup lang="ts">
 import type { Collection, CollectionDetail, Item } from '~/types/api'
+useHead({ title: 'Vela — 我的集合' })
 
 definePageMeta({ ssr: false })
 

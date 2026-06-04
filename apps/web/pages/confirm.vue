@@ -8,6 +8,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false })
+useHead({ title: 'Vela — 登入中' })
 
 const { t } = useI18n()
 const route = useRoute()

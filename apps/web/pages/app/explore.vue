@@ -20,6 +20,7 @@
 
 <script setup lang="ts">
 import type { ExploreStats } from '~/types/api'
+useHead({ title: 'Vela — 探索' })
 
 const apiFetch = useApiFetch()
 const stats = ref<ExploreStats | null>(null)

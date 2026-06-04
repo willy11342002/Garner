@@ -115,6 +115,10 @@ const { data: collection, error } = await useAsyncData<CollectionDetail>(
 
 const colors = ['a', 'b', 'c', 'd', 'e']
 const activeItem = ref<Item | null>(null)
+
+useHead(computed(() => ({
+  title: collection.value ? `Vela — ${collection.value.name}` : 'Vela',
+})))
 const copied = ref(false)
 
 const mosaicItems = computed(() => (collection.value?.items ?? []).slice(0, 5))

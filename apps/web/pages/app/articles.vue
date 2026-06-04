@@ -1,5 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false })
+useHead({ title: 'Vela — 我的文章' })
 
 const { listArticles, publishArticle } = useArticles()
 const apiFetch = useApiFetch()
