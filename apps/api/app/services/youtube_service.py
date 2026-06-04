@@ -60,8 +60,86 @@ def _parse_iso8601_duration(duration: str) -> int:
     return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
-async def _get_transcript(video_id: str) -> str | None:
-    """Try to get transcript via youtube-transcript-api. Returns None if unavailable."""
+async def _get_cookies_path(db: AsyncSession) -> str | None:
+    """Read YouTube cookies from DB, write to /tmp/yt_cookies.txt. Returns path or None."""
+    from app.models.app_setting import AppSetting
+    from sqlalchemy import select
+
+    result = await db.execute(select(AppSetting.value).where(AppSetting.key == "youtube_cookies"))
+    content = result.scalar_one_or_none()
+    if not content or not content.strip():
+        return None
+
+    path = "/tmp/yt_cookies.txt"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return path
+
+
+async def _get_transcript_ytdlp(video_id: str, cookies_path: str) -> str | None:
+    """Fetch subtitles via yt-dlp with cookies (bypasses Railway IP block)."""
+    import json
+    import os
+    import tempfile
+
+    import yt_dlp
+
+    def _fetch():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ydl_opts = {
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "subtitleslangs": ["zh-Hant", "zh-TW", "zh-Hans", "zh-CN", "en"],
+                "subtitlesformat": "json3",
+                "outtmpl": os.path.join(tmpdir, "%(id)s"),
+                "quiet": True,
+                "no_warnings": True,
+                "cookiefile": cookies_path,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+
+            files = os.listdir(tmpdir)
+            for lang in ["zh-Hant", "zh-TW", "zh-Hans", "zh-CN", "en"]:
+                for fname in files:
+                    if f".{lang}." in fname and fname.endswith(".json3"):
+                        return _parse_json3(os.path.join(tmpdir, fname))
+
+            for fname in files:
+                if fname.endswith(".json3"):
+                    return _parse_json3(os.path.join(tmpdir, fname))
+
+        return None
+
+    def _parse_json3(path: str) -> str | None:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        texts = [
+            seg.get("utf8", "").strip()
+            for event in data.get("events", [])
+            for seg in event.get("segs", [])
+            if seg.get("utf8", "").strip() not in ("", "\n")
+        ]
+        return " ".join(texts) or None
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception:
+        logger.exception("yt-dlp transcript failed for video_id=%s", video_id)
+        return None
+
+
+async def _get_transcript(video_id: str, db: AsyncSession) -> str | None:
+    """Get transcript: tries yt-dlp with cookies first, falls back to youtube-transcript-api."""
+    cookies_path = await _get_cookies_path(db)
+
+    if cookies_path:
+        result = await _get_transcript_ytdlp(video_id, cookies_path)
+        if result:
+            return result
+        logger.warning("yt-dlp transcript failed, falling back to youtube-transcript-api for video_id=%s", video_id)
+
     from youtube_transcript_api import YouTubeTranscriptApi
 
     def _fetch():
@@ -142,7 +220,7 @@ async def fetch_content(
     # Always fetch metadata (title + duration) — these are stored regardless of AI result
     title, duration = await _get_video_metadata(video_id)
 
-    transcript = await _get_transcript(video_id)
+    transcript = await _get_transcript(video_id, db)
     if transcript:
         return transcript, None, duration, title, "transcript"
 

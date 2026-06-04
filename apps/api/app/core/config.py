@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     free_whisper_daily_seconds: int = 3600  # 60 min for free plan
     allowed_origins: str = "http://localhost:3000"
+    admin_secret: str = ""
 
 
 settings = Settings()
