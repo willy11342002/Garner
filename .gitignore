@@ -12,6 +12,7 @@ build/
 
 # Python
 __pycache__/
+*.ipynb
 *.pyc
 .venv/
 venv/
