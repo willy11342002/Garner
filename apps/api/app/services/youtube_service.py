@@ -60,17 +60,7 @@ def _parse_iso8601_duration(duration: str) -> int:
     return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
-async def _get_cookies_content(db: AsyncSession) -> str | None:
-    """Read YouTube cookies content from DB. Returns raw string or None."""
-    from app.models.app_setting import AppSetting
-    from sqlalchemy import select
-
-    result = await db.execute(select(AppSetting.value).where(AppSetting.key == "youtube_cookies"))
-    content = result.scalar_one_or_none()
-    return content if content and content.strip() else None
-
-
-async def _get_transcript_via_cloud_run(video_id: str, cookies: str | None) -> str | None:
+async def _get_transcript_via_cloud_run(video_id: str) -> str | None:
     """Fetch subtitles via Cloud Run (avoids Railway IP block)."""
     import httpx
 
@@ -81,7 +71,7 @@ async def _get_transcript_via_cloud_run(video_id: str, cookies: str | None) -> s
         async with httpx.AsyncClient(timeout=60) as client:
             r = await client.post(
                 f"{settings.transcriber_url.rstrip('/')}/subtitles",
-                json={"video_id": video_id, "cookies": cookies},
+                json={"video_id": video_id},
                 headers={"x-api-key": settings.transcriber_secret},
             )
             r.raise_for_status()
@@ -91,10 +81,9 @@ async def _get_transcript_via_cloud_run(video_id: str, cookies: str | None) -> s
         return None
 
 
-async def _get_transcript(video_id: str, db: AsyncSession) -> str | None:
+async def _get_transcript(video_id: str) -> str | None:
     """Get transcript: tries Cloud Run (yt-dlp) first, falls back to youtube-transcript-api."""
-    cookies = await _get_cookies_content(db)
-    result = await _get_transcript_via_cloud_run(video_id, cookies)
+    result = await _get_transcript_via_cloud_run(video_id)
     if result:
         return result
 
@@ -180,7 +169,7 @@ async def fetch_content(
     # Always fetch metadata (title + duration) — these are stored regardless of AI result
     title, duration = await _get_video_metadata(video_id)
 
-    transcript = await _get_transcript(video_id, db)
+    transcript = await _get_transcript(video_id)
     if transcript:
         return transcript, None, duration, title, "transcript"
 

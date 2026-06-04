@@ -27,7 +27,6 @@ class TranscribeResponse(BaseModel):
 
 class SubtitlesRequest(BaseModel):
     video_id: str
-    cookies: str | None = None  # cookies.txt content
 
 
 class SubtitlesResponse(BaseModel):
@@ -44,22 +43,16 @@ async def get_subtitles(req: SubtitlesRequest, x_api_key: str = Header(...)):
     if API_SECRET and x_api_key != API_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    text = await _fetch_subtitles(req.video_id, req.cookies)
+    text = await _fetch_subtitles(req.video_id)
     return SubtitlesResponse(text=text)
 
 
-async def _fetch_subtitles(video_id: str, cookies: str | None) -> str | None:
+async def _fetch_subtitles(video_id: str) -> str | None:
     import json
     import yt_dlp
 
     def _run():
         with tempfile.TemporaryDirectory() as tmpdir:
-            cookies_path = None
-            if cookies and cookies.strip():
-                cookies_path = os.path.join(tmpdir, "cookies.txt")
-                with open(cookies_path, "w", encoding="utf-8") as f:
-                    f.write(cookies)
-
             ydl_opts = {
                 "skip_download": True,
                 "writesubtitles": True,
@@ -70,8 +63,6 @@ async def _fetch_subtitles(video_id: str, cookies: str | None) -> str | None:
                 "quiet": True,
                 "no_warnings": True,
             }
-            if cookies_path:
-                ydl_opts["cookiefile"] = cookies_path
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
