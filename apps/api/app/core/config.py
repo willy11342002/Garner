@@ -5,9 +5,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str
-    supabase_url: str
-    supabase_service_key: str
-    openrouter_api_key: str
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+    openrouter_api_key: str = ""
     groq_api_key: str = ""
     youtube_api_key: str = ""
     storage_bucket: str = "thumbnails"
