@@ -1,9 +1,6 @@
 import asyncio
 import logging
-import os
 import re
-import shutil
-import tempfile
 from datetime import date
 from uuid import UUID
 
@@ -79,48 +76,25 @@ async def _get_transcript(video_id: str) -> str | None:
 
 
 async def _transcribe_with_whisper(url: str) -> str | None:
-    """Download audio via yt-dlp and transcribe with Groq Whisper."""
-    import yt_dlp
-    from groq import AsyncGroq
+    """Transcribe audio by calling the Cloud Run transcriber service."""
+    import httpx
 
-    tmpdir = tempfile.mkdtemp()
-    audio_base = os.path.join(tmpdir, "audio")
-
-    def _download():
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": audio_base,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "32",  # 32kbps — speech only, keeps file under 25MB
-            }],
-            "quiet": True,
-            "no_warnings": True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+    if not settings.transcriber_url:
+        logger.warning("TRANSCRIBER_URL not set, skipping Whisper")
+        return None
 
     try:
-        await asyncio.to_thread(_download)
-
-        audio_path = audio_base + ".mp3"
-        if not os.path.exists(audio_path):
-            return None
-
-        client = AsyncGroq(api_key=settings.groq_api_key)
-        with open(audio_path, "rb") as f:
-            result = await client.audio.transcriptions.create(
-                model="whisper-large-v3-turbo",
-                file=f,
+        async with httpx.AsyncClient(timeout=300) as client:
+            r = await client.post(
+                f"{settings.transcriber_url.rstrip('/')}/transcribe",
+                json={"url": url},
+                headers={"x-api-key": settings.transcriber_secret},
             )
-        return result.text
-
+            r.raise_for_status()
+            return r.json().get("text")
     except Exception:
-        logger.exception("Whisper transcription failed for url=%s", url)
+        logger.exception("Cloud Run transcriber failed for url=%s", url)
         return None
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 async def _get_whisper_daily_limit(db: AsyncSession, user_id: UUID) -> int:

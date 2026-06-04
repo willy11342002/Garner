@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     groq_api_key: str = ""
     youtube_api_key: str = ""
+    transcriber_url: str = ""     # Cloud Run service URL
+    transcriber_secret: str = ""  # shared secret for Cloud Run auth
     storage_bucket: str = "thumbnails"
     sentry_dsn: str = ""
     free_whisper_daily_seconds: int = 3600  # 60 min for free plan
