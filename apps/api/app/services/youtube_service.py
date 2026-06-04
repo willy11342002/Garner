@@ -60,13 +60,24 @@ def _parse_iso8601_duration(duration: str) -> int:
     return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
-async def _get_transcript(video_id: str) -> str | None:
-    """Get transcript via yt-dlp, fallback to youtube-transcript-api."""
+async def _get_cookies_content(db: AsyncSession) -> str | None:
+    from app.models.app_setting import AppSetting
+    from sqlalchemy import select
+
+    result = await db.execute(select(AppSetting.value).where(AppSetting.key == "youtube_cookies"))
+    content = result.scalar_one_or_none()
+    return content if content and content.strip() else None
+
+
+async def _get_transcript(video_id: str, db: AsyncSession) -> str | None:
+    """Get transcript via yt-dlp with cookies from DB."""
     import json
     import os
     import tempfile
 
     import yt_dlp
+
+    cookies = await _get_cookies_content(db)
 
     def _fetch_ytdlp():
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -80,6 +91,12 @@ async def _get_transcript(video_id: str) -> str | None:
                 "quiet": True,
                 "no_warnings": True,
             }
+            if cookies:
+                cookies_path = os.path.join(tmpdir, "cookies.txt")
+                with open(cookies_path, "w", encoding="utf-8") as f:
+                    f.write(cookies)
+                ydl_opts["cookiefile"] = cookies_path
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
 
@@ -105,22 +122,9 @@ async def _get_transcript(video_id: str) -> str | None:
         return " ".join(texts) or None
 
     try:
-        result = await asyncio.to_thread(_fetch_ytdlp)
-        if result:
-            return result
+        return await asyncio.to_thread(_fetch_ytdlp)
     except Exception:
-        logger.warning("yt-dlp transcript failed for video_id=%s, falling back", video_id)
-
-    from youtube_transcript_api import YouTubeTranscriptApi
-
-    def _fetch_api():
-        api = YouTubeTranscriptApi()
-        transcript = api.fetch(video_id)
-        return " ".join(s.text for s in transcript)
-
-    try:
-        return await asyncio.to_thread(_fetch_api)
-    except Exception:
+        logger.warning("yt-dlp transcript failed for video_id=%s", video_id)
         return None
 
 
@@ -191,7 +195,7 @@ async def fetch_content(
     # Always fetch metadata (title + duration) — these are stored regardless of AI result
     title, duration = await _get_video_metadata(video_id)
 
-    transcript = await _get_transcript(video_id)
+    transcript = await _get_transcript(video_id, db)
     if transcript:
         return transcript, None, duration, title, "transcript"
 
