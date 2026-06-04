@@ -48,3 +48,15 @@ jobs:
           env_vars: |
             GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
             API_SECRET=${{ secrets.TRANSCRIBER_SECRET }}
+
+      - name: Delete old images (keep latest 5)
+        run: |
+          gcloud artifacts docker images list ${{ env.IMAGE }} \
+            --format="get(version)" \
+            --sort-by="~createTime" \
+            --project=${{ env.PROJECT_ID }} \
+          | tail -n +6 \
+          | xargs -r -I{} gcloud artifacts docker images delete \
+              "${{ env.IMAGE }}@{}" \
+              --quiet \
+              --project=${{ env.PROJECT_ID }}
