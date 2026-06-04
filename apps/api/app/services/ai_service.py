@@ -134,7 +134,7 @@ def _parse_json(raw: str) -> dict:
         if raw.startswith("json"):
             raw = raw[4:]
         raw = raw.strip()
-    return json.loads(raw)
+    return json.loads(raw, strict=False)
 
 
 def md_to_tiptap(md: str) -> dict:
