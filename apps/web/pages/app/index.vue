@@ -7,6 +7,7 @@ const { getItemTags } = useItems()
 const { activeItemId } = useItemModal()
 const { t } = useI18n()
 
+
 const loading = ref(true)
 const itemTagsMap = ref<Record<string, Tag[]>>({})
 
@@ -103,14 +104,16 @@ onMounted(async () => {
     <!-- Populated -->
     <template v-else>
       <HomePendingSection @item-tags-updated="refreshTags" />
-      <HomeViewSwitcher />
+      <div class="page-header">
+        <h1 class="page-header__title">{{ t('home.title') }}</h1>
+        <HomeViewSwitcher />
+      </div>
       <HomeTagView
         v-if="currentView === 'tags'"
         :item-tags-map="itemTagsMap"
         @open-share="openShareModal"
       />
-      <HomeTimelineView v-else-if="currentView === 'timeline'" :item-tags-map="itemTagsMap" />
-      <HomeMapView v-else-if="currentView === 'map'" />
+<HomeMapView v-else-if="currentView === 'map'" />
     </template>
   </main>
 

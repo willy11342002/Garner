@@ -13,13 +13,13 @@ const itemStore = useItemStore()
 const { localize } = useI18nContent()
 const { open: openItemModal } = useItemModal()
 const { pendingItemIds } = usePendingItems()
+const { t } = useI18n()
 
 const processingHover = ref<string | null>(null)
-const TAG_STRIP_DEFAULT = 12
-const showAllTags = ref(false)
 const selectedTagIds = ref(new Set<string>())
 const filterLogic = ref<'and' | 'or'>('and')
-const searchResults = ref<Item[] | null>(null)
+const timeFilter = ref<'all' | '7d' | '30d' | 'year'>('all')
+const sortOrder = ref<'saved_desc' | 'saved_asc'>('saved_desc')
 
 const TAG_COLORS = ['a', 'b', 'c', 'd', 'e'] as const
 function tagColor(i: number) {
@@ -33,19 +33,19 @@ function cardTitle(url: string, title: string | null) {
 }
 
 function sourceLabel(url: string) {
-  if (/youtu/.test(url)) return '▶ YouTube'
-  if (/instagram\.com/.test(url)) return 'IG'
-  return 'Article'
+  if (/youtu/.test(url)) return t('home.source_youtube')
+  if (/instagram\.com/.test(url)) return t('home.source_ig')
+  return t('home.source_article')
 }
 
 function relativeTime(dateStr: string) {
   const d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
-  if (d === 0) return 'today'
-  if (d === 1) return '1d ago'
-  return `${d}d ago`
+  if (d === 0) return t('home.time_today')
+  if (d === 1) return t('home.time_1d')
+  return t('home.time_nd', { n: d })
 }
 
-// All tags sorted by item count, deduped
+// All tags sorted by count
 const allTagGroups = computed(() => {
   const groups = new Map<string, { tag: Tag; count: number }>()
   for (const item of itemStore.items) {
@@ -58,109 +58,205 @@ const allTagGroups = computed(() => {
   return [...groups.values()].sort((a, b) => b.count - a.count)
 })
 
-// Map tagId → color index (consistent across strip and cards)
+// Color index map (stable across strip and cards)
 const tagColorIndex = computed(() => {
   const map = new Map<string, number>()
   allTagGroups.value.forEach((g, i) => map.set(g.tag.id, i))
   return map
 })
-
 function getTagColor(tagId: string) {
   return tagColor(tagColorIndex.value.get(tagId) ?? 0)
 }
 
-const visibleTagGroups = computed(() =>
-  showAllTags.value ? allTagGroups.value : allTagGroups.value.slice(0, TAG_STRIP_DEFAULT)
-)
-
-const hasMoreTags = computed(() => allTagGroups.value.length > TAG_STRIP_DEFAULT)
+// Active chips first, then inactive
+const orderedTagGroups = computed(() => {
+  const active = allTagGroups.value.filter(g => selectedTagIds.value.has(g.tag.id))
+  const inactive = allTagGroups.value.filter(g => !selectedTagIds.value.has(g.tag.id))
+  return [...active, ...inactive]
+})
 
 function toggleTag(tagId: string) {
   const next = new Set(selectedTagIds.value)
   if (next.has(tagId)) next.delete(tagId)
   else next.add(tagId)
   selectedTagIds.value = next
+  currentPage.value = 1
 }
+
+function removeTag(tagId: string) {
+  const next = new Set(selectedTagIds.value)
+  next.delete(tagId)
+  selectedTagIds.value = next
+  currentPage.value = 1
+}
+
+function clearFilters() {
+  selectedTagIds.value = new Set()
+  timeFilter.value = 'all'
+  currentPage.value = 1
+}
+
+const hasActiveFilters = computed(() =>
+  selectedTagIds.value.size > 0 || timeFilter.value !== 'all'
+)
+
+function getTimeFilterDate(): Date | null {
+  const now = new Date()
+  if (timeFilter.value === '7d') return new Date(now.getTime() - 7 * 86400000)
+  if (timeFilter.value === '30d') return new Date(now.getTime() - 30 * 86400000)
+  if (timeFilter.value === 'year') return new Date(now.getFullYear(), 0, 1)
+  return null
+}
+
+// Reactive filtering — no search button needed
+const filteredItems = computed(() => {
+  const since = getTimeFilterDate()
+  let items = itemStore.items.filter(i => {
+    if (!i.parsed_at || pendingItemIds.value.has(i.id)) return false
+    if (since && new Date(i.saved_at) < since) return false
+    return true
+  })
+  if (selectedTagIds.value.size > 0) {
+    if (filterLogic.value === 'and') {
+      items = items.filter(item => {
+        const tags = new Set((props.itemTagsMap[item.id] ?? []).map(t => t.id))
+        return [...selectedTagIds.value].every(id => tags.has(id))
+      })
+    } else {
+      items = items.filter(item => {
+        const tags = new Set((props.itemTagsMap[item.id] ?? []).map(t => t.id))
+        return [...selectedTagIds.value].some(id => tags.has(id))
+      })
+    }
+  }
+  return items
+})
+
+// Sort is also reactive
+const allDisplayItems = computed(() => {
+  return [...filteredItems.value].sort((a, b) => {
+    const diff = new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime()
+    return sortOrder.value === 'saved_desc' ? diff : -diff
+  })
+})
 
 const PAGE_SIZE = 30
 const currentPage = ref(1)
-
-function doSearch() {
-  currentPage.value = 1
-  const parsed = itemStore.items.filter(i => !!i.parsed_at && !pendingItemIds.value.has(i.id))
-  if (selectedTagIds.value.size === 0) {
-    searchResults.value = parsed.slice().sort((a, b) => new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime())
-    return
-  }
-  if (filterLogic.value === 'and') {
-    searchResults.value = parsed.filter(item => {
-      const tags = new Set((props.itemTagsMap[item.id] ?? []).map(t => t.id))
-      return [...selectedTagIds.value].every(id => tags.has(id))
-    })
-  } else {
-    searchResults.value = parsed.filter(item => {
-      const tags = new Set((props.itemTagsMap[item.id] ?? []).map(t => t.id))
-      return [...selectedTagIds.value].some(id => tags.has(id))
-    })
-  }
-}
-
-// Default: parsed items excluding those still awaiting pending review
-const defaultItems = computed(() =>
-  itemStore.items
-    .filter(i => !!i.parsed_at && !pendingItemIds.value.has(i.id))
-    .slice()
-    .sort((a, b) => new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime())
-)
-
-const allDisplayItems = computed(() => searchResults.value ?? defaultItems.value)
 const totalPages = computed(() => Math.ceil(allDisplayItems.value.length / PAGE_SIZE))
 const displayItems = computed(() => {
   const start = (currentPage.value - 1) * PAGE_SIZE
   return allDisplayItems.value.slice(start, start + PAGE_SIZE)
 })
 
+// Reset page on filter changes
+watch([timeFilter, filterLogic], () => { currentPage.value = 1 })
+
+// Dropdown display labels (reactive to locale)
+const timeLabel = computed(() => ({
+  all: t('home.time_all'),
+  '7d': t('home.time_7d'),
+  '30d': t('home.time_30d'),
+  year: t('home.time_year'),
+})[timeFilter.value] ?? t('home.time_all'))
+
+const sortLabel = computed(() => ({
+  saved_desc: t('home.sort_newest'),
+  saved_asc: t('home.sort_oldest'),
+})[sortOrder.value] ?? t('home.sort_newest'))
+
+// Filter summary text (e.g. "AI + 設計 · 近 30 天")
+const filterSummary = computed(() => {
+  const parts: string[] = []
+  if (selectedTagIds.value.size > 0) {
+    const names = [...selectedTagIds.value]
+      .map(id => {
+        const g = allTagGroups.value.find(g => g.tag.id === id)
+        return g ? localize(g.tag.name_i18n, g.tag.name) : ''
+      })
+      .filter(Boolean)
+    if (names.length) parts.push(names.join(' + '))
+  }
+  if (timeFilter.value !== 'all') {
+    parts.push(timeLabel.value)
+  }
+  return parts.join(' · ')
+})
 </script>
 
 <template>
   <div class="tag-view">
-    <!-- Tag Strip -->
-    <div class="tag-strip">
-      <button
-        v-for="(group, i) in visibleTagGroups"
-        :key="group.tag.id"
-        class="tag-filter-chip"
-        :class="{ 'tag-filter-chip--active': selectedTagIds.has(group.tag.id) }"
-        @click="toggleTag(group.tag.id)"
-      >
-        <span class="tag-filter-chip__dot" :style="`background:var(--tag-${tagColor(i)})`"></span>
-        {{ localize(group.tag.name_i18n, group.tag.name) }}
-        <span class="tag-filter-chip__count">{{ group.count }}</span>
+
+    <!-- Filter Row -->
+    <div class="filter-row">
+      <span class="filter-row__label">{{ t('home.filter_label') }}</span>
+
+      <div class="filter-chips">
+        <button
+          v-for="(group) in orderedTagGroups"
+          :key="group.tag.id"
+          class="tag-filter-chip"
+          :class="{ 'tag-filter-chip--active': selectedTagIds.has(group.tag.id) }"
+          @click="toggleTag(group.tag.id)"
+        >
+          <span
+            class="tag-filter-chip__dot"
+            :style="`background:var(--tag-${tagColor(tagColorIndex.get(group.tag.id) ?? 0)})`"
+          ></span>
+          {{ localize(group.tag.name_i18n, group.tag.name) }}
+          <span class="tag-filter-chip__count">{{ group.count }}</span>
+          <span
+            v-if="selectedTagIds.has(group.tag.id)"
+            class="tag-filter-chip__remove"
+            @click.stop="removeTag(group.tag.id)"
+          >×</span>
+        </button>
+      </div>
+
+      <button v-if="hasActiveFilters" class="filter-clear-btn" @click="clearFilters">
+        {{ t('home.filter_clear') }}
       </button>
-      <button
-        v-if="hasMoreTags && !showAllTags"
-        class="tag-strip__expand"
-        @click="showAllTags = true"
-      >還有 {{ allTagGroups.length - TAG_STRIP_DEFAULT }} 個標籤 ↓</button>
-      <button
-        v-else-if="showAllTags && hasMoreTags"
-        class="tag-strip__expand"
-        @click="showAllTags = false"
-      >收起 ↑</button>
+      <div class="filter-row__divider"></div>
+      <div class="filter-andor">
+        <span class="filter-andor__label">{{ t('home.filter_match') }}</span>
+        <button
+          class="filter-andor__opt"
+          :class="{ 'filter-andor__opt--active': filterLogic === 'and' }"
+          @click="filterLogic = 'and'"
+        >{{ t('home.filter_all') }}</button>
+        <button
+          class="filter-andor__opt"
+          :class="{ 'filter-andor__opt--active': filterLogic === 'or' }"
+          @click="filterLogic = 'or'"
+        >{{ t('home.filter_any') }}</button>
+      </div>
     </div>
 
-    <!-- Filter Actions -->
-    <div class="tag-filter-actions">
-      <button
-        class="tag-andor-toggle"
-        :class="{ 'tag-andor-toggle--or': filterLogic === 'or' }"
-        :title="filterLogic === 'and' ? '目前：全部符合。點擊切換為任一符合' : '目前：任一符合。點擊切換為全部符合'"
-        @click="filterLogic = filterLogic === 'and' ? 'or' : 'and'"
-      >{{ filterLogic === 'and' ? 'AND' : 'OR' }}</button>
-      <button
-        class="tag-search-btn"
-        @click="doSearch"
-      >搜尋</button>
+    <!-- Results Row -->
+    <div class="results-row">
+      <p class="results-row__summary">
+        {{ t('home.results', { n: allDisplayItems.length }) }}
+        <span v-if="filterSummary" class="results-row__filter-desc">{{ filterSummary }}</span>
+      </p>
+      <div class="results-row__controls">
+        <div class="filter-dropdown">
+          <span class="filter-dropdown__label">{{ t('home.time_label') }}</span>
+          <span class="filter-dropdown__val">{{ timeLabel }}</span>
+          <select v-model="timeFilter">
+            <option value="all">{{ t('home.time_all') }}</option>
+            <option value="7d">{{ t('home.time_7d') }}</option>
+            <option value="30d">{{ t('home.time_30d') }}</option>
+            <option value="year">{{ t('home.time_year') }}</option>
+          </select>
+        </div>
+        <div class="filter-dropdown">
+          <span class="filter-dropdown__label">{{ t('home.sort_label') }}</span>
+          <span class="filter-dropdown__val">{{ sortLabel }}</span>
+          <select v-model="sortOrder">
+            <option value="saved_desc">{{ t('home.sort_newest') }}</option>
+            <option value="saved_asc">{{ t('home.sort_oldest') }}</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <!-- Card Grid -->
@@ -208,12 +304,12 @@ const displayItems = computed(() => {
         </div>
       </a>
       <div v-if="displayItems.length === 0" class="card-grid__empty">
-        沒有符合條件的內容
+        {{ t('home.no_results') }}
       </div>
     </div>
 
     <!-- Pagination -->
-    <div v-if="totalPages > 1" class="pagination">
+    <div class="pagination">
       <button
         class="pagination__btn"
         :disabled="currentPage === 1"

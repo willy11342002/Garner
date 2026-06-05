@@ -1,12 +1,12 @@
 <script setup lang="ts">
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
-const VIEWS = [
-  { key: 'tags', label: '標籤' },
-  { key: 'timeline', label: '時間軸' },
-  { key: 'map', label: '地圖' },
-]
+const VIEWS = computed(() => [
+  { key: 'tags', label: t('home.view_tags') },
+  { key: 'map', label: t('home.view_map') },
+])
 
 const currentView = computed(() => (route.query.view as string) || 'tags')
 
