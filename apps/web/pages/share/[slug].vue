@@ -299,7 +299,7 @@ const { data: recsData } = await useAsyncData<PublicCollectionRead[]>(
 )
 
 useHead({
-  title: collection.value ? `${collection.value.title} — Vela` : 'Vela',
+  title: collection.value ? `${collection.value.title} — Garner` : 'Garner',
 })
 
 const placeholderColors = ['a', 'b', 'c', 'd', 'e']

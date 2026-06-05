@@ -181,7 +181,7 @@
     "feat_fork_title": "Share & Fork",
     "feat_fork_desc": "Share your knowledge collection and let others fork it into their own library. Knowledge flows, not copy-paste.",
     "pricing_link": "View plans & pricing →",
-    "page_title": "Vela — Your passively-built personal knowledge base"
+    "page_title": "Garner — Your passively-built personal knowledge base"
   },
   "login": {
     "sub": "Your passively-built personal knowledge base",
@@ -192,8 +192,8 @@
     "verifying": "Verifying sign-in..."
   },
   "pricing": {
-    "page_title": "Vela — Upgrade",
-    "eyebrow": "UPGRADE YOUR VELA",
+    "page_title": "Garner — Upgrade",
+    "eyebrow": "UPGRADE YOUR GARNER",
     "hero_title": "Let your knowledge base work its magic",
     "hero_sub": "The free plan already laid your foundation. Upgrade for unlimited queries and full AI connections that bring it to life.",
     "billing_monthly": "Monthly",
@@ -226,7 +226,7 @@
     "magic": {
       "title": "Why it's worth upgrading",
       "quote": "\"I'd been saving things for a month, then one day I casually asked 'I remember an article about remote team culture...' — the system surfaced something I'd completely forgotten I saved, and linked it to a design article I'd never thought was related. That was the moment this app came alive.\"",
-      "author": "Mei Wu · Product Manager · Vela user for 6 months",
+      "author": "Mei Wu · Product Manager · Garner user for 6 months",
       "pro_badge": "Pro user"
     },
     "faq": {

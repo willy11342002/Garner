@@ -84,7 +84,7 @@
 
 <script setup lang="ts">
 import type { PublicCollectionRead, Tag } from '~/types/api'
-useHead({ title: 'Vela — 公開集合' })
+useHead({ title: 'Garner — 公開集合' })
 
 const PLACEHOLDER_COLORS = ['a', 'b', 'c', 'd', 'e', 'accent']
 const AVATAR_GRADIENTS = [

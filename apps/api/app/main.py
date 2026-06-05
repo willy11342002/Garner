@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Vela API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Garner API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

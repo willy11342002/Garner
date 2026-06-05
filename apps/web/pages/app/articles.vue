@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false })
-useHead({ title: 'Vela — 我的文章' })
+useHead({ title: 'Garner — 我的文章' })
 
 const { listArticles, publishArticle } = useArticles()
 const apiFetch = useApiFetch()
@@ -86,7 +86,7 @@ async function batchArchive() {
     <header class="articles-head">
       <span class="eyebrow">ARTICLES</span>
       <h1 class="page-title">我的文章</h1>
-      <p class="articles-head__desc">你在 Vela 建立的所有文章</p>
+      <p class="articles-head__desc">你在 Garner 建立的所有文章</p>
     </header>
 
     <div class="articles-toolbar">

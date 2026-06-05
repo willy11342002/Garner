@@ -127,7 +127,7 @@ export default function Popup() {
     }
   }
 
-  function openVela(path = "") {
+  function openGarner(path = "") {
     chrome.tabs.create({ url: WEB + path })
   }
 
@@ -162,8 +162,8 @@ export default function Popup() {
     if (!loggedIn) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <p style={{ color: subFg, fontSize: 13, margin: "0 0 4px" }}>請先在 Vela 網頁版登入</p>
-          <button style={primaryBtn} onClick={() => openVela()}>前往登入</button>
+          <p style={{ color: subFg, fontSize: 13, margin: "0 0 4px" }}>請先在 Garner 網頁版登入</p>
+          <button style={primaryBtn} onClick={() => openGarner()}>前往登入</button>
         </div>
       )
     }
@@ -176,7 +176,7 @@ export default function Popup() {
             await clearStoredSession()
             setLoggedIn(false)
             setStage("idle")
-            openVela()
+            openGarner()
           }}>重新登入</button>
         </div>
       )
@@ -193,7 +193,7 @@ export default function Popup() {
               <p style={{ margin: "4px 0 0", fontSize: 11, color: subFg }}>{new URL(currentTab.url).hostname}</p>
             </div>
           )}
-          <button style={primaryBtn} onClick={handleSave}>儲存到 Vela</button>
+          <button style={primaryBtn} onClick={handleSave}>儲存到 Garner</button>
         </div>
       )
     }
@@ -222,7 +222,7 @@ export default function Popup() {
               ))}
             </div>
           )}
-          <button style={primaryBtn} onClick={() => openVela(`/app/item/${savedItem.id}`)}>在 Vela 查看 →</button>
+          <button style={primaryBtn} onClick={() => openGarner(`/app/item/${savedItem.id}`)}>在 Garner 查看 →</button>
           <button style={secondaryBtn} onClick={() => { setStage("idle"); setSavedItem(null) }}>再存一頁</button>
         </div>
       )
@@ -264,7 +264,7 @@ export default function Popup() {
     }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
         <span style={{ fontSize: 17, fontWeight: 700, color: GREEN, letterSpacing: "-0.3px" }}>
-          Vela ✦
+          Garner ✦
         </span>
       </div>
       {renderContent()}

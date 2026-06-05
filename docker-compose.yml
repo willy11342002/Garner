@@ -3,15 +3,15 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: vela
-      POSTGRES_PASSWORD: vela
-      POSTGRES_DB: vela
+      POSTGRES_USER: garner
+      POSTGRES_PASSWORD: garner
+      POSTGRES_DB: garner
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vela -d vela"]
+      test: ["CMD-SHELL", "pg_isready -U garner -d garner"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,7 +26,7 @@ services:
     env_file:
       - ./apps/api/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://vela:vela@db:5432/vela
+      DATABASE_URL: postgresql+asyncpg://garner:garner@db:5432/garner
     depends_on:
       db:
         condition: service_healthy

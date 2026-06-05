@@ -158,7 +158,7 @@
 
 <script setup lang="ts">
 import type { ChainHop, ChainItem } from '~/types/api'
-useHead({ title: 'Vela — 探索' })
+useHead({ title: 'Garner — 探索' })
 
 // ── Detail Modal ──────────────────────────────
 const detailItemId = ref<string | null>(null)
@@ -184,7 +184,7 @@ const fullAnalysis = ref<string | null>(null)
 
 const activeHop = computed(() => chain.value[activeHopIdx.value])
 
-const STORAGE_KEY = 'vela_chain_state'
+const STORAGE_KEY = 'garner_chain_state'
 
 function saveChainState() {
   try {

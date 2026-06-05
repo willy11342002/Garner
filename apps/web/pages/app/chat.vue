@@ -240,7 +240,7 @@
 
 <script setup lang="ts">
 import type { ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource } from '~/types/api'
-useHead({ title: 'Vela — AI Chat' })
+useHead({ title: 'Garner — AI Chat' })
 
 const { t } = useI18n()
 const apiFetch = useApiFetch()

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.personal_access_token import PersonalAccessToken
 
-TOKEN_PREFIX = "vela_pat_"
+TOKEN_PREFIX = "pat_"
 
 
 def _generate_raw_token() -> str:

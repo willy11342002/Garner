@@ -6,7 +6,7 @@ const slug = route.params.slug as string
 const itemStore = useItemStore()
 useHead(computed(() => {
   const item = itemStore.items.find(i => i.id === slug)
-  return { title: item?.title ? `Vela — ${item.title}` : 'Vela' }
+  return { title: item?.title ? `Garner — ${item.title}` : 'Garner' }
 }))
 
 function handleClose() {

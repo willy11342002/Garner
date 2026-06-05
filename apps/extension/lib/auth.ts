@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = process.env.PLASMO_PUBLIC_SUPABASE_ANON_KEY!
 const API = process.env.PLASMO_PUBLIC_API_BASE_URL!
 
 // ── Storage keys ──────────────────────────────────────────────
-const KEY_PAT = "vela_pat"
+const KEY_PAT = "pat"
 
 // 舊版 JWT keys（用於遷移，遷移後清除）
 const JWT_KEYS = ["access_token", "refresh_token", "expires_at"]

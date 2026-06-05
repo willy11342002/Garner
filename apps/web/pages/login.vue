@@ -1,7 +1,7 @@
 <template>
   <main class="login">
     <div class="login__card">
-      <h1 class="login__logo">Vela</h1>
+      <h1 class="login__logo">Garner</h1>
       <p class="login__sub">{{ t('login.sub') }}</p>
 
       <div class="login__actions">
@@ -30,7 +30,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false })
-useHead({ title: 'Vela — 登入' })
+useHead({ title: 'Garner — 登入' })
 
 const { t } = useI18n()
 const client = useSupabaseClient()

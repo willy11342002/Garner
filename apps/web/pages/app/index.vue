@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Tag } from '~/types/api'
-useHead({ title: 'Vela — 我的知識庫' })
+useHead({ title: 'Garner — 我的知識庫' })
 
 const itemStore = useItemStore()
 const { getItemTags, getPendingReview } = useItems()
@@ -81,7 +81,7 @@ onMounted(async () => {
           <div class="placeholder__stripes"></div>
         </div>
         <div class="empty-state__body">
-          <span class="empty-state__eyebrow">WELCOME TO VELA</span>
+          <span class="empty-state__eyebrow">WELCOME TO GARNER</span>
           <h1 class="empty-state__title">你的知識庫還是空的</h1>
           <p class="empty-state__desc">存入第一筆內容，知識庫就會開始自動成長。</p>
           <div class="cta-input-row">

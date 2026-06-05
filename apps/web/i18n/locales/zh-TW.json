@@ -181,7 +181,7 @@
     "feat_fork_title": "公開 & Fork",
     "feat_fork_desc": "分享你的知識集合，讓他人 Fork 進自己的庫。知識傳遞，而非複製貼上。",
     "pricing_link": "查看方案與定價 →",
-    "page_title": "Vela — 被動建立的個人知識庫"
+    "page_title": "Garner — 被動建立的個人知識庫"
   },
   "login": {
     "sub": "被動建立的個人知識庫",
@@ -192,8 +192,8 @@
     "verifying": "正在驗證登入..."
   },
   "pricing": {
-    "page_title": "Vela — 升級",
-    "eyebrow": "UPGRADE YOUR VELA",
+    "page_title": "Garner — 升級",
+    "eyebrow": "UPGRADE YOUR GARNER",
     "hero_title": "讓知識庫真正發揮魔法",
     "hero_sub": "免費版已經幫你建立了基礎。升級後，無限查詢與完整 AI 關聯讓它真正活起來。",
     "billing_monthly": "月付",
@@ -226,7 +226,7 @@
     "magic": {
       "title": "為什麼值得升級？",
       "quote": "「我存了一個月東西，某天隨口問了一句『我記得有篇講遠端團隊文化的...』，系統把我自己都忘記存過的東西找出來，還連結到另一篇我完全沒想過有關係的設計文章。那一刻，這個 app 才真的活起來。」",
-      "author": "Mei Wu · 產品經理 · 使用 Vela 6 個月",
+      "author": "Mei Wu · 產品經理 · 使用 Garner 6 個月",
       "pro_badge": "Pro 用戶"
     },
     "faq": {

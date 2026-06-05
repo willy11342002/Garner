@@ -1,9 +1,9 @@
 import type { PlasmoCSConfig } from "plasmo"
 
-// 只在 vela.app（或本地開發）執行，document_start 確保在 Supabase JS 初始化前跑完
+// 只在 garner.app（或本地開發）執行，document_start 確保在 Supabase JS 初始化前跑完
 export const config: PlasmoCSConfig = {
   matches: [
-    "https://vela.app/*",
+    "https://garner.app/*",
     "http://localhost:3000/*",
   ],
   run_at: "document_start",
@@ -57,10 +57,10 @@ async function sync() {
   }
 }
 
-// 頁面載入時同步一次（主要用途：extension refresh 後，用戶回到 vela.app）
+// 頁面載入時同步一次（主要用途：extension refresh 後，用戶回到 garner.app）
 sync()
 
-// 跨 tab：另一個 vela.app tab 更新了 token（例如 web app 自動 refresh）
+// 跨 tab：另一個 garner.app tab 更新了 token（例如 web app 自動 refresh）
 window.addEventListener("storage", (e) => {
   if (e.key !== STORAGE_KEY) return
   if (!e.newValue) {
@@ -83,7 +83,7 @@ window.addEventListener("storage", (e) => {
 // 同 tab：web app 的 Supabase JS 自動 refresh 後透過 postMessage 通知
 window.addEventListener("message", (e) => {
   if (e.origin !== window.location.origin) return
-  if (e.data?.type !== "VELA_TOKEN_UPDATE") return
+  if (e.data?.type !== "GARNER_TOKEN_UPDATE") return
   const { access_token, refresh_token, expires_at } = e.data
   if (access_token) {
     chrome.storage.local.set({ access_token, refresh_token, expires_at })

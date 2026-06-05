@@ -1,6 +1,6 @@
 <template>
   <nav class="nav">
-    <NuxtLink to="/" class="nav__logo">Vela</NuxtLink>
+    <NuxtLink to="/" class="nav__logo">Garner</NuxtLink>
     <div class="nav__right">
       <button class="nav__icon-btn" :title="t('nav.toggleTheme')" @click="toggleTheme">
         <svg v-if="isDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">

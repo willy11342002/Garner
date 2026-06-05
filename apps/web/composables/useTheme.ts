@@ -10,7 +10,7 @@ export const useTheme = () => {
     const dark = m === 'system' ? prefersDark : m === 'dark'
     isDark.value = dark
     document.body.classList.toggle('light', !dark)
-    localStorage.setItem('vela-theme', m)
+    localStorage.setItem('garner-theme', m)
   }
 
   const setMode = (m: ThemeMode) => {
@@ -22,7 +22,7 @@ export const useTheme = () => {
 
   const init = () => {
     if (!import.meta.client) return
-    const saved = localStorage.getItem('vela-theme') as ThemeMode | null
+    const saved = localStorage.getItem('garner-theme') as ThemeMode | null
     const initial: ThemeMode = (saved === 'dark' || saved === 'light' || saved === 'system') ? saved : 'dark'
     mode.value = initial
     applyMode(initial)

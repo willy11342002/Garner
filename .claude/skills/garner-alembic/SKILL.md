@@ -1,11 +1,11 @@
 ---
-name: vela-alembic
-description: 執行 Vela 專案的 Alembic 資料庫 migration 指令。當用戶提到 alembic、資料庫遷移、schema migration、upgrade、downgrade、revision、migrate、rollback、migration 歷程、migration stamp 時觸發。也在用戶要建立新 migration、套用 pending migration、查看目前 migration 狀態、或查看 migration 歷程時觸發。Use this skill whenever the user mentions alembic commands, database migrations, schema changes, or wants to create/apply/rollback migrations in the Vela project.
+name: garner-alembic
+description: 執行 Garner 專案的 Alembic 資料庫 migration 指令。當用戶提到 alembic、資料庫遷移、schema migration、upgrade、downgrade、revision、migrate、rollback、migration 歷程、migration stamp 時觸發。也在用戶要建立新 migration、套用 pending migration、查看目前 migration 狀態、或查看 migration 歷程時觸發。Use this skill whenever the user mentions alembic commands, database migrations, schema changes, or wants to create/apply/rollback migrations in the Garner project.
 ---
 
-# Vela Alembic Migration Helper
+# Garner Alembic Migration Helper
 
-處理 Vela 專案所有 Alembic 資料庫 migration 操作。
+處理 Garner 專案所有 Alembic 資料庫 migration 操作。
 
 ## 專案設定
 

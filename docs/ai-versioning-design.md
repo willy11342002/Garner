@@ -6,7 +6,7 @@
 
 ## 問題背景
 
-Vela 使用 AI 對 item 做摘要、標籤、embedding。未來若更換模型或調整 prompt，識別結果會改變。需要決定：
+Garner 使用 AI 對 item 做摘要、標籤、embedding。未來若更換模型或調整 prompt，識別結果會改變。需要決定：
 - 舊 item 的識別結果要不要動？
 - 新用戶 vs 舊用戶的體驗如何一致？
 - 是否讓用戶自行決定重跑？

@@ -1,7 +1,7 @@
 <template>
   <div class="error-root">
     <nav class="nav">
-      <NuxtLink to="/" class="nav__logo">Vela</NuxtLink>
+      <NuxtLink to="/" class="nav__logo">Garner</NuxtLink>
       <div class="nav__right">
         <button class="nav__theme" @click="toggle" aria-label="Toggle theme">
           <svg viewBox="0 0 24 24">

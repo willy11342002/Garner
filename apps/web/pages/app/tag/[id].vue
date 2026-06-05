@@ -13,7 +13,7 @@ const loading = ref(true)
 const error = ref(false)
 
 useHead(computed(() => ({
-  title: tag.value ? `Vela — ${localize(tag.value.name_i18n, tag.value.name)}` : 'Vela',
+  title: tag.value ? `Garner — ${localize(tag.value.name_i18n, tag.value.name)}` : 'Garner',
 })))
 
 const TAG_COLORS = ['a', 'b', 'c', 'd', 'e'] as const

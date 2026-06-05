@@ -1,6 +1,6 @@
 {
-  "name": "vela-extension",
-  "displayName": "Vela — 一鍵收藏，AI 幫你整理",
+  "name": "garner-extension",
+  "displayName": "Garner — 一鍵收藏，AI 幫你整理",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -34,7 +34,7 @@
       "tabs"
     ],
     "action": {
-      "default_title": "儲存到 Vela",
+      "default_title": "儲存到 Garner",
       "default_popup": "popup.html"
     }
   }

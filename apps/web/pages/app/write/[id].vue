@@ -3,7 +3,7 @@ import type { Item, Tag } from '~/types/api'
 
 definePageMeta({ ssr: false, layout: 'write' })
 useHead(computed(() => ({
-  title: title.value ? `Vela — ${title.value}` : 'Vela — 文章編輯',
+  title: title.value ? `Garner — ${title.value}` : 'Garner — 文章編輯',
 })))
 
 const route = useRoute()

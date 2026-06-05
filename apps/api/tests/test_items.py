@@ -66,7 +66,7 @@ async def test_create_item_invalid_url(client):
 
 
 async def test_create_in_app_note(client):
-    with patch("app.services.item_service.create_item", new=AsyncMock(return_value=make_item_read(url="vela://note"))):
+    with patch("app.services.item_service.create_item", new=AsyncMock(return_value=make_item_read(url="garner://note"))):
         resp = await client.post("/items/", json={"title": "My note", "raw_content": "some text"})
     assert resp.status_code == 201
 

@@ -1,4 +1,4 @@
-# Vela
+# Garner
 
 被動建立的個人知識庫。透過 Chrome Extension 一鍵收集 YouTube 影片與網頁文章，系統自動產生摘要、標籤與語意關聯。
 
@@ -7,7 +7,7 @@
 ## 專案結構
 
 ```
-vela/
+garner/
 ├── apps/
 │   ├── web/          # Nuxt 3 前端
 │   ├── api/          # FastAPI 後端
@@ -36,8 +36,8 @@ vela/
 ### 1. Clone repo
 
 ```bash
-git clone https://github.com/your-org/vela.git
-cd vela
+git clone https://github.com/your-org/garner.git
+cd garner
 ```
 
 ### 2. 前端（Nuxt 3）

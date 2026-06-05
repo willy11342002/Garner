@@ -1,7 +1,7 @@
 <template>
   <div>
     <nav class="nav">
-      <NuxtLink to="/app" class="nav__logo">Vela</NuxtLink>
+      <NuxtLink to="/app" class="nav__logo">Garner</NuxtLink>
       <div class="nav__tabs">
         <div class="nav__tab-group">
           <span

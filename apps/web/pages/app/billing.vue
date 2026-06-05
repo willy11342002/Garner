@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useHead({ title: 'Vela — 方案與帳單' })
+useHead({ title: 'Garner — 方案與帳單' })
 const { t } = useI18n()
 const authStore = useAuthStore()
 const apiFetch = useApiFetch()

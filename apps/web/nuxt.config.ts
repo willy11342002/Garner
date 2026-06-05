@@ -8,7 +8,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Vela',
+      title: 'Garner',
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       ],
@@ -16,7 +16,7 @@ export default defineNuxtConfig({
   },
 
   css: [
-    '~/assets/css/vela.css',
+    '~/assets/css/garner.css',
     '~/assets/css/selbar.css',
     '~/assets/css/home.css',
     '~/assets/css/archive.css',
@@ -53,7 +53,7 @@ export default defineNuxtConfig({
     ],
     detectBrowserLanguage: {
       useCookie: true,
-      cookieKey: 'vela-locale',
+      cookieKey: 'garner-locale',
       alwaysRedirect: false,
     },
   },

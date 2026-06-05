@@ -1,5 +1,5 @@
 export {}
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("Vela extension installed")
+  console.log("Garner extension installed")
 })

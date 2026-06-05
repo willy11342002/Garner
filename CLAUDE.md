@@ -1,4 +1,4 @@
-# Vela — CLAUDE.md
+# Garner — CLAUDE.md
 
 > 給 Claude Code 的專案說明文件。每次開啟對話請先讀這份文件。
 
@@ -6,14 +6,14 @@
 
 ## 專案簡介
 
-**Vela** 是一個被動建立的個人知識庫。用戶透過 Chrome Extension 一鍵收集 YouTube 影片與網頁文章，系統自動產生摘要、標籤、語意關聯，讓知識庫隨時間自動成長。
+**Garner** 是一個被動建立的個人知識庫。用戶透過 Chrome Extension 一鍵收集 YouTube 影片與網頁文章，系統自動產生摘要、標籤、語意關聯，讓知識庫隨時間自動成長。
 
 ---
 
 ## Monorepo 結構
 
 ```
-vela/
+garner/
 ├── apps/
 │   ├── web/          # Nuxt 3 前端
 │   ├── api/          # FastAPI 後端
@@ -174,7 +174,7 @@ apps/web/
 │   └── api/
 ├── assets/
 │   └── css/
-│       ├── vela.css          # base：tokens、reset、nav、buttons、cards、utilities
+│       ├── garner.css        # base：tokens、reset、nav、buttons、cards、utilities
 │       ├── selbar.css        # 共用 selbar 元件
 │       ├── home.css          # app/index.vue 首頁
 │       └── archive.css       # app/archive.vue 封存頁

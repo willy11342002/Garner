@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useHead({ title: 'Vela — 設置' })
+useHead({ title: 'Garner — 設置' })
 const { t } = useI18n()
 const supabaseUser = useSupabaseUser()
 const authStore = useAuthStore()

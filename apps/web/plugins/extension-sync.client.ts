@@ -5,7 +5,7 @@ export default defineNuxtPlugin(() => {
   supabase.auth.onAuthStateChange((_event, session) => {
     window.postMessage(
       {
-        type: "VELA_TOKEN_UPDATE",
+        type: "GARNER_TOKEN_UPDATE",
         access_token: session?.access_token ?? null,
         refresh_token: session?.refresh_token ?? null,
         expires_at: session?.expires_at ?? null,
