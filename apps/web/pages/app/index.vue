@@ -3,7 +3,8 @@ import type { Tag } from '~/types/api'
 useHead({ title: 'Vela — 我的知識庫' })
 
 const itemStore = useItemStore()
-const { getItemTags } = useItems()
+const { getItemTags, getPendingReview } = useItems()
+const { pendingItems } = usePendingItems()
 const { activeItemId } = useItemModal()
 const { t } = useI18n()
 
@@ -59,7 +60,8 @@ watch(activeItemId, async (newId, oldId) => {
 })
 
 onMounted(async () => {
-  await itemStore.load()
+  const [, pending] = await Promise.all([itemStore.load(), getPendingReview()])
+  pendingItems.value = pending
   for (const item of itemStore.items) {
     itemTagsMap.value[item.id] = item.tags
   }

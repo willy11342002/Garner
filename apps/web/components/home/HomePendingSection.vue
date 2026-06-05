@@ -141,7 +141,9 @@ watch(() => itemStore.recentlyProcessed, async (itemId) => {
 })
 
 onMounted(async () => {
-  pendingItems.value = await getPendingReview()
+  if (pendingItems.value.length === 0) {
+    pendingItems.value = await getPendingReview()
+  }
 })
 </script>
 
