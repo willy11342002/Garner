@@ -11,6 +11,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _model_cache: dict[str, str] = {
     "llm": "anthropic/claude-3-5-haiku",
     "vision": "anthropic/claude-3-haiku",  # must support multimodal input; claude-3-5-haiku does NOT support vision via Bedrock
+    "video_llm": "google/gemini-2.5-flash",  # must support native video_url input
     "embedding": "openai/text-embedding-3-small",
 }
 
@@ -37,6 +38,11 @@ def _vision_llm() -> str:
     Use claude-3-haiku or claude-3.5-sonnet instead.
     """
     return _model_cache.get("vision", "anthropic/claude-3-haiku")
+
+
+def _video_llm() -> str:
+    """Model used for native video understanding. Must support video_url content type."""
+    return _model_cache.get("video_llm", "google/gemini-2.0-flash")
 
 
 def _emb() -> str:
@@ -565,6 +571,70 @@ def chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> list[str]
         chunks.append(text[start:end].strip())
         start += char_size - char_overlap
     return [c for c in chunks if c]
+
+
+_VIDEO_ANALYSIS_PROMPT = """\
+請分析這段影片的內容，以繁體中文輸出以下資訊：
+
+1. **畫面文字**：逐字轉錄影片畫面中所有可見文字（字幕、壓字、標題、品牌名稱等），若無文字則略過。
+2. **視覺內容**：描述影片的主要視覺場景與主題。
+3. **口語內容**：轉錄影片中人物的說話或旁白。若聲音是背景音樂或歌曲，標記為「[背景音樂]」並略過歌詞，不轉錄。
+
+請盡可能完整，確保畫面壓字被完整擷取。
+"""
+
+
+async def describe_video(video_bytes: bytes, mime_type: str = "video/mp4") -> str:
+    """Send a video file to the video-capable LLM for visual + audio analysis.
+
+    Returns a text description combining visual content and spoken audio.
+    Returns "" on any failure so callers can continue gracefully.
+    """
+    import base64
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    if not video_bytes:
+        return ""
+
+    MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB hard cap
+    if len(video_bytes) > MAX_VIDEO_BYTES:
+        _log.warning("describe_video: video too large (%d bytes), skipping", len(video_bytes))
+        return ""
+
+    b64 = base64.b64encode(video_bytes).decode()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                json={
+                    "model": _video_llm(),
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "video_url",
+                                "video_url": {"url": f"data:{mime_type};base64,{b64}"},
+                            },
+                            {"type": "text", "text": _VIDEO_ANALYSIS_PROMPT},
+                        ],
+                    }],
+                },
+                timeout=180,
+            )
+        if resp.status_code == 401:
+            raise RuntimeError("OpenRouter service unavailable")
+        if resp.status_code == 400:
+            _log.error("describe_video 400 (model=%s): %s", _video_llm(), resp.text)
+            return ""
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        _log.exception("describe_video failed")
+        return ""
 
 
 _VISION_PROMPT = """\

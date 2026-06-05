@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.exceptions import VideoTooLongError
 
 logger = logging.getLogger(__name__)
 
@@ -154,56 +155,91 @@ async def _fetch_image_bytes(image_urls: list[str]) -> list[bytes]:
     return images
 
 
-async def _transcribe_with_whisper(video_url: str) -> tuple[str | None, int | None]:
-    """Download audio from a CDN video URL and transcribe with Groq Whisper.
+_MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB hard cap for Gemini
 
-    Accepts a direct CDN URL (from instaloader), not an Instagram post URL.
-    Returns (transcript_text, duration_sec).
+
+async def _download_video_and_audio(
+    video_url: str,
+) -> tuple[bytes | None, bytes | None, int | None, str]:
+    """Download an IG CDN video, return (video_bytes, audio_bytes, duration_sec, mime_type).
+
+    video_bytes is None when the file exceeds the size cap.
+    audio_bytes is None when FFmpeg audio extraction fails.
     """
-    import yt_dlp
-    from groq import AsyncGroq
+    import subprocess
 
-    if not settings.groq_api_key:
-        logger.warning("GROQ_API_KEY not set, skipping Whisper")
-        return None, None
+    import yt_dlp
 
     tmpdir = tempfile.mkdtemp()
-    audio_base = os.path.join(tmpdir, "audio")
 
-    def _download():
-        opts = {
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "outtmpl": audio_base,
-            "postprocessors": [
-                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "32"}
-            ],
+    def _run() -> tuple[bytes | None, bytes | None, int | None, str]:
+        video_base = os.path.join(tmpdir, "video")
+        audio_path = os.path.join(tmpdir, "audio.mp3")
+
+        ydl_opts = {
+            "format": "best[height<=480][ext=mp4]/best[height<=480]/best",
+            "outtmpl": video_base + ".%(ext)s",
             "quiet": True,
             "no_warnings": True,
+            "max_filesize": _MAX_VIDEO_BYTES,
         }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
-            return info.get("duration") if info else None
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url, download=True)
+                if not info:
+                    return None, None, None, "video/mp4"
+                duration = info.get("duration")
+                ext = info.get("ext", "mp4")
+        except Exception as exc:
+            logger.info("_download_video_and_audio: skipped (%s)", exc)
+            return None, None, None, "video/mp4"
+
+        video_path = video_base + f".{ext}"
+        if not os.path.exists(video_path):
+            return None, None, None, f"video/{ext}"
+
+        with open(video_path, "rb") as f:
+            video_bytes = f.read()
+
+        subprocess.run(
+            ["ffmpeg", "-i", video_path, "-vn", "-acodec", "mp3", "-ab", "32k",
+             audio_path, "-y", "-loglevel", "error"],
+            capture_output=True, timeout=60,
+        )
+        audio_bytes: bytes | None = None
+        if os.path.exists(audio_path):
+            with open(audio_path, "rb") as f:
+                audio_bytes = f.read()
+
+        return video_bytes, audio_bytes, duration, f"video/{ext}"
 
     try:
-        duration = await asyncio.to_thread(_download)
-        audio_path = audio_base + ".mp3"
-        if not os.path.exists(audio_path):
-            logger.warning("Audio file not found after download for url=%s", video_url)
-            return None, duration
-
-        client = AsyncGroq(api_key=settings.groq_api_key)
-        with open(audio_path, "rb") as f:
-            result = await client.audio.transcriptions.create(
-                model="whisper-large-v3-turbo",
-                file=f,
-            )
-        text = result.text.strip() or None
-        return text, duration
+        return await asyncio.to_thread(_run)
     except Exception:
-        logger.exception("Whisper transcription failed for url=%s", video_url)
-        return None, None
+        logger.warning("_download_video_and_audio failed for url=%s", video_url, exc_info=True)
+        return None, None, None, "video/mp4"
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+async def _whisper_from_audio_bytes(audio_bytes: bytes) -> str | None:
+    """Transcribe audio bytes with Groq Whisper."""
+    import io
+
+    from groq import AsyncGroq
+
+    if not settings.groq_api_key or not audio_bytes:
+        return None
+    try:
+        client = AsyncGroq(api_key=settings.groq_api_key)
+        result = await client.audio.transcriptions.create(
+            model="whisper-large-v3-turbo",
+            file=("audio.mp3", io.BytesIO(audio_bytes)),
+        )
+        return result.text.strip() or None
+    except Exception:
+        logger.exception("_whisper_from_audio_bytes failed")
+        return None
 
 
 async def _get_whisper_daily_limit(db: AsyncSession, user_id: UUID) -> int:
@@ -276,6 +312,11 @@ async def fetch_content(
         len(image_urls), len(video_urls), len(description),
     )
 
+    if video_urls:
+        total_video_sec = sum(video_durations)
+        if total_video_sec > VideoTooLongError.MAX_DURATION_SEC:
+            raise VideoTooLongError(total_video_sec)
+
     if stage_cb:
         stage_cb("fetching_content")
 
@@ -294,25 +335,38 @@ async def fetch_content(
             if image_text:
                 parts.append(f"[Images]\n{image_text}")
 
-    # ── Video pipeline ─────────────────────────────────────────────────────────
+    # ── Video pipeline: Gemini native video + Whisper audio ────────────────────
     whisper_seconds_total = 0
     total_video_duration  = sum(video_durations) or None
 
     if video_urls:
+        from app.services import ai_service
+
         daily_limit = await _get_whisper_daily_limit(db, user_id)
         today_used  = await _get_today_used_seconds(db, user_id)
         logger.info("Whisper quota: used=%s limit=%s", today_used, daily_limit)
 
         for video_url, duration in zip(video_urls, video_durations):
-            if today_used + duration > daily_limit:
-                logger.warning("Whisper daily quota exceeded for user_id=%s, skipping remaining videos", user_id)
-                break
-            transcript, actual_dur = await _transcribe_with_whisper(video_url)
-            if transcript:
-                parts.append(f"[Audio]\n{transcript}")
-                used = actual_dur or duration
-                today_used            += used
-                whisper_seconds_total += used
+            # Download video once, extract audio track simultaneously
+            video_bytes, audio_bytes, actual_dur, mime_type = await _download_video_and_audio(video_url)
+            used_dur = actual_dur or duration
+
+            # Gemini native video analysis
+            if video_bytes:
+                logger.info("Running Gemini video analysis for IG video (%d bytes)", len(video_bytes))
+                gemini_text = await ai_service.describe_video(video_bytes, mime_type)
+                if gemini_text:
+                    parts.append(f"[Video]\n{gemini_text}")
+
+            # Whisper from extracted audio (quota-gated)
+            if audio_bytes and settings.groq_api_key and today_used + used_dur <= daily_limit:
+                transcript = await _whisper_from_audio_bytes(audio_bytes)
+                if transcript:
+                    parts.append(f"[Audio]\n{transcript}")
+                    today_used            += used_dur
+                    whisper_seconds_total += used_dur
+            elif today_used + used_dur > daily_limit:
+                logger.warning("Whisper daily quota exceeded for user_id=%s, skipping audio", user_id)
 
     raw_content = "\n\n".join(parts) if parts else None
     whisper_seconds = whisper_seconds_total or None

@@ -1,4 +1,5 @@
 from app.models.app_setting import AppSetting
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.notification import Notification, NotificationType
 from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
 from app.models.content_chunk import ContentChunk
@@ -38,4 +39,5 @@ __all__ = [
     "AppSetting",
     "Notification",
     "NotificationType",
+    "PersonalAccessToken",
 ]

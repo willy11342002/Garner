@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import events
 
 logger = logging.getLogger(__name__)
+from app.core.exceptions import VideoTooLongError
 from app.crud import chunks as crud_chunks
 from app.crud import notifications as crud_notifications
 from app.crud import tags as crud_tags
@@ -31,7 +32,12 @@ async def process_item(
     if content is None:
         return
 
-    fetch_result = await _fetch_content(db, user_id, url, content, user_item_id)
+    try:
+        fetch_result = await _fetch_content(db, user_id, url, content, user_item_id)
+    except VideoTooLongError as exc:  # noqa: F821 — imported below
+        await _cancel_video_too_long(db, user_id, user_item_id, content, url, exc.duration_sec)
+        return
+
     analysis    = await _analyze_content(fetch_result.raw_content, db, user_id, user_item_id)
 
     if not fetch_result.title:
@@ -210,3 +216,42 @@ async def _embed_and_save(
 
     await db.commit()
     events.notify(str(user_item_id))
+
+
+async def _cancel_video_too_long(
+    db: AsyncSession,
+    user_id: UUID,
+    user_item_id: UUID,
+    content: ContentObject,
+    url: str,
+    duration_sec: int | None,
+) -> None:
+    """Soft-delete the UserItem and notify the user when a video is too long or duration is unknown."""
+    from app.models.user_item import UserItem
+
+    result = await db.execute(select(UserItem).where(UserItem.id == user_item_id))
+    user_item = result.scalar_one_or_none()
+    if user_item:
+        user_item.deleted_at = datetime.now(timezone.utc)
+
+    item_title = content.title or url
+
+    if duration_sec is None:
+        notif_title = "無法取得影片時長"
+        notif_body = f"「{item_title}」影片時長無法確認，為確保服務穩定已拒絕處理。"
+    else:
+        minutes = duration_sec // 60
+        notif_title = f"影片超過時長限制（{minutes} 分鐘）"
+        notif_body = f"「{item_title}」影片長度超過 20 分鐘，目前僅支援 20 分鐘以內的影片。"
+
+    await crud_notifications.create(
+        db,
+        user_id=user_id,
+        type=NotificationType.item_failed,
+        title=notif_title,
+        body=notif_body,
+        item_id=user_item_id,
+    )
+
+    await db.commit()
+    events.fail(str(user_item_id))
