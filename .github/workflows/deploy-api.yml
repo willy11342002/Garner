@@ -37,6 +37,5 @@ jobs:
 
       - name: Deploy to Railway
         run: railway up --service garner-api --detach
-        working-directory: apps/api
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
