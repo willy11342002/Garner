@@ -6,6 +6,7 @@ type AnyItem = Item | CollectionShareItem
 const props = defineProps<{
   itemId?: string | null     // 私人模式：傳 id，自動 fetch
   item?: AnyItem | null      // 公開唯讀模式：直接傳已載入的 item
+  page?: boolean             // true → 內嵌頁面模式（無 overlay）
 }>()
 const emit = defineEmits<{ close: []; archived: [] }>()
 
@@ -123,12 +124,17 @@ async function load(id: string) {
   }
 }
 
+const lockScroll = (lock: boolean) => {
+  if (!import.meta.client || props.page) return
+  document.body.style.overflow = lock ? 'hidden' : ''
+}
+
 watch(() => props.itemId, (id) => {
   if (id) {
-    if (import.meta.client) document.body.style.overflow = 'hidden'
+    lockScroll(true)
     load(id)
   } else if (!props.item) {
-    if (import.meta.client) document.body.style.overflow = ''
+    lockScroll(false)
     fetchedItem.value = null
     tags.value = []
     pendingTags.value = []
@@ -136,13 +142,11 @@ watch(() => props.itemId, (id) => {
 }, { immediate: true })
 
 watch(() => props.item, (v) => {
-  if (!import.meta.client) return
-  if (v) document.body.style.overflow = 'hidden'
-  else if (!props.itemId) document.body.style.overflow = ''
+  lockScroll(!!v)
 }, { immediate: true })
 
 onUnmounted(() => {
-  if (import.meta.client) document.body.style.overflow = ''
+  lockScroll(false)
 })
 
 function doClose() {
@@ -239,126 +243,230 @@ async function confirmArchive() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="isOpen"
-      class="id-overlay"
-      @click.self="doClose"
-      @keydown.esc="doClose"
-      tabindex="-1"
-    >
-      <div v-if="loading" class="id-spinner">載入中...</div>
-      <div v-else-if="error" class="id-spinner">載入失敗，請重新整理</div>
+  <Teleport to="body" :disabled="page">
 
-      <div v-else-if="item" class="id-panel fadeup">
-        <button class="id-close" @click="doClose">×</button>
+    <!-- ── Modal mode ── -->
+    <template v-if="!page">
+      <div
+        v-if="isOpen"
+        class="id-overlay"
+        @click.self="doClose"
+        @keydown.esc="doClose"
+        tabindex="-1"
+      >
+        <div v-if="loading" class="id-spinner">載入中...</div>
+        <div v-else-if="error" class="id-spinner">載入失敗，請重新整理</div>
+        <div v-else-if="item" class="id-panel fadeup">
+          <button class="id-close" @click="doClose">×</button>
 
-        <div class="id-media">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="id-media__img" alt="">
-          <div v-else class="placeholder placeholder--b id-media__ph">
-            <div class="placeholder__stripes"></div>
+          <div class="id-media">
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="id-media__img" alt="">
+            <div v-else class="placeholder placeholder--b id-media__ph">
+              <div class="placeholder__stripes"></div>
+            </div>
+            <span class="source-badge id-media__badge">{{ sourceLabel(item.url) }}</span>
           </div>
-          <span class="source-badge id-media__badge">{{ sourceLabel(item.url) }}</span>
-        </div>
 
-        <div class="id-body">
-          <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
-          <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
+          <div class="id-body">
+            <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
+            <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
 
-          <!-- Tags（私人模式才顯示） -->
-          <div v-if="!readonly" class="id-body__tags">
-            <!-- Pending tags：AI 推薦、待確認 -->
-            <template v-if="pendingTags.length">
-              <div class="id-body__tags-pending-label">AI 建議標籤</div>
+            <div v-if="!readonly" class="id-body__tags">
+              <template v-if="pendingTags.length">
+                <div class="id-body__tags-pending-label">AI 建議標籤</div>
+                <span
+                  v-for="tag in pendingTags"
+                  :key="tag.id"
+                  class="tag-chip tag-chip--pending id-tag"
+                  :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
+                >
+                  {{ localize(tag.name_i18n, tag.name) }}
+                  <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
+                  <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
+                </span>
+              </template>
               <span
-                v-for="tag in pendingTags"
+                v-for="(tag, i) in tags"
                 :key="tag.id"
-                class="tag-chip tag-chip--pending id-tag"
-                :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
+                :class="`tag-chip tag-chip--${tagColor(i)} id-tag`"
+                :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
               >
                 {{ localize(tag.name_i18n, tag.name) }}
-                <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
-                <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
+                <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
               </span>
-            </template>
-
-            <!-- Confirmed tags -->
-            <span
-              v-for="(tag, i) in tags"
-              :key="tag.id"
-              :class="`tag-chip tag-chip--${tagColor(i)} id-tag`"
-              :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
-            >
-              {{ localize(tag.name_i18n, tag.name) }}
-              <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
-            </span>
-
-            <template v-if="addingTag">
-              <input
-                ref="tagInputRef"
-                v-model="newTagInput"
-                class="id-tag__input"
-                placeholder="標籤名稱"
-                @keydown.enter="handleAddTag"
-                @keydown.esc.stop="addingTag = false; newTagInput = ''"
-                @blur="handleAddTag"
-              />
-            </template>
-            <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
-              + 新增標籤
-            </button>
-          </div>
-
-          <!-- Summary -->
-          <div v-if="item.summary || (item as Item).summary_i18n || canEdit" class="id-body__summary">
-            <div class="id-body__summary-label mono">
-              SUMMARY
-              <button v-if="canEdit && !isEditing" class="id-summary__edit-btn" @click="startEdit">編輯</button>
+              <template v-if="addingTag">
+                <input
+                  ref="tagInputRef"
+                  v-model="newTagInput"
+                  class="id-tag__input"
+                  placeholder="標籤名稱"
+                  @keydown.enter="handleAddTag"
+                  @keydown.esc.stop="addingTag = false; newTagInput = ''"
+                  @blur="handleAddTag"
+                />
+              </template>
+              <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
+                + 新增標籤
+              </button>
             </div>
-            <template v-if="isEditing">
-              <TiptapEditor v-model="editDoc" :readonly="false" />
-              <div class="id-summary__edit-actions">
-                <button class="btn btn--accent" :disabled="saving" @click="saveEdit">{{ saving ? '儲存中…' : '儲存' }}</button>
-                <button class="btn" :disabled="saving" @click="cancelEdit">取消</button>
-              </div>
-            </template>
-            <template v-else>
-              <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
-              <p v-else-if="canEdit" class="id-body__summary-empty">點擊「編輯」開始記錄想法…</p>
-            </template>
-          </div>
-          <div v-else-if="!readonly && !(item as Item).parsed_at">
-            <span class="processing-badge">AI 處理中...</span>
-          </div>
 
-          <!-- Actions -->
-          <div class="id-body__actions">
-            <button
-              v-if="!readonly && pendingTags.length"
-              class="btn btn--confirm-tags"
-              :disabled="confirmingAll"
-              @click="handleConfirmAll"
-            >
-              {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
-            </button>
-            <a :href="item.url" target="_blank" rel="noopener" class="btn btn--accent">開啟原文 →</a>
-            <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
-                <template v-if="(item as Item).status === 'archived'">
-                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
-                </template>
-                <template v-else>
-                  <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
-                </template>
-              </svg>
-              {{ archiving ? '處理中…' : (item as Item).status === 'archived' ? '復原' : '封存' }}
-            </button>
+            <div v-if="item.summary || (item as Item).summary_i18n || canEdit" class="id-body__summary">
+              <div class="id-body__summary-label mono">
+                SUMMARY
+                <button v-if="canEdit && !isEditing" class="id-summary__edit-btn" @click="startEdit">編輯</button>
+              </div>
+              <template v-if="isEditing">
+                <TiptapEditor v-model="editDoc" :readonly="false" />
+                <div class="id-summary__edit-actions">
+                  <button class="btn btn--accent" :disabled="saving" @click="saveEdit">{{ saving ? '儲存中…' : '儲存' }}</button>
+                  <button class="btn" :disabled="saving" @click="cancelEdit">取消</button>
+                </div>
+              </template>
+              <template v-else>
+                <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
+                <p v-else-if="canEdit" class="id-body__summary-empty">點擊「編輯」開始記錄想法…</p>
+              </template>
+            </div>
+            <div v-else-if="!readonly && !(item as Item).parsed_at">
+              <span class="processing-badge">AI 處理中...</span>
+            </div>
+
+            <div class="id-body__actions">
+              <button
+                v-if="!readonly && pendingTags.length"
+                class="btn btn--confirm-tags"
+                :disabled="confirmingAll"
+                @click="handleConfirmAll"
+              >
+                {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
+              </button>
+              <a :href="item.url" target="_blank" rel="noopener" class="btn btn--accent">開啟原文 →</a>
+              <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
+                  <template v-if="(item as Item).status === 'archived'">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+                  </template>
+                  <template v-else>
+                    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
+                  </template>
+                </svg>
+                {{ archiving ? '處理中…' : (item as Item).status === 'archived' ? '復原' : '封存' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </template>
 
-    <!-- Archive confirm -->
+    <!-- ── Page mode ── -->
+    <template v-else>
+      <div v-if="loading" class="idp-state">載入中...</div>
+      <div v-else-if="error" class="idp-state">載入失敗，請重新整理</div>
+      <div v-else-if="item" class="idp-wrap">
+        <div class="idp-panel">
+          <div class="idp-media">
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="idp-media__img" alt="">
+            <div v-else class="placeholder placeholder--b idp-media__ph">
+              <div class="placeholder__stripes"></div>
+            </div>
+            <span class="source-badge idp-media__badge">{{ sourceLabel(item.url) }}</span>
+          </div>
+
+          <div class="idp-body">
+            <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
+            <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
+
+            <!-- Tags -->
+            <div v-if="!readonly" class="id-body__tags">
+              <template v-if="pendingTags.length">
+                <div class="id-body__tags-pending-label">AI 建議標籤</div>
+                <span
+                  v-for="tag in pendingTags"
+                  :key="tag.id"
+                  class="tag-chip tag-chip--pending id-tag"
+                  :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
+                >
+                  {{ localize(tag.name_i18n, tag.name) }}
+                  <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
+                  <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
+                </span>
+              </template>
+              <span
+                v-for="(tag, i) in tags"
+                :key="tag.id"
+                :class="`tag-chip tag-chip--${tagColor(i)} id-tag`"
+                :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
+              >
+                {{ localize(tag.name_i18n, tag.name) }}
+                <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
+              </span>
+              <template v-if="addingTag">
+                <input
+                  ref="tagInputRef"
+                  v-model="newTagInput"
+                  class="id-tag__input"
+                  placeholder="標籤名稱"
+                  @keydown.enter="handleAddTag"
+                  @keydown.esc.stop="addingTag = false; newTagInput = ''"
+                  @blur="handleAddTag"
+                />
+              </template>
+              <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
+                + 新增標籤
+              </button>
+            </div>
+
+            <!-- Summary -->
+            <div v-if="item.summary || (item as Item).summary_i18n || canEdit" class="id-body__summary">
+              <div class="id-body__summary-label mono">
+                SUMMARY
+                <button v-if="canEdit && !isEditing" class="id-summary__edit-btn" @click="startEdit">編輯</button>
+              </div>
+              <template v-if="isEditing">
+                <TiptapEditor v-model="editDoc" :readonly="false" />
+                <div class="id-summary__edit-actions">
+                  <button class="btn btn--accent" :disabled="saving" @click="saveEdit">{{ saving ? '儲存中…' : '儲存' }}</button>
+                  <button class="btn" :disabled="saving" @click="cancelEdit">取消</button>
+                </div>
+              </template>
+              <template v-else>
+                <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
+                <p v-else-if="canEdit" class="id-body__summary-empty">點擊「編輯」開始記錄想法…</p>
+              </template>
+            </div>
+            <div v-else-if="!readonly && !(item as Item).parsed_at">
+              <span class="processing-badge">AI 處理中...</span>
+            </div>
+
+            <!-- Actions -->
+            <div class="id-body__actions">
+              <button
+                v-if="!readonly && pendingTags.length"
+                class="btn btn--confirm-tags"
+                :disabled="confirmingAll"
+                @click="handleConfirmAll"
+              >
+                {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
+              </button>
+              <a :href="item.url" target="_blank" rel="noopener" class="btn btn--accent">開啟原文 →</a>
+              <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
+                  <template v-if="(item as Item).status === 'archived'">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+                  </template>
+                  <template v-else>
+                    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
+                  </template>
+                </svg>
+                {{ archiving ? '處理中…' : (item as Item).status === 'archived' ? '復原' : '封存' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Archive confirm（兩種模式共用） -->
     <div v-if="showArchiveConfirm" class="modal-mask" @click.self="showArchiveConfirm = false">
       <div class="modal">
         <h2>確認封存</h2>
