@@ -21,7 +21,8 @@ if (code) {
   if (error) {
     await navigateTo('/login')
   } else {
-    await navigateTo('/app')
+    const redirect = (route.query.redirect as string) || '/app'
+    await navigateTo(redirect)
   }
 } else {
   await navigateTo('/login')

@@ -68,6 +68,15 @@ export default function Popup() {
       if (tab?.url && tab?.title) setCurrentTab({ url: tab.url, title: tab.title })
     })
     getStoredSession().then((s) => setLoggedIn(!!s))
+
+    // token-sync.ts 把 JWT 同步進 chrome.storage 後，自動更新登入狀態
+    function onStorageChanged(changes: Record<string, chrome.storage.StorageChange>) {
+      if ("pat" in changes || "access_token" in changes) {
+        getStoredSession().then((s) => setLoggedIn(!!s))
+      }
+    }
+    chrome.storage.onChanged.addListener(onStorageChanged)
+    return () => chrome.storage.onChanged.removeListener(onStorageChanged)
   }, [])
 
   async function handleSave() {
@@ -84,6 +93,7 @@ export default function Popup() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ url: currentTab.url }),
       })
+      if (createResp.status === 401) { setStage("auth_expired"); return }
       if (!createResp.ok) { setStage("failed"); return }
       const item = await createResp.json()
       await streamProgress(item.id, token)
@@ -163,7 +173,7 @@ export default function Popup() {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <p style={{ color: subFg, fontSize: 13, margin: "0 0 4px" }}>請先在 Garner 網頁版登入</p>
-          <button style={primaryBtn} onClick={() => openGarner()}>前往登入</button>
+          <button style={primaryBtn} onClick={() => openGarner("/app/connected")}>前往登入</button>
         </div>
       )
     }
@@ -176,7 +186,7 @@ export default function Popup() {
             await clearStoredSession()
             setLoggedIn(false)
             setStage("idle")
-            openGarner()
+            openGarner("/app/connected")
           }}>重新登入</button>
         </div>
       )

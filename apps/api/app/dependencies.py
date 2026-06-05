@@ -19,8 +19,8 @@ async def get_current_user(
 ) -> dict:
     token = credentials.credentials
 
-    # PAT 驗證
-    if token.startswith("pat_"):
+    # PAT 驗證（相容舊版 vela_pat_ 前綴）
+    if token.startswith(("pat_", "vela_pat_")):
         user_id = await crud_pat.get_user_id_by_token(db, token)
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid PAT")

@@ -33,17 +33,20 @@ definePageMeta({ layout: false })
 useHead({ title: 'Garner — 登入' })
 
 const { t } = useI18n()
+const route = useRoute()
 const client = useSupabaseClient()
 const user = useSupabaseUser()
 const loading = ref(false)
 const error = ref('')
 
+const redirectPath = computed(() => (route.query.redirect as string) || '/app')
+
 if (user.value) {
-  await navigateTo('/app')
+  await navigateTo(redirectPath.value)
 }
 
 watch(user, (u) => {
-  if (u) navigateTo('/app')
+  if (u) navigateTo(redirectPath.value)
 })
 
 async function signIn(provider: 'google' | 'github') {
@@ -51,7 +54,9 @@ async function signIn(provider: 'google' | 'github') {
   error.value = ''
   const { error: err } = await client.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: `${window.location.origin}/confirm` },
+    options: {
+      redirectTo: `${window.location.origin}/confirm?redirect=${encodeURIComponent(redirectPath.value)}`,
+    },
   })
   if (err) {
     error.value = err.message

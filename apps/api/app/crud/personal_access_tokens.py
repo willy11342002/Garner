@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.personal_access_token import PersonalAccessToken
 
 TOKEN_PREFIX = "pat_"
+_LEGACY_PREFIXES = ("vela_pat_",)
 
 
 def _generate_raw_token() -> str:
@@ -18,6 +19,10 @@ def _generate_raw_token() -> str:
 def _hash_token(raw_token: str) -> str:
     """SHA-256 hash — 快速且足夠安全，PAT 本身已夠長"""
     return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def _is_pat(raw_token: str) -> bool:
+    return raw_token.startswith(TOKEN_PREFIX) or raw_token.startswith(_LEGACY_PREFIXES)
 
 
 async def create_pat(
@@ -58,7 +63,7 @@ async def get_user_id_by_token(
     raw_token: str,
 ) -> uuid.UUID | None:
     """驗證 PAT，成功時更新 last_used_at 並回傳 user_id"""
-    if not raw_token.startswith(TOKEN_PREFIX):
+    if not _is_pat(raw_token):
         return None
 
     token_hash = _hash_token(raw_token)
