@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react"
-import { clearStoredSession, getFreshToken, getStoredSession } from "./lib/auth"
+import { clearStoredSession, getStoredSession } from "./lib/auth"
 
-const API = process.env.PLASMO_PUBLIC_API_BASE_URL!
 const WEB = process.env.PLASMO_PUBLIC_WEB_URL!
 const GREEN = "#4effc8"
 
@@ -30,6 +29,8 @@ const STAGE_PROGRESS: Record<string, number> = {
   done: 100,
 }
 
+const PROGRESS_STAGES = new Set(["fetching_info", "fetching_content", "analyzing", "embedding"])
+
 function useTheme() {
   const [dark, setDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -43,11 +44,24 @@ function useTheme() {
   return dark
 }
 
+type SaveState = {
+  saveStage: Stage
+  savedItem: any | null
+  saveUrl: string | null
+  saveTitle: string | null
+}
+
+const STORAGE_KEYS = ["saveStage", "savedItem", "saveUrl", "saveTitle"] as const
+
 export default function Popup() {
   const dark = useTheme()
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
-  const [stage, setStage] = useState<Stage>("idle")
-  const [savedItem, setSavedItem] = useState<any>(null)
+  const [saveState, setSaveState] = useState<SaveState>({
+    saveStage: "idle",
+    savedItem: null,
+    saveUrl: null,
+    saveTitle: null,
+  })
   const [currentTab, setCurrentTab] = useState<{ url: string; title: string } | null>(null)
 
   const bg = dark ? "#0a0a0a" : "#ffffff"
@@ -56,7 +70,6 @@ export default function Popup() {
   const subFg = dark ? "#555" : "#888"
   const borderColor = dark ? "#222" : "#e0e0e0"
 
-  // 消除外框：讓 body 背景色跟 popup 一致
   useEffect(() => {
     document.body.style.margin = "0"
     document.body.style.padding = "0"
@@ -67,12 +80,34 @@ export default function Popup() {
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
       if (tab?.url && tab?.title) setCurrentTab({ url: tab.url, title: tab.title })
     })
+
     getStoredSession().then((s) => setLoggedIn(!!s))
 
-    // token-sync.ts 把 JWT 同步進 chrome.storage 後，自動更新登入狀態
+    // 讀取持久化的儲存進度
+    chrome.storage.local.get([...STORAGE_KEYS], (result) => {
+      if (result.saveStage && result.saveStage !== "idle") {
+        setSaveState({
+          saveStage: result.saveStage as Stage,
+          savedItem: result.savedItem ?? null,
+          saveUrl: result.saveUrl ?? null,
+          saveTitle: result.saveTitle ?? null,
+        })
+      }
+    })
+
     function onStorageChanged(changes: Record<string, chrome.storage.StorageChange>) {
       if ("pat" in changes || "access_token" in changes) {
         getStoredSession().then((s) => setLoggedIn(!!s))
+      }
+      if (STORAGE_KEYS.some((k) => k in changes)) {
+        chrome.storage.local.get([...STORAGE_KEYS], (result) => {
+          setSaveState({
+            saveStage: (result.saveStage as Stage) ?? "idle",
+            savedItem: result.savedItem ?? null,
+            saveUrl: result.saveUrl ?? null,
+            saveTitle: result.saveTitle ?? null,
+          })
+        })
       }
     }
     chrome.storage.onChanged.addListener(onStorageChanged)
@@ -81,60 +116,16 @@ export default function Popup() {
 
   async function handleSave() {
     if (!currentTab) return
-    const token = await getFreshToken()
-    if (!token) { setStage("auth_expired"); return }
-
-    setStage("fetching_info")
-    setSavedItem(null)
-
-    try {
-      const createResp = await fetch(`${API}/items/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ url: currentTab.url }),
-      })
-      if (createResp.status === 401) { setStage("auth_expired"); return }
-      if (!createResp.ok) { setStage("failed"); return }
-      const item = await createResp.json()
-      await streamProgress(item.id, token)
-    } catch {
-      setStage("failed")
-    }
+    chrome.runtime.sendMessage({
+      type: "SAVE_ITEM",
+      url: currentTab.url,
+      title: currentTab.title,
+    })
   }
 
-  async function streamProgress(itemId: string, token: string) {
-    const resp = await fetch(`${API}/items/${itemId}/stream`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!resp.ok || !resp.body) { setStage("failed"); return }
-
-    const reader = resp.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() ?? ""
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue
-          try {
-            const data = JSON.parse(line.slice(6))
-            if (data.status === "done") {
-              setSavedItem(data.item); setStage("done"); reader.cancel(); return
-            } else if (data.status === "progress") {
-              setStage(data.stage as Stage)
-            } else if (data.status === "failed" || data.status === "timeout") {
-              setStage("failed"); reader.cancel(); return
-            }
-          } catch {}
-        }
-      }
-    } catch {
-      setStage("failed")
-    }
+  async function handleDismiss() {
+    await chrome.storage.local.remove([...STORAGE_KEYS])
+    setSaveState({ saveStage: "idle", savedItem: null, saveUrl: null, saveTitle: null })
   }
 
   function openGarner(path = "") {
@@ -164,6 +155,8 @@ export default function Popup() {
     width: "100%",
   }
 
+  const { saveStage: stage, savedItem, saveTitle } = saveState
+
   function renderContent() {
     if (loggedIn === null) {
       return <p style={{ color: subFg, fontSize: 13, margin: 0 }}>載入中…</p>
@@ -185,8 +178,6 @@ export default function Popup() {
           <button style={primaryBtn} onClick={async () => {
             await clearStoredSession()
             setLoggedIn(false)
-            setStage("idle")
-            openGarner("/app/connected")
           }}>重新登入</button>
         </div>
       )
@@ -233,7 +224,7 @@ export default function Popup() {
             </div>
           )}
           <button style={primaryBtn} onClick={() => openGarner(`/app/item/${savedItem.id}`)}>在 Garner 查看 →</button>
-          <button style={secondaryBtn} onClick={() => { setStage("idle"); setSavedItem(null) }}>再存一頁</button>
+          <button style={secondaryBtn} onClick={handleDismiss}>再存一頁</button>
         </div>
       )
     }
@@ -242,14 +233,22 @@ export default function Popup() {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <p style={{ color: "#f87171", fontSize: 13, margin: "0 0 4px", textAlign: "center" }}>處理失敗，請稍後再試</p>
-          <button style={primaryBtn} onClick={() => setStage("idle")}>重試</button>
+          <button style={primaryBtn} onClick={handleDismiss}>重試</button>
         </div>
       )
     }
 
+    // 進度中狀態（fetching_info / fetching_content / analyzing / embedding）
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ backgroundColor: cardBg, borderRadius: 4, height: 3, overflow: "hidden", marginBottom: 2 }}>
+        {saveTitle && (
+          <div style={{ backgroundColor: cardBg, borderRadius: 8, padding: "8px 12px", marginBottom: 2 }}>
+            <p style={{ margin: 0, fontSize: 12, color: fg, lineHeight: 1.4 }}>
+              {saveTitle.length > 52 ? saveTitle.slice(0, 49) + "…" : saveTitle}
+            </p>
+          </div>
+        )}
+        <div style={{ backgroundColor: cardBg, borderRadius: 4, height: 3, overflow: "hidden" }}>
           <div style={{
             backgroundColor: GREEN, height: "100%", borderRadius: 4,
             transition: "width 0.6s ease", width: `${STAGE_PROGRESS[stage] ?? 10}%`,
@@ -258,6 +257,7 @@ export default function Popup() {
         <p style={{ color: subFg, fontSize: 12, margin: 0, textAlign: "center" }}>
           {STAGE_LABEL[stage] ?? "處理中…"}
         </p>
+        <button style={secondaryBtn} onClick={handleDismiss}>取消</button>
       </div>
     )
   }
@@ -276,6 +276,13 @@ export default function Popup() {
         <span style={{ fontSize: 17, fontWeight: 700, color: GREEN, letterSpacing: "-0.3px" }}>
           Garner ✦
         </span>
+        {PROGRESS_STAGES.has(stage) && (
+          <span style={{
+            marginLeft: "auto", fontSize: 10, color: GREEN,
+            border: `1px solid ${GREEN}`, borderRadius: 10,
+            padding: "1px 7px", letterSpacing: "0.3px",
+          }}>處理中</span>
+        )}
       </div>
       {renderContent()}
     </div>
