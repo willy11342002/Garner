@@ -4,6 +4,8 @@ export interface User {
   username: string
   avatar_url: string | null
   allow_public_chain: boolean
+  plan?: 'free' | 'pro'
+  plan_expires_at?: string | null
 }
 
 export interface Item {

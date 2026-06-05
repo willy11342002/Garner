@@ -17,6 +17,7 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   function startPolling() {
+    if (!import.meta.client) return
     fetch()
     pollTimer = setInterval(fetch, 60_000)
   }
