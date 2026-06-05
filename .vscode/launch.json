@@ -22,12 +22,22 @@
       "cwd": "${workspaceFolder}/apps/web",
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Extension (Plasmo)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "cwd": "${workspaceFolder}/apps/extension",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
     }
   ],
   "compounds": [
     {
       "name": "Full Stack",
-      "configurations": ["API (FastAPI)", "Web (Nuxt)"],
+      "configurations": ["API (FastAPI)", "Web (Nuxt)", "Extension (Plasmo)"],
       "stopAll": true
     }
   ]
