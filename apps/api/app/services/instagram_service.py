@@ -100,7 +100,7 @@ def _fetch_post_instaloader(url: str, cookies_content: str | None) -> dict:
             for node in post.get_sidecar_nodes():
                 if node.is_video:
                     video_urls.append(node.video_url)
-                    video_durations.append(int(node.video_duration or 0))
+                    video_durations.append(int(getattr(node, "video_duration", None) or 0))
                 else:
                     image_urls.append(node.display_url)
         elif post.is_video:
