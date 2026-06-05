@@ -39,7 +39,7 @@ garner/
 | 認證 | Supabase Auth（Google / GitHub SSO）|
 | AI | OpenRouter → Claude（摘要）+ OpenAI text-embedding-3-small（1536d）|
 | Object Storage | Cloudflare R2（縮圖快取）|
-| 付費 | Stripe |
+| 付費 | Lemon Squeezy |
 | Extension | Plasmo（Manifest V3）|
 | 部署 | Vercel（前端）/ Railway 或 Fly.io（後端）|
 | 監控 | Sentry + PostHog |
