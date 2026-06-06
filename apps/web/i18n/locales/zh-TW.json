@@ -204,7 +204,7 @@
       "tag": "每月 20 筆，開始建立你的第二大腦",
       "current_plan": "目前方案",
       "feat_save": "每月 20 筆存入（影片 ≤ 10 分鐘）+ AI 自動摘要標籤",
-      "feat_chat": "Chat：10 則訊息 / 天",
+      "feat_chat": "Chat：50 則 / 月",
       "feat_relations": "Surprise 意外發現 + 連鎖探索（10 次 / 月）",
       "feat_browse": "瀏覽公開集合"
     },
@@ -214,10 +214,10 @@
       "per_year": "/ 年（約 $9.6/月）",
       "upgrade": "升級到 Pro →",
       "feat_save": "每月 100 筆存入（影片 ≤ 20 分鐘）+ AI 自動摘要標籤",
-      "feat_unlimited_chat": "Chat 對話：無限",
+      "feat_unlimited_chat": "Chat：600 則 / 月（20 則 / 天）",
       "feat_relations": "Surprise 意外發現 + 連鎖探索（無限）",
       "feat_browse": "瀏覽公開集合",
-      "feat_search": "進階自然語言搜尋（5 個維度）",
+      "feat_search": "進階自然語言搜尋（語意比對）",
       "feat_fork": "Fork 公開集合",
       "feat_support": "優先客服"
     },

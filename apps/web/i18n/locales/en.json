@@ -204,7 +204,7 @@
       "tag": "20 saves a month to start building your second brain",
       "current_plan": "Current plan",
       "feat_save": "20 saves / month (videos ≤ 10 min) + AI summaries & tagging",
-      "feat_chat": "Chat: 10 messages / day",
+      "feat_chat": "Chat: 50 messages / month",
       "feat_relations": "Surprise discoveries + Chain Explorer (10 hops / month)",
       "feat_browse": "Browse public collections"
     },
@@ -214,10 +214,10 @@
       "per_year": "/ yr (≈ $9.6/mo)",
       "upgrade": "Upgrade to Pro →",
       "feat_save": "100 saves / month (videos ≤ 20 min) + AI summaries & tagging",
-      "feat_unlimited_chat": "Chat: unlimited",
+      "feat_unlimited_chat": "Chat: 600 messages / month (20 / day)",
       "feat_relations": "Surprise discoveries + Chain Explorer (unlimited)",
       "feat_browse": "Browse public collections",
-      "feat_search": "Advanced natural language search (5 dimensions)",
+      "feat_search": "Advanced natural language search (semantic matching)",
       "feat_fork": "Fork public collections",
       "feat_support": "Priority support"
     },
