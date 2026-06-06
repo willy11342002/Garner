@@ -33,20 +33,21 @@ from app.models.plan_feature_limit import PlanFeatureLimit
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user_feature_usage import UserFeatureUsage
 from app.models.user_item import UserItem
+from app.models.plan import Plan
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
 async def _get_plan(db: AsyncSession, user_id: UUID) -> str:
-    """'pro' if user has an active/trialing subscription, 'free' otherwise."""
     result = await db.execute(
-        select(Subscription).where(
+        select(Plan.name).join(Subscription, Plan.id == Subscription.plan_id).where(
             Subscription.user_id == user_id,
             Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
         )
     )
-    return "pro" if result.scalar_one_or_none() else "free"
+    plan_name = result.scalar_one_or_none()
+    return plan_name if plan_name else "free"
 
 
 async def _get_limit(db: AsyncSession, plan: str, feature: str) -> int | None:
