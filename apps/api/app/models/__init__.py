@@ -1,5 +1,7 @@
 from app.models.app_setting import AppSetting
 from app.models.personal_access_token import PersonalAccessToken
+from app.models.plan_feature_limit import PlanFeatureLimit
+from app.models.user_feature_usage import UserFeatureUsage
 from app.models.notification import Notification, NotificationType
 from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
 from app.models.content_chunk import ContentChunk
@@ -40,4 +42,6 @@ __all__ = [
     "Notification",
     "NotificationType",
     "PersonalAccessToken",
+    "PlanFeatureLimit",
+    "UserFeatureUsage",
 ]

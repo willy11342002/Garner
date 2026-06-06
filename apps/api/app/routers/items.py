@@ -9,6 +9,7 @@ from app.core import events
 from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
+from app.quota_depends import SaveQuota
 from app.schemas.item import ItemCreate, ItemPendingReviewRead, ItemRead, ItemSummaryUpdate, ItemUpdate
 from app.schemas.tag import TagBulkConfirm, TagCreate, TagRead, TagSingleConfirm
 from app.services import item_service
@@ -27,6 +28,7 @@ async def create_item(
     background_tasks: BackgroundTasks,
     current_user: CurrentUser,
     db: DbSession,
+    _quota: SaveQuota,
 ):
     return await item_service.create_item(db, UUID(current_user["sub"]), data, background_tasks)
 

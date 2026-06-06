@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import CurrentUser, DbSession
+from app.quota_depends import ChatQuota
 from app.crud import chat as crud_chat
 from app.schemas.chat import (
     ChatFolderCreate,
@@ -94,6 +95,7 @@ async def send_message(
     current_user: CurrentUser,
     db: DbSession,
     background_tasks: BackgroundTasks,
+    _quota: ChatQuota,
 ):
     if not body.content.strip():
         raise HTTPException(status_code=422, detail="content cannot be empty")

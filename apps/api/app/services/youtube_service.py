@@ -322,6 +322,7 @@ async def fetch_content(
     user_id: UUID,
     url: str,
     stage_cb=None,
+    max_duration_sec: int = 1200,
 ) -> tuple[str | None, int | None, int | None, str | None, str | None]:
     """Fetch YouTube video content for summarisation.
 
@@ -340,7 +341,7 @@ async def fetch_content(
     if stage_cb: stage_cb("fetching_info")
     title, duration, description = await _get_video_metadata(video_id)
 
-    if duration is None or duration > VideoTooLongError.MAX_DURATION_SEC:
+    if duration is None or duration > max_duration_sec:
         raise VideoTooLongError(duration)
 
     cookies = await _get_cookies_content(db)

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.models.content_object import ContentObject, SourceType, detect_source_type
+from app.quota_depends import get_video_max_sec
 from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemSummaryUpdate, ItemUpdate
 from app.services.instagram_service import normalize_instagram_url
 from app.services.youtube_service import normalize_youtube_url
@@ -47,11 +48,13 @@ def _item_to_read(user_item, current_user_id: UUID | None = None, tags=None) -> 
     )
 
 
-async def _run_process_item(content_id: UUID, user_id: UUID, user_item_id: UUID, url: str) -> None:
+async def _run_process_item(
+    content_id: UUID, user_id: UUID, user_item_id: UUID, url: str, max_video_sec: int = 1200
+) -> None:
     from app.core import events
     async with AsyncSessionLocal() as db:
         try:
-            await process_item(db, content_id, user_id, user_item_id, url)
+            await process_item(db, content_id, user_id, user_item_id, url, max_video_sec)
         except Exception:
             logger.exception(
                 "process_item failed: content_id=%s user_id=%s user_item_id=%s",
@@ -89,6 +92,8 @@ async def create_item(
 
     url = normalize_youtube_url(normalize_instagram_url(data.url))
 
+    max_video_sec = await get_video_max_sec(db, user_id)
+
     result = await db.execute(select(ContentObject).where(ContentObject.url == url))
     content = result.scalar_one_or_none()
 
@@ -113,7 +118,7 @@ async def create_item(
             await db.refresh(existing)
             await db.refresh(existing.content)
         if content.parsed_at is None:
-            background_tasks.add_task(_run_process_item, content.id, user_id, existing.id, url)
+            background_tasks.add_task(_run_process_item, content.id, user_id, existing.id, url, max_video_sec)
         return _item_to_read(existing, user_id)
 
     user_item = await crud_items.create(db, user_id, content)
@@ -122,7 +127,7 @@ async def create_item(
     await db.refresh(user_item.content)
 
     if is_new_content or content.parsed_at is None:
-        background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, url)
+        background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, url, max_video_sec)
 
     return _item_to_read(user_item, user_id)
 

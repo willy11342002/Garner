@@ -36,6 +36,7 @@ class ContentProvider(ABC):
         url: str,
         content: ContentObject,
         stage_cb: Callable[[str], None] | None = None,
+        max_duration_sec: int = 1200,
     ) -> FetchResult: ...
 
     async def fetch_thumbnail(self, content_id: str, url: str) -> str | None:

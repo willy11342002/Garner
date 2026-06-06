@@ -32,6 +32,7 @@ class DefaultProvider(ContentProvider):
         url: str,
         content: ContentObject,
         stage_cb=None,
+        max_duration_sec: int = 1200,
     ) -> FetchResult:
         if stage_cb:
             stage_cb("fetching_content")

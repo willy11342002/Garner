@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 
 from app.dependencies import CurrentUser, DbSession
+from app.quota_depends import ExploreQuota
 from app.schemas.explore import (
     ChainFullAnalysis,
     ChainFullRequest,
@@ -48,7 +49,7 @@ async def focus_query(body: FocusQuery, current_user: CurrentUser, db: DbSession
 
 
 @router.get("/surprise", response_model=SurpriseResult)
-async def get_surprise(current_user: CurrentUser, db: DbSession):
+async def get_surprise(current_user: CurrentUser, db: DbSession, _quota: ExploreQuota):
     return await explore_service.get_surprise(db, UUID(current_user["sub"]))
 
 
@@ -75,7 +76,7 @@ async def chain_next(
 
 
 @router.post("/chain/hop", response_model=ChainHopAnalysis)
-async def chain_hop(body: ChainHopRequest, current_user: CurrentUser, db: DbSession):
+async def chain_hop(body: ChainHopRequest, current_user: CurrentUser, db: DbSession, _quota: ExploreQuota):
     try:
         return await explore_service.analyze_hop(
             db, UUID(current_user["sub"]), body.from_item_id, body.to_item_id
@@ -85,7 +86,7 @@ async def chain_hop(body: ChainHopRequest, current_user: CurrentUser, db: DbSess
 
 
 @router.post("/chain/full", response_model=ChainFullAnalysis)
-async def chain_full(body: ChainFullRequest, current_user: CurrentUser, db: DbSession):
+async def chain_full(body: ChainFullRequest, current_user: CurrentUser, db: DbSession, _quota: ExploreQuota):
     if len(body.item_ids) < 2:
         raise HTTPException(status_code=422, detail="需要至少 2 個 item")
     try:

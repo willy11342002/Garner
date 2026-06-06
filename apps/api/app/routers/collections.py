@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.crud import collections as crud_collections
 from app.crud import items as crud_items
 from app.dependencies import CurrentUser, DbSession
+from app.quota_depends import ForkAccess
 from app.models.content_object import ContentObject
 from app.schemas.collection import (
     CollectionCreate,
@@ -125,7 +126,7 @@ async def remove_item_from_collection(
 
 @router.post("/{collection_id}/fork", response_model=CollectionRead, status_code=status.HTTP_201_CREATED)
 async def fork_collection(
-    collection_id: UUID, data: CollectionForkCreate, current_user: CurrentUser, db: DbSession
+    collection_id: UUID, data: CollectionForkCreate, current_user: CurrentUser, db: DbSession, _access: ForkAccess
 ):
     source = await crud_collections.get_by_id_with_items(db, collection_id)
     if source is None:

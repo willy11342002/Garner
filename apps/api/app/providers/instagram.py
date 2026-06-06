@@ -18,6 +18,7 @@ class InstagramProvider(ContentProvider):
         url: str,
         content: ContentObject,
         stage_cb=None,
+        max_duration_sec: int = 1200,
     ) -> FetchResult:
         from app.services import instagram_service
 

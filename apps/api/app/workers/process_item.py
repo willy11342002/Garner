@@ -27,15 +27,16 @@ async def process_item(
     user_id: UUID,
     user_item_id: UUID,
     url: str,
+    max_video_sec: int = 1200,
 ) -> None:
     content = await _load_content(db, content_id, user_item_id)
     if content is None:
         return
 
     try:
-        fetch_result = await _fetch_content(db, user_id, url, content, user_item_id)
-    except VideoTooLongError as exc:  # noqa: F821 — imported below
-        await _cancel_video_too_long(db, user_id, user_item_id, content, url, exc.duration_sec)
+        fetch_result = await _fetch_content(db, user_id, url, content, user_item_id, max_video_sec)
+    except VideoTooLongError as exc:
+        await _cancel_video_too_long(db, user_id, user_item_id, content, url, exc.duration_sec, max_video_sec)
         return
 
     analysis    = await _analyze_content(fetch_result.raw_content, db, user_id, user_item_id)
@@ -70,6 +71,7 @@ async def _fetch_content(
     url: str,
     content: ContentObject,
     user_item_id: UUID,
+    max_video_sec: int = 1200,
 ) -> FetchResult:
     """Stage 1–2: fetch raw text from the source URL via the matching provider.
 
@@ -84,6 +86,7 @@ async def _fetch_content(
     fetch_result = await provider.fetch(
         db, user_id, url, content,
         stage_cb=lambda stage: events.emit(str(user_item_id), stage),
+        max_duration_sec=max_video_sec,
     )
 
     if not fetch_result.raw_content or not fetch_result.raw_content.strip():
@@ -225,6 +228,7 @@ async def _cancel_video_too_long(
     content: ContentObject,
     url: str,
     duration_sec: int | None,
+    max_video_sec: int = 1200,
 ) -> None:
     """Soft-delete the UserItem and notify the user when a video is too long or duration is unknown."""
     from app.models.user_item import UserItem
@@ -235,6 +239,7 @@ async def _cancel_video_too_long(
         user_item.deleted_at = datetime.now(timezone.utc)
 
     item_title = content.title or url
+    max_minutes = max_video_sec // 60
 
     if duration_sec is None:
         notif_title = "無法取得影片時長"
@@ -242,7 +247,7 @@ async def _cancel_video_too_long(
     else:
         minutes = duration_sec // 60
         notif_title = f"影片超過時長限制（{minutes} 分鐘）"
-        notif_body = f"「{item_title}」影片長度超過 20 分鐘，目前僅支援 20 分鐘以內的影片。"
+        notif_body = f"「{item_title}」影片長度超過 {max_minutes} 分鐘，目前方案僅支援 {max_minutes} 分鐘以內的影片。"
 
     await crud_notifications.create(
         db,

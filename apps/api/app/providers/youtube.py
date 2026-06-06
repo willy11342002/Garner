@@ -19,11 +19,12 @@ class YouTubeProvider(ContentProvider):
         url: str,
         content: ContentObject,
         stage_cb=None,
+        max_duration_sec: int = 1200,
     ) -> FetchResult:
         from app.services import youtube_service
 
         raw, whisper_sec, duration, title, ts_str = await youtube_service.fetch_content(
-            db, user_id, url, stage_cb=stage_cb
+            db, user_id, url, stage_cb=stage_cb, max_duration_sec=max_duration_sec
         )
         thumbnail_url = await self.fetch_thumbnail(str(content.id), url)
         ts = TranscriptionSource(ts_str) if ts_str else None

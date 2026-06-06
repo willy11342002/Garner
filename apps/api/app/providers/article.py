@@ -19,6 +19,7 @@ class ArticleProvider(ContentProvider):
         url: str,
         content: ContentObject,
         stage_cb=None,
+        max_duration_sec: int = 1200,
     ) -> FetchResult:
         raw = _extract_text_from_tiptap(content.content_md) if content.content_md else None
         thumbnail_url = await self.fetch_thumbnail(str(content.id), url)
