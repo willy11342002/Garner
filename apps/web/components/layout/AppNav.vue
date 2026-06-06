@@ -28,58 +28,6 @@
         >{{ t('nav.chat') }}</NuxtLink>
       </div>
       <div class="nav__right">
-        <!-- 桌機搜尋 input -->
-        <div class="nav__search" ref="searchEl">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="7"/>
-            <path d="m20 20-3.5-3.5"/>
-          </svg>
-          <input
-            type="text"
-            v-model="searchQuery"
-            :placeholder="t('nav.searchPlaceholder')"
-            @keydown.esc="closeSearch"
-          >
-          <Transition name="search-drop">
-            <div v-if="searchOpen" class="search-drop">
-              <div v-if="searchLoading" class="search-drop__state">
-                <span class="search-drop__spinner"></span>
-                {{ t('nav.searchLoading') }}
-              </div>
-              <template v-else-if="searchResults.length > 0">
-                <button
-                  v-for="item in searchResults.slice(0, 8)"
-                  :key="item.id"
-                  class="search-drop__item"
-                  @click="closeSearch(); openItemModal(item.id)"
-                >
-                  <div class="search-drop__thumb">
-                    <img v-if="item.thumbnail_url" :src="item.thumbnail_url" alt="">
-                    <div v-else class="placeholder placeholder--b">
-                      <div class="placeholder__stripes"></div>
-                    </div>
-                  </div>
-                  <div class="search-drop__info">
-                    <span class="search-drop__title">{{ item.title || item.url }}</span>
-                    <span class="search-drop__meta mono">{{ searchSourceLabel(item.url) }}</span>
-                  </div>
-                </button>
-              </template>
-              <div v-else-if="searchDone" class="search-drop__state">
-                {{ t('nav.searchEmpty') }}
-              </div>
-            </div>
-          </Transition>
-        </div>
-
-        <!-- 手機版搜尋 icon -->
-        <button class="nav__search-btn" @click="mobileSearchOpen = true">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="7"/>
-            <path d="m20 20-3.5-3.5"/>
-          </svg>
-        </button>
-
         <!-- 新增 -->
         <button class="nav__add" @click="addOpen = true">
           +
@@ -232,53 +180,7 @@
 
     <!-- Backdrops -->
     <div v-if="menuOpen" class="nav__backdrop" @click="menuOpen = false" />
-    <div v-if="searchOpen" class="nav__backdrop" @click="closeSearch" />
     <div v-if="notifOpen" class="nav__backdrop" @click="notifOpen = false" />
-
-    <!-- 手機版搜尋 modal -->
-    <Transition name="modal">
-      <div v-if="mobileSearchOpen" class="add-overlay" @click.self="closeMobileSearch">
-        <div class="add-modal search-modal">
-          <div class="search-modal__input-row">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-modal__icon">
-              <circle cx="11" cy="11" r="7"/>
-              <path d="m20 20-3.5-3.5"/>
-            </svg>
-            <input
-              ref="mobileSearchInput"
-              v-model="searchQuery"
-              class="add-modal__input search-modal__input"
-              :placeholder="t('nav.searchPlaceholder')"
-              @keydown.esc="closeMobileSearch"
-            />
-          </div>
-          <div v-if="searchLoading" class="search-modal__state">
-            <span class="add-modal__step-spinner"></span>
-            {{ t('nav.searchLoading') }}
-          </div>
-          <template v-else-if="searchResults.length > 0">
-            <button
-              v-for="item in searchResults.slice(0, 8)"
-              :key="item.id"
-              class="search-modal__item"
-              @click="closeMobileSearch(); openItemModal(item.id)"
-            >
-              <div class="search-modal__thumb">
-                <img v-if="item.thumbnail_url" :src="item.thumbnail_url" alt="">
-                <div v-else class="placeholder placeholder--b"><div class="placeholder__stripes"></div></div>
-              </div>
-              <div class="search-modal__info">
-                <span class="search-modal__title">{{ item.title || item.url }}</span>
-                <span class="search-modal__meta mono">{{ searchSourceLabel(item.url) }}</span>
-              </div>
-            </button>
-          </template>
-          <div v-else-if="searchDone" class="search-modal__state">
-            {{ t('nav.searchEmpty') }}
-          </div>
-        </div>
-      </div>
-    </Transition>
 
     <!-- 新增 URL modal -->
     <Transition name="modal">
@@ -335,7 +237,7 @@
       </div>
     </Transition>
 
-    <!-- Item detail modal (搜尋 + 通知共用) -->
+    <!-- Item detail modal (通知共用) -->
     <ItemDetailModal
       :item-id="activeItemId"
       @close="closeItemModal()"
@@ -345,7 +247,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Item, UsageSummary } from '~/types/api'
+import type { UsageSummary } from '~/types/api'
 
 const { t, locale, setLocale } = useI18n()
 const route = useRoute()
@@ -356,7 +258,6 @@ const client = useSupabaseClient()
 const authStore = useAuthStore()
 const itemStore = useItemStore()
 const notifStore = useNotificationStore()
-const { searchItems } = useSearch()
 const apiFetch = useApiFetch()
 
 // 通知
@@ -375,55 +276,6 @@ function formatNotifTime(isoStr: string) {
 const menuOpen = ref(false)
 const menuPanel = ref<'main' | 'appearance' | 'language'>('main')
 
-// 搜尋
-const searchQuery = ref('')
-const searchResults = ref<Item[]>([])
-const searchLoading = ref(false)
-const searchDone = ref(false)
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-const searchOpen = computed(() => searchQuery.value.trim().length > 0)
-
-watch(searchQuery, (q) => {
-  if (searchTimer) clearTimeout(searchTimer)
-  if (!q.trim()) {
-    searchResults.value = []
-    searchLoading.value = false
-    searchDone.value = false
-    return
-  }
-  searchLoading.value = true
-  searchDone.value = false
-  searchTimer = setTimeout(async () => {
-    try {
-      searchResults.value = await searchItems(q)
-    } finally {
-      searchLoading.value = false
-      searchDone.value = true
-    }
-  }, 400)
-})
-
-function closeSearch() {
-  searchQuery.value = ''
-  searchResults.value = []
-  searchDone.value = false
-  searchLoading.value = false
-}
-
-// 手機版搜尋 modal
-const mobileSearchOpen = ref(false)
-const mobileSearchInput = ref<HTMLInputElement | null>(null)
-
-function closeMobileSearch() {
-  mobileSearchOpen.value = false
-  closeSearch()
-}
-
-watch(mobileSearchOpen, (val) => {
-  if (val) nextTick(() => mobileSearchInput.value?.focus())
-})
-
 // Item detail modal
 const { activeItemId, open: openItemModal, close: closeItemModal } = useItemModal()
 
@@ -438,12 +290,6 @@ function openItemFromNotif(n: { id: string; item_id?: string | null }) {
   notifStore.markRead([n.id])
   notifOpen.value = false
   if (n.item_id) openItemModal(n.item_id)
-}
-
-function searchSourceLabel(url: string) {
-  if (/youtu/.test(url)) return 'YouTube'
-  if (/instagram\.com/.test(url)) return 'Instagram'
-  return 'Article'
 }
 
 // 新增 modal
@@ -572,8 +418,6 @@ watch(() => route.path, () => {
   menuOpen.value = false
   notifOpen.value = false
   closeItemModal()
-  closeSearch()
-  mobileSearchOpen.value = false
 })
 
 watch(supabaseUser, (user) => {

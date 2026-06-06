@@ -30,7 +30,12 @@ def _to_item_read(ui: UserItem) -> ItemRead:
     )
 
 
-async def _text_search(db: AsyncSession, user_id: UUID, query: str) -> list[UserItem]:
+async def text_search(db: AsyncSession, user_id: UUID, query: str) -> list[ItemRead]:
+    hits = await _text_search_raw(db, user_id, query)
+    return [_to_item_read(ui) for ui in hits]
+
+
+async def _text_search_raw(db: AsyncSession, user_id: UUID, query: str) -> list[UserItem]:
     pattern = f"%{query}%"
     result = await db.execute(
         select(UserItem)
@@ -52,7 +57,7 @@ async def _text_search(db: AsyncSession, user_id: UUID, query: str) -> list[User
     return list(result.scalars().all())
 
 
-async def _semantic_search(db: AsyncSession, user_id: UUID, query: str) -> list[UserItem]:
+async def semantic_search(db: AsyncSession, user_id: UUID, query: str) -> list[ItemRead]:
     query_embedding = await ai_service.embed(query)
     result = await db.execute(
         select(UserItem)
@@ -66,11 +71,4 @@ async def _semantic_search(db: AsyncSession, user_id: UUID, query: str) -> list[
         .order_by(ContentObject.embedding.cosine_distance(query_embedding))
         .limit(20)
     )
-    return list(result.scalars().all())
-
-
-async def search(db: AsyncSession, user_id: UUID, query: str) -> list[ItemRead]:
-    hits = await _text_search(db, user_id, query)
-    if not hits:
-        hits = await _semantic_search(db, user_id, query)
-    return [_to_item_read(ui) for ui in hits]
+    return [_to_item_read(ui) for ui in result.scalars().all()]

@@ -119,7 +119,8 @@ onMounted(async () => {
         :item-tags-map="itemTagsMap"
         @open-share="openShareModal"
       />
-<HomeMapView v-else-if="currentView === 'map'" />
+      <HomeMapView v-else-if="currentView === 'map'" />
+      <HomeSemanticSearchView v-else-if="currentView === 'semantic'" />
     </template>
   </main>
 

@@ -11,5 +11,10 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[ItemRead])
-async def search(q: str, current_user: CurrentUser, db: DbSession, _access: SearchAccess):
-    return await search_service.search(db, UUID(current_user["sub"]), q)
+async def keyword_search(q: str, current_user: CurrentUser, db: DbSession):
+    return await search_service.text_search(db, UUID(current_user["sub"]), q)
+
+
+@router.get("/semantic", response_model=list[ItemRead])
+async def semantic_search(q: str, current_user: CurrentUser, db: DbSession, _access: SearchAccess):
+    return await search_service.semantic_search(db, UUID(current_user["sub"]), q)

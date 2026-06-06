@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import defer, joinedload, selectinload
 
 from app.models.content_object import ContentObject
 from app.models.item_tag import ItemTag
@@ -20,8 +20,15 @@ async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
             UserItem.status == UserItemStatus.active,
         )
         .options(
-            joinedload(UserItem.content),
-            selectinload(UserItem.item_tags).joinedload(ItemTag.tag),
+            # defer heavy columns not needed for list rendering
+            joinedload(UserItem.content).options(
+                defer(ContentObject.embedding),   # 1536-dim vector, ~6 KB per row
+                defer(ContentObject.content_md),  # full article markdown
+            ),
+            # filter confirmed-only at DB level to avoid loading + Python-filtering all tags
+            selectinload(
+                UserItem.item_tags.and_(ItemTag.confirmed == True)  # noqa: E712
+            ).joinedload(ItemTag.tag),
         )
         .order_by(UserItem.saved_at.desc())
     )

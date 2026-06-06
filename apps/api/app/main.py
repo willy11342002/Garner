@@ -17,9 +17,18 @@ if settings.sentry_dsn:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from sqlalchemy import text
+    from app.core.database import engine
     from app.services.ai_service import load_model_configs
     from app.core.supabase import get_supabase
+
     await load_model_configs()
+
+    # Pre-warm the DB connection pool so the first real request
+    # doesn't pay the TCP+SSL handshake cost (~300ms).
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+
     try:
         supabase = await get_supabase()
         await supabase.storage.create_bucket("avatars", options={"public": True})

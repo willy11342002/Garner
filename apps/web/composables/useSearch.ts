@@ -8,5 +8,10 @@ export function useSearch() {
     return apiFetch('/search/', { query: { q } })
   }
 
-  return { searchItems }
+  async function searchSemantic(q: string): Promise<Item[]> {
+    if (!q.trim()) return []
+    return apiFetch('/search/semantic', { query: { q } })
+  }
+
+  return { searchItems, searchSemantic }
 }

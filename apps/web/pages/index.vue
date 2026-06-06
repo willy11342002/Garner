@@ -33,11 +33,18 @@
       </div>
     </section>
 
-    <div class="landing__bottom">
-      <NuxtLink to="/pricing" class="mono" style="color:var(--text-mid); font-size:13px;">{{ t('landing.pricing_link') }}</NuxtLink>
-      <span style="color:var(--text-dim); font-size:13px; margin: 0 10px;">·</span>
-      <NuxtLink to="/privacy" class="mono" style="color:var(--text-mid); font-size:13px;">{{ t('landing.privacy_link') }}</NuxtLink>
-    </div>
+    <footer class="landing__bottom">
+      <div class="landing__footer-links">
+        <NuxtLink to="/pricing" class="mono footer-link">{{ t('landing.pricing_link') }}</NuxtLink>
+        <span class="footer-sep">·</span>
+        <NuxtLink to="/privacy" class="mono footer-link">{{ t('landing.privacy_link') }}</NuxtLink>
+        <span class="footer-sep">·</span>
+        <NuxtLink to="/terms" class="mono footer-link">{{ t('landing.terms_link') }}</NuxtLink>
+        <span class="footer-sep">·</span>
+        <a href="mailto:willy11342002@gmail.com" class="mono footer-link">{{ t('landing.contact_link') }}</a>
+      </div>
+      <p class="landing__copyright">© {{ year }} Garner</p>
+    </footer>
   </main>
 </template>
 
@@ -45,6 +52,8 @@
 const { t } = useI18n()
 
 useHead({ title: t('landing.page_title') })
+
+const year = new Date().getFullYear()
 
 const user = useSupabaseUser()
 if (user.value) {
@@ -100,6 +109,10 @@ watch(user, (u) => {
 .feat-card p { font-size: 13px; color: var(--text-mid); line-height: 1.6; margin: 0; }
 
 .landing__bottom { text-align: center; }
+.landing__footer-links { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; }
+.footer-link { color: var(--text-mid); font-size: 13px; }
+.footer-sep { color: var(--text-dim); font-size: 13px; margin: 0 10px; }
+.landing__copyright { color: var(--text-dim); font-size: 12px; margin-top: 10px; }
 
 @media (max-width: 640px) {
   .landing { padding: 48px 20px 64px; }
