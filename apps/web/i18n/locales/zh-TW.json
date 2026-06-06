@@ -195,7 +195,7 @@
     "page_title": "Garner — 升級",
     "eyebrow": "UPGRADE YOUR GARNER",
     "hero_title": "讓知識庫真正發揮魔法",
-    "hero_sub": "免費版已經幫你建立了基礎。升級後，無限存入、無限查詢與完整 AI 關聯讓它真正活起來。",
+    "hero_sub": "免費版已經幫你建立了基礎。升級後，每月 100 筆存入、無限 Chat 與完整 AI 關聯讓它真正活起來。",
     "billing_monthly": "月付",
     "billing_yearly": "年付",
     "save_badge": "省 20%",
@@ -213,7 +213,7 @@
       "tag": "讓 AI 真正讀懂你的知識庫",
       "per_year": "/ 年（約 $9.6/月）",
       "upgrade": "升級到 Pro →",
-      "feat_save": "無限存入（影片 ≤ 20 分鐘）+ AI 自動摘要標籤",
+      "feat_save": "每月 100 筆存入（影片 ≤ 20 分鐘）+ AI 自動摘要標籤",
       "feat_unlimited_chat": "Chat 對話：無限",
       "feat_relations": "Surprise 意外發現 + 連鎖探索（無限）",
       "feat_browse": "瀏覽公開集合",
@@ -320,7 +320,7 @@
     "manage_btn": "管理帳單",
     "managing": "前往中...",
     "upgrade_title": "升級到 Pro",
-    "upgrade_desc": "解鎖無限存入、無限 AI 查詢、完整語意關聯與知識庫匯出。",
+    "upgrade_desc": "解鎖每月 100 筆存入、無限 Chat 與完整 AI 關聯。",
     "upgrade_btn": "查看升級方案 →",
     "portal_error": "無法開啟帳單管理，請稍後再試"
   }

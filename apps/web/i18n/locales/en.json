@@ -195,7 +195,7 @@
     "page_title": "Garner — Upgrade",
     "eyebrow": "UPGRADE YOUR GARNER",
     "hero_title": "Let your knowledge base work its magic",
-    "hero_sub": "The free plan already laid your foundation. Upgrade for unlimited saves, unlimited queries, and full AI connections that bring it to life.",
+    "hero_sub": "The free plan already laid your foundation. Upgrade for 100 saves a month, unlimited Chat, and full AI connections that bring it to life.",
     "billing_monthly": "Monthly",
     "billing_yearly": "Yearly",
     "save_badge": "Save 20%",
@@ -213,7 +213,7 @@
       "tag": "Let AI truly understand your knowledge base",
       "per_year": "/ yr (≈ $9.6/mo)",
       "upgrade": "Upgrade to Pro →",
-      "feat_save": "Unlimited saves (videos ≤ 20 min) + AI summaries & tagging",
+      "feat_save": "100 saves / month (videos ≤ 20 min) + AI summaries & tagging",
       "feat_unlimited_chat": "Chat: unlimited",
       "feat_relations": "Surprise discoveries + Chain Explorer (unlimited)",
       "feat_browse": "Browse public collections",
@@ -320,7 +320,7 @@
     "manage_btn": "Manage billing",
     "managing": "Redirecting...",
     "upgrade_title": "Upgrade to Pro",
-    "upgrade_desc": "Unlock unlimited saves, unlimited AI queries, full semantic connections, and knowledge base export.",
+    "upgrade_desc": "Unlock 100 saves a month, unlimited Chat, and full AI connections.",
     "upgrade_btn": "View upgrade options →",
     "portal_error": "Unable to open billing portal. Please try again later."
   }
