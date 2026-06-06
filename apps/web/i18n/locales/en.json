@@ -195,32 +195,30 @@
     "page_title": "Garner — Upgrade",
     "eyebrow": "UPGRADE YOUR GARNER",
     "hero_title": "Let your knowledge base work its magic",
-    "hero_sub": "The free plan already laid your foundation. Upgrade for unlimited queries and full AI connections that bring it to life.",
+    "hero_sub": "The free plan already laid your foundation. Upgrade for unlimited saves, unlimited queries, and full AI connections that bring it to life.",
     "billing_monthly": "Monthly",
     "billing_yearly": "Yearly",
     "save_badge": "Save 20%",
     "per_month": "/ mo",
     "free": {
-      "tag": "Start exploring your second brain",
+      "tag": "20 saves a month to start building your second brain",
       "current_plan": "Current plan",
-      "feat_save": "Unlimited saves + AI summaries & tagging",
+      "feat_save": "20 saves / month (videos ≤ 10 min) + AI summaries & tagging",
       "feat_chat": "Chat: 10 messages / day",
-      "feat_queries": "AI queries: 50 / month",
-      "feat_relations": "Basic semantic connections (first 50)",
-      "feat_no_export": "Export knowledge base"
+      "feat_relations": "Surprise discoveries + Chain Explorer (10 hops / month)",
+      "feat_browse": "Browse public collections"
     },
     "pro": {
       "badge_popular": "Most popular",
       "tag": "Let AI truly understand your knowledge base",
       "per_year": "/ yr (≈ $9.6/mo)",
       "upgrade": "Upgrade to Pro →",
-      "feat_save": "Unlimited saves + AI summaries & tagging",
+      "feat_save": "Unlimited saves (videos ≤ 20 min) + AI summaries & tagging",
       "feat_unlimited_chat": "Chat: unlimited",
-      "feat_unlimited_queries": "AI queries: unlimited",
-      "feat_relations": "Full semantic connections",
+      "feat_relations": "Surprise discoveries + Chain Explorer (unlimited)",
+      "feat_browse": "Browse public collections",
       "feat_search": "Advanced natural language search (5 dimensions)",
-      "feat_fork": "Public collections + Fork",
-      "feat_export": "Export knowledge base (Markdown / JSON)",
+      "feat_fork": "Fork public collections",
       "feat_support": "Priority support"
     },
     "magic": {
@@ -231,14 +229,14 @@
     },
     "faq": {
       "title": "Frequently asked questions",
-      "q1": "How are the 50 free queries counted?",
-      "a1": "Each time you hit \"Explore\" on the Focus (Ask your library) page counts as 1 query. Clicking connection cards from the home page or item detail pages does not count. Insights in the Surprise tab are free too. Resets on the 1st of each month UTC.",
+      "q1": "How does the free save limit work?",
+      "a1": "Every item successfully saved counts as 1 (failed saves don't count). YouTube and Instagram Reels share the same monthly pool. The counter resets on the 1st of each month at UTC 00:00.",
       "q2": "Can I cancel anytime?",
-      "a2": "Yes. After cancelling you keep Pro access until the end of your current billing period, then automatically revert to Free. All your data is preserved — only the query limit returns to 50/month.",
+      "a2": "Yes. After cancelling you keep Pro access until the end of your current billing period, then automatically revert to Free. All your data is preserved — saves go back to 20/month and queries to 50/month.",
       "q3": "Is my data safe?",
       "a3": "All content is encrypted at rest (AES-256). AI summaries and tags are processed by Anthropic Claude. We don't use your content to train models, and data is purged from the LLM provider after 30 days.",
-      "q4": "Do I need to pay to fork someone's collection?",
-      "a4": "No. Browsing and forking public collections is free. Forked items enter your library with your chosen tags — they're yours from that point on.",
+      "q4": "Do I need to pay to browse public collections?",
+      "a4": "No. Browsing public collections is free for everyone. Forking (copying a collection into your own library) is a Pro feature.",
       "q5": "Can I switch between monthly and yearly?",
       "a5": "Yes. Upgrading from monthly to yearly prorates the difference. Downgrading from yearly to monthly refunds the remainder to your original payment method or as credit."
     }
@@ -322,7 +320,7 @@
     "manage_btn": "Manage billing",
     "managing": "Redirecting...",
     "upgrade_title": "Upgrade to Pro",
-    "upgrade_desc": "Unlock unlimited AI queries, full semantic connections, and knowledge base export.",
+    "upgrade_desc": "Unlock unlimited saves, unlimited AI queries, full semantic connections, and knowledge base export.",
     "upgrade_btn": "View upgrade options →",
     "portal_error": "Unable to open billing portal. Please try again later."
   }

@@ -38,11 +38,10 @@ const billing = ref<'monthly' | 'yearly'>('monthly')
         <ul class="feats">
           <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.free.feat_save') }}</span></li>
           <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.free.feat_chat') }}</span></li>
-          <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.free.feat_queries') }}</span></li>
           <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.free.feat_relations') }}</span></li>
+          <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.free.feat_browse') }}</span></li>
           <li class="feat feat--no"><span class="ico">×</span><span class="label">{{ t('pricing.pro.feat_search') }}</span></li>
           <li class="feat feat--no"><span class="ico">×</span><span class="label">{{ t('pricing.pro.feat_fork') }}</span></li>
-          <li class="feat feat--no"><span class="ico">×</span><span class="label">{{ t('pricing.pro.feat_export') }}</span></li>
         </ul>
         <div class="plan__cta">
           <button class="btn btn--lg btn--disabled">{{ t('pricing.free.current_plan') }}</button>
@@ -63,11 +62,10 @@ const billing = ref<'monthly' | 'yearly'>('monthly')
         <ul class="feats">
           <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.pro.feat_save') }}</span></li>
           <li class="feat feat--yes"><span class="ico">✓</span><span><strong>{{ t('pricing.pro.feat_unlimited_chat') }}</strong></span></li>
-          <li class="feat feat--yes"><span class="ico">✓</span><span><strong>{{ t('pricing.pro.feat_unlimited_queries') }}</strong></span></li>
           <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.pro.feat_relations') }} <span class="star">✦</span></span></li>
+          <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.pro.feat_browse') }}</span></li>
           <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.pro.feat_search') }}</span></li>
           <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.pro.feat_fork') }}</span></li>
-          <li class="feat feat--yes"><span class="ico">✓</span><span>{{ t('pricing.pro.feat_export') }}</span></li>
         </ul>
         <div class="plan__cta">
           <template v-if="currentPlan === 'pro'">

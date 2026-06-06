@@ -195,32 +195,30 @@
     "page_title": "Garner — 升級",
     "eyebrow": "UPGRADE YOUR GARNER",
     "hero_title": "讓知識庫真正發揮魔法",
-    "hero_sub": "免費版已經幫你建立了基礎。升級後，無限查詢與完整 AI 關聯讓它真正活起來。",
+    "hero_sub": "免費版已經幫你建立了基礎。升級後，無限存入、無限查詢與完整 AI 關聯讓它真正活起來。",
     "billing_monthly": "月付",
     "billing_yearly": "年付",
     "save_badge": "省 20%",
     "per_month": "/ 月",
     "free": {
-      "tag": "開始探索你的第二大腦",
+      "tag": "每月 20 筆，開始建立你的第二大腦",
       "current_plan": "目前方案",
-      "feat_save": "無限存入 + AI 自動摘要標籤",
+      "feat_save": "每月 20 筆存入（影片 ≤ 10 分鐘）+ AI 自動摘要標籤",
       "feat_chat": "Chat：10 則訊息 / 天",
-      "feat_queries": "AI 查詢：50 次 / 月",
-      "feat_relations": "基本語意關聯（前 50 筆）",
-      "feat_no_export": "知識庫匯出"
+      "feat_relations": "Surprise 意外發現 + 連鎖探索（10 次 / 月）",
+      "feat_browse": "瀏覽公開集合"
     },
     "pro": {
       "badge_popular": "最受歡迎",
       "tag": "讓 AI 真正讀懂你的知識庫",
       "per_year": "/ 年（約 $9.6/月）",
       "upgrade": "升級到 Pro →",
-      "feat_save": "無限存入 + AI 自動摘要標籤",
+      "feat_save": "無限存入（影片 ≤ 20 分鐘）+ AI 自動摘要標籤",
       "feat_unlimited_chat": "Chat 對話：無限",
-      "feat_unlimited_queries": "AI 查詢：無限",
-      "feat_relations": "完整語意關聯",
+      "feat_relations": "Surprise 意外發現 + 連鎖探索（無限）",
+      "feat_browse": "瀏覽公開集合",
       "feat_search": "進階自然語言搜尋（5 個維度）",
-      "feat_fork": "公開集合 + Fork 功能",
-      "feat_export": "知識庫匯出（Markdown / JSON）",
+      "feat_fork": "Fork 公開集合",
       "feat_support": "優先客服"
     },
     "magic": {
@@ -231,14 +229,14 @@
     },
     "faq": {
       "title": "常見問題",
-      "q1": "免費版的 50 次查詢怎麼計算？",
-      "a1": "每次你在「Focus（問知識庫）」頁面按下「探索」算 1 次。從首頁、文章詳細頁點進關聯卡片不算查詢。Surprise tab 的洞察也不計入。每月 1 號 UTC 重置。",
+      "q1": "免費版的存入額度怎麼計算？",
+      "a1": "每成功存入一筆內容計 1 次（存入失敗不計）。YouTube 與 IG Reels 統一計算，每月 1 號 UTC 00:00 重置。",
       "q2": "可以隨時取消嗎？",
-      "a2": "可以。取消後你會繼續享有 Pro 直到當前計費周期結束，之後自動降回 Free。所有資料保留，只是查詢功能會回到 50 次/月 的限制。",
+      "a2": "可以。取消後你會繼續享有 Pro 直到當前計費周期結束，之後自動降回 Free。所有資料保留，只是存入額度回到每月 20 筆、查詢回到 50 次/月的限制。",
       "q3": "我的資料安全嗎？",
       "a3": "所有內容加密儲存（AES-256 at rest）。AI 摘要與標籤由 Anthropic Claude 處理，我們不會用你的內容做模型訓練，且資料 30 天後從 LLM 端清除。",
-      "q4": "Fork 別人的集合需要付費嗎？",
-      "a4": "不需要。瀏覽與 Fork 公開集合是免費功能。Fork 後內容會進入你的知識庫，套用你選的標籤，從此屬於你。",
+      "q4": "瀏覽公開集合需要付費嗎？",
+      "a4": "不需要。瀏覽公開集合 Free 與 Pro 皆可，無需付費。Fork（將集合複製到自己的知識庫）是 Pro 專屬功能。",
       "q5": "年付和月付可以切換嗎？",
       "a5": "可以。從月付升級到年付，差額按比例折抵；從年付降到月付，剩餘金額退回原付款方式或轉成 credit。"
     }
@@ -322,7 +320,7 @@
     "manage_btn": "管理帳單",
     "managing": "前往中...",
     "upgrade_title": "升級到 Pro",
-    "upgrade_desc": "解鎖無限 AI 查詢、完整語意關聯與知識庫匯出。",
+    "upgrade_desc": "解鎖無限存入、無限 AI 查詢、完整語意關聯與知識庫匯出。",
     "upgrade_btn": "查看升級方案 →",
     "portal_error": "無法開啟帳單管理，請稍後再試"
   }
