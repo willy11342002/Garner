@@ -3,7 +3,6 @@
     <section class="pr-hero">
       <span class="eyebrow">{{ t('pricing.eyebrow') }}</span>
       <h1>{{ t('pricing.hero_title') }}</h1>
-      <p>{{ t('pricing.hero_sub') }}</p>
     </section>
 
     <PricingPlans :current-plan="userPlan" @upgrade="handleUpgrade" />
