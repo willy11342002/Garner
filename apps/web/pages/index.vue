@@ -35,6 +35,8 @@
 
     <div class="landing__bottom">
       <NuxtLink to="/pricing" class="mono" style="color:var(--text-mid); font-size:13px;">{{ t('landing.pricing_link') }}</NuxtLink>
+      <span style="color:var(--text-dim); font-size:13px; margin: 0 10px;">·</span>
+      <NuxtLink to="/privacy" class="mono" style="color:var(--text-mid); font-size:13px;">{{ t('landing.privacy_link') }}</NuxtLink>
     </div>
   </main>
 </template>
