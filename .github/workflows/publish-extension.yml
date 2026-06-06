@@ -1,0 +1,47 @@
+name: 發佈 Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/extension/**"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: apps/extension/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: apps/extension
+
+      - name: Build & Package
+        run: pnpm build && pnpm package
+        working-directory: apps/extension
+        env:
+          PLASMO_PUBLIC_API_BASE_URL: ${{ secrets.EXT_API_BASE_URL }}
+          PLASMO_PUBLIC_WEB_URL: ${{ secrets.EXT_WEB_URL }}
+
+      - name: Get artifact path
+        id: artifact
+        run: |
+          ZIP=$(ls apps/extension/build/*.zip | head -1)
+          echo "path=$ZIP" >> $GITHUB_OUTPUT
+
+      - name: Submit to Chrome Web Store
+        uses: PlasmoHQ/bpp@v3
+        with:
+          keys: ${{ secrets.BPP_KEYS }}
+          artifact: ${{ steps.artifact.outputs.path }}
