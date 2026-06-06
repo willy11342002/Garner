@@ -2,10 +2,11 @@ import asyncio
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core import events
+from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
@@ -22,15 +23,80 @@ async def list_items(current_user: CurrentUser, db: DbSession):
     return await item_service.list_items(db, UUID(current_user["sub"]))
 
 
-@router.post("/", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_item(
+    request: Request,
     data: ItemCreate,
     background_tasks: BackgroundTasks,
     current_user: CurrentUser,
     db: DbSession,
     _quota: SaveQuota,
 ):
-    return await item_service.create_item(db, UUID(current_user["sub"]), data, background_tasks)
+    user_id = UUID(current_user["sub"])
+    response_mode = request.headers.get("X-Response-Mode", "sse")
+
+    if response_mode == "async":
+        item = await item_service.create_item(db, user_id, data, background_tasks)
+        return JSONResponse(
+            content=json.loads(item.model_dump_json()),
+            status_code=status.HTTP_201_CREATED,
+        )
+
+    # SSE mode (default): stream progress in the POST response itself
+    create_result = await item_service.prepare_item_create(db, user_id, data)
+    item = create_result.item
+    item_id_str = str(item.id)
+
+    async def generator():
+        # Always send the initial item first so the client has the ID immediately
+        yield f"data: {json.dumps({'status': 'created', 'item': json.loads(item.model_dump_json())})}\n\n"
+
+        if not create_result.needs_processing:
+            yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item.model_dump_json())})}\n\n"
+            return
+
+        q = events.register(item_id_str)
+        asyncio.create_task(
+            item_service._run_process_item(
+                create_result.content_id,
+                user_id,
+                create_result.user_item_id,
+                create_result.url,
+                create_result.max_video_sec,
+            )
+        )
+
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=300)
+                except asyncio.TimeoutError:
+                    yield 'data: {"status":"timeout"}\n\n'
+                    return
+
+                stage = msg.get("stage")
+
+                if stage == "done":
+                    async with AsyncSessionLocal() as fresh_db:
+                        updated = await crud_items.get_one(fresh_db, user_id, create_result.user_item_id)
+                        if updated:
+                            item_data = item_service._item_to_read(updated, user_id)
+                            yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
+                    return
+
+                if stage == "failed":
+                    yield 'data: {"status":"failed"}\n\n'
+                    return
+
+                yield f"data: {json.dumps({'status': 'progress', 'stage': stage})}\n\n"
+        finally:
+            events._queues.pop(item_id_str, None)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/pending-review", response_model=list[ItemPendingReviewRead])

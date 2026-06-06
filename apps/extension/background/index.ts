@@ -24,7 +24,7 @@ async function saveItem(url: string, title: string) {
   try {
     const createResp = await fetch(`${API}/items/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Response-Mode": "async" },
       body: JSON.stringify({ url }),
     })
     if (createResp.status === 401) {

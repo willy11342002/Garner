@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,22 @@ from app.services.youtube_service import normalize_youtube_url
 from app.workers.process_item import process_item
 
 
-def _item_to_read(user_item, current_user_id: UUID | None = None, tags=None) -> ItemRead:
+@dataclass
+class _ItemCreateResult:
+    item: ItemRead
+    needs_processing: bool
+    content_id: UUID | None = None
+    user_item_id: UUID | None = None
+    url: str | None = None
+    max_video_sec: int = field(default=1200)
+
+
+def _item_to_read(
+    user_item,
+    current_user_id: UUID | None = None,
+    tags=None,
+    include_content_md: bool = True,
+) -> ItemRead:
     content = user_item.content
     is_owner = (
         current_user_id is not None
@@ -41,7 +57,7 @@ def _item_to_read(user_item, current_user_id: UUID | None = None, tags=None) -> 
         source_type=content.source_type,
         transcription_source=content.transcription_source,
         is_owner=is_owner,
-        content_md=content.content_md,
+        content_md=content.content_md if include_content_md else None,
         is_draft=user_item.is_draft,
         is_public=user_item.is_public,
         tags=resolved_tags,
@@ -63,13 +79,12 @@ async def _run_process_item(
             events.fail(str(user_item_id))
 
 
-async def create_item(
+async def prepare_item_create(
     db: AsyncSession,
     user_id: UUID,
     data: ItemCreate,
-    background_tasks: BackgroundTasks,
-) -> ItemRead:
-    # In-app article: generate URL from pre-allocated user_item id
+) -> _ItemCreateResult:
+    """Create or restore DB records. Returns item data plus processing params when AI processing is needed."""
     if data.url is None:
         item_id = uuid4()
         article_url = f"/app/item/{item_id}"
@@ -88,10 +103,9 @@ async def create_item(
         await db.commit()
         await db.refresh(user_item)
         await db.refresh(user_item.content)
-        return _item_to_read(user_item, user_id)
+        return _ItemCreateResult(item=_item_to_read(user_item, user_id), needs_processing=False)
 
     url = normalize_youtube_url(normalize_instagram_url(data.url))
-
     max_video_sec = await get_video_max_sec(db, user_id)
 
     result = await db.execute(select(ContentObject).where(ContentObject.url == url))
@@ -107,7 +121,6 @@ async def create_item(
         db.add(content)
         await db.flush()
 
-    # Check if this user already has a UserItem for this content
     existing = await crud_items.get_by_content_id(db, user_id, content.id, include_deleted=True)
     if existing is not None:
         if existing.deleted_at is not None:
@@ -117,25 +130,57 @@ async def create_item(
             await db.commit()
             await db.refresh(existing)
             await db.refresh(existing.content)
-        if content.parsed_at is None:
-            background_tasks.add_task(_run_process_item, content.id, user_id, existing.id, url, max_video_sec)
-        return _item_to_read(existing, user_id)
+        needs = content.parsed_at is None
+        return _ItemCreateResult(
+            item=_item_to_read(existing, user_id),
+            needs_processing=needs,
+            content_id=content.id if needs else None,
+            user_item_id=existing.id if needs else None,
+            url=url if needs else None,
+            max_video_sec=max_video_sec,
+        )
 
     user_item = await crud_items.create(db, user_id, content)
     await db.commit()
     await db.refresh(user_item)
     await db.refresh(user_item.content)
 
-    if is_new_content or content.parsed_at is None:
-        background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, url, max_video_sec)
+    needs = is_new_content or content.parsed_at is None
+    return _ItemCreateResult(
+        item=_item_to_read(user_item, user_id),
+        needs_processing=needs,
+        content_id=content.id if needs else None,
+        user_item_id=user_item.id if needs else None,
+        url=url if needs else None,
+        max_video_sec=max_video_sec,
+    )
 
-    return _item_to_read(user_item, user_id)
+
+async def create_item(
+    db: AsyncSession,
+    user_id: UUID,
+    data: ItemCreate,
+    background_tasks: BackgroundTasks,
+) -> ItemRead:
+    result = await prepare_item_create(db, user_id, data)
+    if result.needs_processing:
+        background_tasks.add_task(
+            _run_process_item,
+            result.content_id,
+            user_id,
+            result.user_item_id,
+            result.url,
+            result.max_video_sec,
+        )
+    return result.item
 
 
 async def list_items(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
     user_items = await crud_items.get_all(db, user_id)
     return [
-        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags if it.confirmed])
+        # get_all() already filters confirmed-only tags via selectinload().and_()
+        # and defers embedding + content_md, so pass include_content_md=False
+        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_content_md=False)
         for ui in user_items
     ]
 
