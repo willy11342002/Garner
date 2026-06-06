@@ -217,17 +217,18 @@
         </div>
 
         <div class="chat-view__input-wrap">
-          <div class="chat-input-box">
+          <div class="chat-input-box" :class="{ 'chat-input-box--disabled': chatQuotaFull }">
             <textarea
               ref="inputEl"
               v-model="inputText"
               class="chat-input"
-              :placeholder="t('chat.placeholder')"
+              :placeholder="chatQuotaFull ? t('chat.quota_full') : t('chat.placeholder')"
+              :disabled="chatQuotaFull"
               rows="1"
               @keydown.enter.exact.prevent="send"
               @input="autoResize"
             ></textarea>
-            <button class="chat-send-btn" :disabled="loading || !inputText.trim()" @click="send">
+            <button class="chat-send-btn" :disabled="loading || !inputText.trim() || chatQuotaFull" @click="send">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="16" height="16"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             </button>
           </div>
@@ -239,7 +240,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource } from '~/types/api'
+import type { ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — AI Chat' })
 
 const { t } = useI18n()
@@ -250,6 +251,7 @@ const session = useSupabaseSession()
 // ── State ─────────────────────────────────────────────────────────────────────
 const folders = ref<ChatFolder[]>([])
 const sessions = ref<ChatSession[]>([])
+const quota = ref<UsageSummary | null>(null)
 const activeSessionId = ref<string | null>(null)
 const activeSession = ref<ChatSessionDetail | null>(null)
 const messages = ref<ChatMessage[]>([])
@@ -282,11 +284,19 @@ const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article:
 // ── Computed ──────────────────────────────────────────────────────────────────
 const unfoldered = computed(() => sessions.value.filter(s => !s.folder_id))
 const sessionsInFolder = (folderId: string) => sessions.value.filter(s => s.folder_id === folderId)
+const chatQuotaFull = computed(() => {
+  const q = quota.value?.chat
+  return !!q && q.limit !== null && q.used >= q.limit
+})
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  await Promise.all([loadFolders(), loadSessions()])
+  await Promise.all([loadFolders(), loadSessions(), loadQuota()])
 })
+
+async function loadQuota() {
+  try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
+}
 
 async function loadFolders() {
   try { folders.value = await apiFetch<ChatFolder[]>('/chat/folders') } catch {}
@@ -396,7 +406,7 @@ function toggleSources(id: string) {
 
 
 async function send() {
-  if (!inputText.value.trim() || loading.value || !activeSessionId.value) return
+  if (!inputText.value.trim() || loading.value || !activeSessionId.value || chatQuotaFull.value) return
 
   const content = inputText.value.trim()
   inputText.value = ''
@@ -751,8 +761,10 @@ function sourceLabel(type: string | null) {
 .chat-view__input-wrap { padding: 16px 28px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .chat-input-box { display: flex; align-items: flex-end; gap: 10px; background: var(--surface); border: 1px solid var(--border2); border-radius: 14px; padding: 10px 10px 10px 16px; transition: border-color .15s; }
 .chat-input-box:focus-within { border-color: var(--accent-bdr); }
+.chat-input-box--disabled { opacity: 0.6; cursor: not-allowed; }
 .chat-input { flex: 1; background: transparent; border: none; outline: none; font-family: var(--font-ui); font-size: 14px; color: var(--text); resize: none; line-height: 1.6; max-height: 160px; overflow-y: auto; }
 .chat-input::placeholder { color: var(--text-dim); }
+.chat-input:disabled { cursor: not-allowed; }
 .chat-send-btn { width: 36px; height: 36px; border-radius: 9px; background: var(--accent); color: var(--accent-fg); border: none; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: opacity .15s; }
 .chat-send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .chat-hint { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); margin: 8px 0 0; text-align: center; }

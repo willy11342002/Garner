@@ -311,17 +311,17 @@
           </template>
           <template v-else>
             <p class="add-modal__label">{{ t('add.label') }}</p>
-            <div class="add-modal__row">
+            <div class="add-modal__row" :class="{ 'add-modal__row--disabled': savesQuotaFull }">
               <input
                 ref="addInput"
                 v-model="addUrl"
                 class="add-modal__input"
-                :placeholder="t('add.placeholder')"
-                :disabled="addSaving"
+                :placeholder="savesQuotaFull ? t('add.error_quota_full') : t('add.placeholder')"
+                :disabled="addSaving || savesQuotaFull"
                 @keydown.enter="submitAdd"
                 @keydown.esc="closeAdd"
               />
-              <button class="btn btn--accent" :disabled="addSaving || !addUrl.trim()" @click="submitAdd">
+              <button v-if="!savesQuotaFull" class="btn btn--accent" :disabled="addSaving || !addUrl.trim()" @click="submitAdd">
                 {{ addSaving ? t('add.saving') : t('add.save') }}
               </button>
             </div>
@@ -345,7 +345,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Item } from '~/types/api'
+import type { Item, UsageSummary } from '~/types/api'
 
 const { t, locale, setLocale } = useI18n()
 const route = useRoute()
@@ -357,6 +357,7 @@ const authStore = useAuthStore()
 const itemStore = useItemStore()
 const notifStore = useNotificationStore()
 const { searchItems } = useSearch()
+const apiFetch = useApiFetch()
 
 // 通知
 const notifOpen = ref(false)
@@ -456,6 +457,12 @@ const processingStep = ref(0)
 const STEP_DELAYS = [2000, 5000, 8000]
 let stepTimer: ReturnType<typeof setTimeout> | null = null
 
+const addQuota = ref<UsageSummary | null>(null)
+const savesQuotaFull = computed(() => {
+  const q = addQuota.value?.saves
+  return !!q && q.limit !== null && q.used >= q.limit
+})
+
 function startStepTimer() {
   processingStep.value = 0
   let idx = 0
@@ -475,9 +482,11 @@ function clearStepTimer() {
   if (stepTimer) { clearTimeout(stepTimer); stepTimer = null }
 }
 
-watch(addOpen, (val) => {
-  if (val) nextTick(() => addInput.value?.focus())
-  else {
+watch(addOpen, async (val) => {
+  if (val) {
+    nextTick(() => addInput.value?.focus())
+    try { addQuota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
+  } else {
     addUrl.value = ''
     addError.value = ''
     addProcessingItemId.value = null
@@ -516,8 +525,12 @@ async function submitAdd() {
     if (!route.path.startsWith('/app') || route.path === '/app/archive') {
       navigateTo('/app')
     }
-  } catch {
-    addError.value = t('add.error')
+  } catch (err: any) {
+    if (err?.response?.status === 429) {
+      addError.value = t('add.error_quota_full')
+    } else {
+      addError.value = t('add.error')
+    }
   } finally {
     addSaving.value = false
   }

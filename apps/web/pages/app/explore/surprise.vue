@@ -9,16 +9,17 @@
 
       <!-- 起點選擇 -->
       <div v-if="!chain.length" class="chain-start">
-        <button class="chain-start__lucky" :disabled="chainLoading" @click="startChain">
+        <button class="chain-start__lucky" :disabled="chainLoading || exploreQuotaFull" @click="startChain">
           <span class="chain-start__lucky-icon">{{ chainLoading ? '' : '◎' }}</span>
           <span v-if="chainLoading" class="chain-start__lucky-pulse">
             <span></span><span></span><span></span>
           </span>
           <span>{{ $t('explore.chain.start_lucky') }}</span>
         </button>
+        <p v-if="exploreQuotaFull" class="chain-quota-full">{{ $t('explore.chain.quota_full') }}</p>
       </div>
       <!-- 起點候選選擇 -->
-      <div v-if="startCandidates.length && !chain.length" class="chain-candidates">
+      <div v-if="startCandidates.length && !chain.length && !exploreQuotaFull" class="chain-candidates">
         <p class="chain-candidates__label">{{ $t('explore.chain.pick_label') }}</p>
         <div class="chain-cand-grid">
           <button
@@ -101,7 +102,7 @@
 
         <!-- 整條路徑分析 -->
         <div v-if="chain.length >= 3" class="full-chain">
-          <button v-if="!fullAnalysis && !fullLoading" class="btn full-chain__btn" @click="doFullAnalysis">
+          <button v-if="!fullAnalysis && !fullLoading && !exploreQuotaFull" class="btn full-chain__btn" @click="doFullAnalysis">
             {{ $t('explore.chain.full_btn', { n: chain.length }) }}
           </button>
           <div v-if="fullLoading" class="hop-loading">
@@ -117,6 +118,8 @@
 
         <!-- 候選下一跳 -->
         <div v-if="activeHopIdx === chain.length - 1" class="chain-next">
+          <p v-if="exploreQuotaFull" class="chain-quota-full">{{ $t('explore.chain.quota_full') }}</p>
+          <template v-else>
           <p class="chain-next__label">{{ $t('explore.chain.next_label') }}</p>
           <div v-if="nextLoading" class="chain-cand-grid">
             <div v-for="n in 4" :key="n" class="card chain-cand-card chain-cand-card--skel">
@@ -149,6 +152,7 @@
             </button>
           </div>
           <p v-else class="chain-empty">{{ $t('explore.chain.empty') }}</p>
+          </template>
         </div>
       </template>
     </section>
@@ -157,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ChainHop, ChainItem } from '~/types/api'
+import type { ChainHop, ChainItem, UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — 探索' })
 
 // ── Detail Modal ──────────────────────────────
@@ -172,6 +176,44 @@ const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article:
 const { t } = useI18n()
 
 const apiFetch = useApiFetch()
+
+// ── Quota ──────────────────────────────────────
+const quota = ref<UsageSummary | null>(null)
+const exploreQuotaFull = computed(() => {
+  const q = quota.value?.explore
+  return !!q && q.limit !== null && q.used >= q.limit
+})
+
+async function loadQuota() {
+  try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
+}
+
+// 還原後補齊被中斷的跳轉（analysis / candidates 可能因 navigate-away 而遺失）
+async function resumeIncomplete() {
+  const lastIdx = chain.value.length - 1
+  if (lastIdx < 1) return
+
+  const lastHop = chain.value[lastIdx]
+
+  if (lastHop.analysis === null) {
+    const fromItem = chain.value[lastIdx - 1].item
+    chainLoading.value = true
+    try {
+      const analysis = await apiFetch('/explore/chain/hop', {
+        method: 'POST',
+        body: { from_item_id: fromItem.id, to_item_id: lastHop.item.id },
+      })
+      chain.value[lastIdx].analysis = analysis
+      saveChainState()
+    } catch {} finally {
+      chainLoading.value = false
+    }
+  }
+
+  if (activeHopIdx.value === lastIdx && !lastHop.candidates.length) {
+    await loadCandidates(lastIdx)
+  }
+}
 
 // ── Chain ──────────────────────────────────────
 const chain = ref<ChainHop[]>([])
@@ -209,7 +251,10 @@ function restoreChainState() {
   } catch {}
 }
 
-onMounted(restoreChainState)
+onMounted(async () => {
+  restoreChainState()
+  await Promise.all([resumeIncomplete(), loadQuota()])
+})
 watch([chain, activeHopIdx, fullAnalysis], saveChainState, { deep: true })
 
 async function startChain() {
@@ -241,6 +286,7 @@ async function loadCandidates(hopIdx: number) {
     )
     const chainIdSet = new Set(chain.value.map(h => h.item.id))
     chain.value[hopIdx].candidates = candidates.filter(c => !chainIdSet.has(c.id))
+    saveChainState()
   } finally {
     nextLoading.value = false
   }
@@ -260,6 +306,7 @@ async function jumpTo(item: ChainItem) {
       body: { from_item_id: fromItem.id, to_item_id: item.id },
     })
     chain.value[hopIdx].analysis = analysis
+    saveChainState()
   } catch {
     chain.value[hopIdx].analysis = null
   } finally {
@@ -410,6 +457,7 @@ function sourceLabel(type: string | null) {
 .chain-next { margin-top: 4px; }
 .chain-next__label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
 .chain-empty { font-size: 12.5px; color: var(--text-dim); padding: 20px 0; }
+.chain-quota-full { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); margin: 10px 0 0; text-align: center; }
 
 .full-chain { margin-top: 6px; }
 .full-chain__btn { font-size: 12.5px; }

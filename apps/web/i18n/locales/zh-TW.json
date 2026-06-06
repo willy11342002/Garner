@@ -32,7 +32,8 @@
       "time_months": "{n} 個月前",
       "start_over": "從頭開始",
       "rewrite_hint": "從這個節點重寫後面的路徑",
-      "rewrite_btn": "從這裡重寫"
+      "rewrite_btn": "從這裡重寫",
+      "quota_full": "本月探索額度已用完，升級 Pro 可獲得更多。"
     }
   },
   "add": {
@@ -41,6 +42,7 @@
     "saving": "存入中...",
     "save": "存入",
     "error": "儲存失敗，請確認 URL 格式是否正確",
+    "error_quota_full": "本月存入額度已用完，請升級 Pro 或等待下月重置。",
     "processing": "AI 正在處理...",
     "processingHint": "處理完成後畫面會自動更新",
     "close": "關閉",
@@ -88,7 +90,8 @@
     "thinking": "推理過程",
     "tool_call": "搜尋知識庫",
     "tool_result": "找到 {count} 筆相關內容",
-    "sources": "{count} 筆來源"
+    "sources": "{count} 筆來源",
+    "quota_full": "今日對話額度已用完，升級 Pro 可獲得更多。"
   },
   "security": {
     "title": "安全性",
@@ -317,11 +320,33 @@
     "plan_free": "免費版",
     "plan_pro": "Pro",
     "renews_on": "續訂日",
+    "manage_title": "訂閱管理",
     "manage_btn": "管理帳單",
+    "upgrade_hint": "升級 Pro 方案以解鎖完整功能。",
     "managing": "前往中...",
     "upgrade_title": "升級到 Pro",
     "upgrade_desc": "解鎖每月 100 筆存入、無限 Chat 與完整 AI 關聯。",
     "upgrade_btn": "查看升級方案 →",
-    "portal_error": "無法開啟帳單管理，請稍後再試"
+    "portal_error": "無法開啟帳單管理，請稍後再試",
+    "usage_title": "本期用量",
+    "usage_saves": "月存入",
+    "usage_chat": "AI Chat",
+    "usage_explore": "AI Explore",
+    "usage_unlimited": "無限制",
+    "usage_count": "{used} / {limit} 次",
+    "usage_count_saves": "{used} / {limit} 筆",
+    "usage_pct": "{pct}%",
+    "usage_unlimited_label": "無限制",
+    "reset_daily": "每日重置",
+    "reset_monthly": "每月重置",
+    "quota_full_saves": "本月存入額度已用完，明月 1 日重置。",
+    "quota_full_chat": "今日 Chat 次數已用完，明天重置。",
+    "quota_full_explore": "本月 Explore 次數已用完，明月 1 日重置。",
+    "features_title": "功能權限",
+    "feature_search": "語意搜尋",
+    "feature_fork": "Fork 集合",
+    "feature_video": "影片上限 {n} 分鐘",
+    "feature_on": "開放",
+    "feature_off": "未開放"
   }
 }

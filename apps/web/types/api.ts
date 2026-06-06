@@ -253,6 +253,22 @@ export interface ChatSource {
   source_type: string | null
 }
 
+export interface QuotaItem {
+  used: number
+  limit: number | null  // null = unlimited
+}
+
+export interface UsageSummary {
+  plan: string
+  period_end: string | null
+  saves: QuotaItem
+  chat: QuotaItem
+  explore: QuotaItem
+  search_enabled: boolean
+  fork_enabled: boolean
+  video_max_minutes: number
+}
+
 export type NotificationType = 'item_processed' | 'item_failed' | 'system'
 
 export interface Notification {

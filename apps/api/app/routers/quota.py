@@ -1,9 +1,12 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbSession
+from app.models.subscription import Subscription, SubscriptionStatus
 from app.quota_depends import (
     _count_monthly_saves,
     _daily_key,
@@ -23,12 +26,23 @@ class QuotaItem(BaseModel):
 
 class UsageSummary(BaseModel):
     plan: str
+    period_end: datetime | None  # active subscription end date; None for free users
     saves: QuotaItem
     chat: QuotaItem
     explore: QuotaItem
     search_enabled: bool
     fork_enabled: bool
     video_max_minutes: int
+
+
+async def _get_period_end(db, user_id: UUID) -> datetime | None:
+    result = await db.execute(
+        select(Subscription.current_period_end).where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 @router.get("/me", response_model=UsageSummary)
@@ -46,9 +60,11 @@ async def get_my_quota(current_user: CurrentUser, db: DbSession):
     saves_used   = await _count_monthly_saves(db, user_id)
     chat_used    = await _get_usage(db, user_id, "chat_daily",      _daily_key())
     explore_used = await _get_usage(db, user_id, "explore_monthly", _monthly_key())
+    period_end   = await _get_period_end(db, user_id)
 
     return UsageSummary(
         plan=plan,
+        period_end=period_end,
         saves=QuotaItem(used=saves_used, limit=saves_limit),
         chat=QuotaItem(used=chat_used, limit=chat_limit),
         explore=QuotaItem(used=explore_used, limit=explore_limit),

@@ -42,8 +42,12 @@ async function quickSave() {
     const item = await itemStore.add({ url })
     newUrl.value = ''
     itemTagsMap.value[item.id] = await getItemTags(item.id)
-  } catch {
-    saveError.value = '儲存失敗，請確認 URL 格式是否正確'
+  } catch (err: any) {
+    if (err?.response?.status === 429) {
+      saveError.value = t('home.error_quota_full')
+    } else {
+      saveError.value = t('home.error')
+    }
   } finally {
     saving.value = false
   }

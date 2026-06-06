@@ -32,7 +32,8 @@
       "time_months": "{n}mo ago",
       "start_over": "Start over",
       "rewrite_hint": "Rewrite the path from this node",
-      "rewrite_btn": "Rewrite from here"
+      "rewrite_btn": "Rewrite from here",
+      "quota_full": "Monthly Explore limit reached. Upgrade to Pro for more."
     }
   },
   "add": {
@@ -41,6 +42,7 @@
     "saving": "Saving...",
     "save": "Save",
     "error": "Failed to save. Please check the URL format.",
+    "error_quota_full": "Monthly save limit reached. Upgrade to Pro or wait for next month.",
     "processing": "AI is processing...",
     "processingHint": "The page will update automatically when done.",
     "close": "Close",
@@ -88,7 +90,8 @@
     "thinking": "Reasoning",
     "tool_call": "Searching knowledge base",
     "tool_result": "Found {count} relevant items",
-    "sources": "{count} sources"
+    "sources": "{count} sources",
+    "quota_full": "Daily chat limit reached. Upgrade to Pro for more."
   },
   "security": {
     "title": "Security",
@@ -317,11 +320,33 @@
     "plan_free": "Free",
     "plan_pro": "Pro",
     "renews_on": "Renews on",
+    "manage_title": "Subscription",
     "manage_btn": "Manage billing",
+    "upgrade_hint": "Upgrade to Pro to unlock all features.",
     "managing": "Redirecting...",
     "upgrade_title": "Upgrade to Pro",
     "upgrade_desc": "Unlock 100 saves a month, unlimited Chat, and full AI connections.",
     "upgrade_btn": "View upgrade options →",
-    "portal_error": "Unable to open billing portal. Please try again later."
+    "portal_error": "Unable to open billing portal. Please try again later.",
+    "usage_title": "Usage this period",
+    "usage_saves": "Monthly saves",
+    "usage_chat": "AI Chat",
+    "usage_explore": "AI Explore",
+    "usage_unlimited": "Unlimited",
+    "usage_count": "{used} / {limit}",
+    "usage_count_saves": "{used} / {limit} saves",
+    "usage_pct": "{pct}%",
+    "usage_unlimited_label": "Unlimited",
+    "reset_daily": "Resets daily",
+    "reset_monthly": "Resets monthly",
+    "quota_full_saves": "Monthly save limit reached. Resets on the 1st.",
+    "quota_full_chat": "Daily Chat limit reached. Resets tomorrow.",
+    "quota_full_explore": "Monthly Explore limit reached. Resets on the 1st.",
+    "features_title": "Features",
+    "feature_search": "Semantic search",
+    "feature_fork": "Fork collections",
+    "feature_video": "Video up to {n} min",
+    "feature_on": "Enabled",
+    "feature_off": "Unavailable"
   }
 }
