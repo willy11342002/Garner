@@ -41,7 +41,7 @@
         <span class="footer-sep">·</span>
         <NuxtLink to="/terms" class="mono footer-link">{{ t('landing.terms_link') }}</NuxtLink>
         <span class="footer-sep">·</span>
-        <a href="mailto:willy11342002@gmail.com" class="mono footer-link">{{ t('landing.contact_link') }}</a>
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSdYlIIXPUfQ5DyL-ptIxCwx4G99D4mx9CiwJ9OVQYcGXUDzqw/viewform" target="_blank" rel="noopener" class="mono footer-link">{{ t('landing.contact_link') }}</a>
       </div>
       <p class="landing__copyright">© {{ year }} Garner</p>
     </footer>

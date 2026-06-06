@@ -122,6 +122,8 @@ onMounted(async () => {
       <HomeMapView v-else-if="currentView === 'map'" />
       <HomeSemanticSearchView v-else-if="currentView === 'semantic'" />
     </template>
+
+    <LayoutAppFooter />
   </main>
 
   <ShareWizardModal

@@ -392,7 +392,8 @@
     "s8_title": "8. Termination",
     "s8_body": "You may delete your account at any time from the Settings page to stop using the Service. If you violate these terms, we reserve the right to suspend or terminate your account. After termination, your data will be retained for 30 days per our Privacy Policy, then deleted.",
     "s9_title": "9. Contact",
-    "s9_body": "If you have any questions about these terms, please email us at:"
+    "s9_body": "If you have any questions about these terms, please use our contact form:",
+    "contact_form": "Contact Form"
   },
   "privacy": {
     "page_title": "Privacy Policy | Garner",
@@ -441,6 +442,7 @@
     "s9_title": "9. Policy Changes",
     "s9_body": "If we make significant changes to this policy, we will notify you by email or via an in-app notice. Continued use of the service constitutes acceptance of the updated policy.",
     "s10_title": "10. Contact",
-    "s10_body": "For any privacy-related questions, please email us at:"
+    "s10_body": "For any privacy-related questions, please use our contact form:",
+    "contact_form": "Contact Form"
   }
 }

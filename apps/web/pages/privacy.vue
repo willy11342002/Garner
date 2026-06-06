@@ -86,7 +86,7 @@
         <h2>{{ t('privacy.s10_title') }}</h2>
         <p>
           {{ t('privacy.s10_body') }}
-          <a href="mailto:willy11342002@gmail.com" class="pp-link">willy11342002@gmail.com</a>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLSdYlIIXPUfQ5DyL-ptIxCwx4G99D4mx9CiwJ9OVQYcGXUDzqw/viewform" target="_blank" rel="noopener" class="pp-link">{{ t('privacy.contact_form') }}</a>
         </p>
       </section>
     </article>

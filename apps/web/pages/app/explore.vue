@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="explore-layout">
     <header class="ex-head">
       <div class="ex-head__top">
         <div>
@@ -15,6 +15,7 @@
     </header>
 
     <NuxtPage />
+    <LayoutAppFooter class="explore-layout__footer" />
   </div>
 </template>
 
@@ -35,11 +36,13 @@ onMounted(async () => {
 </script>
 
 <style>
-.ex-head { padding: 24px 32px 20px; border-bottom: 1px solid var(--border); max-width: 1400px; margin: 0 auto; }
+.explore-layout { display: flex; flex-direction: column; min-height: calc(100vh - 52px); align-items: stretch; }
+.explore-layout__footer { margin-top: auto; }
+.ex-head { padding: 24px 32px 20px; border-bottom: 1px solid var(--border); width: 70vw; margin: 0 auto; box-sizing: border-box; }
 .ex-head__top { display: flex; align-items: flex-end; gap: 24px; }
 .ex-head__stats { margin-left: auto; display: flex; gap: 18px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
 .stat b { display: block; color: var(--text); font-size: 16px; font-weight: 500; margin-bottom: 1px; }
-.ex-pane { max-width: 1400px; margin: 0 auto; padding: 28px 32px 80px; }
+.ex-pane { width: 70vw; margin: 0 auto; padding: 28px 32px 80px; box-sizing: border-box; }
 
 @media (max-width: 980px) { .ex-head { padding: 18px 16px 0; } .ex-pane { padding: 20px 16px 60px; } }
 @media (max-width: 640px) { .ex-head__stats { display: none; } }
