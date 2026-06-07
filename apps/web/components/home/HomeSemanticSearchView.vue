@@ -9,8 +9,13 @@ const { t } = useI18n()
 const query = ref('')
 const results = ref<Item[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const hasSearched = ref(false)
+const hasNext = ref(false)
 const isProGated = ref(false)
+const page = ref(1)
+const currentQuery = ref('')
+const sentinelRef = ref<HTMLElement | null>(null)
 
 const topTags = computed(() => {
   const counts = new Map<string, { name: string; count: number }>()
@@ -31,8 +36,14 @@ async function submit() {
   loading.value = true
   isProGated.value = false
   hasSearched.value = false
+  results.value = []
+  hasNext.value = false
+  page.value = 1
+  currentQuery.value = q
   try {
-    results.value = await searchSemantic(q)
+    const res = await searchSemantic(q, 1)
+    results.value = res.items
+    hasNext.value = res.has_next
     hasSearched.value = true
   } catch (err: any) {
     if (err?.response?.status === 403) {
@@ -42,6 +53,35 @@ async function submit() {
     loading.value = false
   }
 }
+
+async function loadMore() {
+  if (!hasNext.value || loadingMore.value || loading.value) return
+  loadingMore.value = true
+  page.value++
+  try {
+    const res = await searchSemantic(currentQuery.value, page.value)
+    results.value.push(...res.items)
+    hasNext.value = res.has_next
+  } catch {
+    page.value--
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+let observer: IntersectionObserver | null = null
+
+watch(sentinelRef, (el) => {
+  observer?.disconnect()
+  if (!el) return
+  observer = new IntersectionObserver(
+    ([entry]) => { if (entry.isIntersecting) loadMore() },
+    { rootMargin: '200px' },
+  )
+  observer.observe(el)
+})
+
+onUnmounted(() => observer?.disconnect())
 
 function applyChip(tagName: string) {
   query.value = t('home.semantic_chip_query', { tag: tagName })
@@ -96,7 +136,7 @@ function cardTitle(url: string, title: string | null) {
       </div>
     </div>
 
-    <!-- Loading -->
+    <!-- Loading (initial search) -->
     <div v-if="loading" class="semantic-state">
       <span class="semantic-spinner"></span>
       {{ t('home.semantic_searching') }}
@@ -145,6 +185,11 @@ function cardTitle(url: string, title: string | null) {
             </div>
           </div>
         </button>
+      </div>
+
+      <!-- Infinite scroll sentinel -->
+      <div v-if="hasNext || loadingMore" ref="sentinelRef" class="semantic-load-more">
+        <span v-if="loadingMore" class="semantic-spinner"></span>
       </div>
     </template>
   </div>

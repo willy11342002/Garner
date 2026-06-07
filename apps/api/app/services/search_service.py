@@ -8,7 +8,7 @@ from app.models.content_object import ContentObject
 from app.models.item_tag import ItemTag
 from app.models.tag import Tag
 from app.models.user_item import UserItem, UserItemStatus
-from app.schemas.item import ItemRead
+from app.schemas.item import ItemRead, PaginatedResult
 from app.services import ai_service
 
 _ACTIVE_FILTERS = (
@@ -57,8 +57,14 @@ async def _text_search_raw(db: AsyncSession, user_id: UUID, query: str) -> list[
     return list(result.scalars().all())
 
 
-async def semantic_search(db: AsyncSession, user_id: UUID, query: str) -> list[ItemRead]:
+_SEMANTIC_PAGE_SIZE = 10
+
+
+async def semantic_search(
+    db: AsyncSession, user_id: UUID, query: str, page: int = 1
+) -> PaginatedResult[ItemRead]:
     query_embedding = await ai_service.embed(query)
+    offset = (page - 1) * _SEMANTIC_PAGE_SIZE
     result = await db.execute(
         select(UserItem)
         .options(selectinload(UserItem.content))
@@ -69,6 +75,10 @@ async def semantic_search(db: AsyncSession, user_id: UUID, query: str) -> list[I
             ContentObject.embedding.is_not(None),
         )
         .order_by(ContentObject.embedding.cosine_distance(query_embedding))
-        .limit(20)
+        .offset(offset)
+        .limit(_SEMANTIC_PAGE_SIZE + 1)
     )
-    return [_to_item_read(ui) for ui in result.scalars().all()]
+    rows = result.scalars().all()
+    has_next = len(rows) > _SEMANTIC_PAGE_SIZE
+    items = [_to_item_read(ui) for ui in rows[:_SEMANTIC_PAGE_SIZE]]
+    return PaginatedResult(items=items, page=page, page_size=_SEMANTIC_PAGE_SIZE, has_next=has_next)

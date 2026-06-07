@@ -23,7 +23,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,27 +39,84 @@ from app.models.plan import Plan
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
-async def _get_plan(db: AsyncSession, user_id: UUID) -> str:
+async def _get_plan(db: AsyncSession, user_id: UUID) -> tuple[UUID, str]:
+    """Return (plan_id, plan_name). Falls back to the 'free' plan row."""
     result = await db.execute(
-        select(Plan.name).join(Subscription, Plan.id == Subscription.plan_id).where(
+        select(Plan.id, Plan.name)
+        .join(Subscription, Plan.id == Subscription.plan_id)
+        .where(
             Subscription.user_id == user_id,
             Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
         )
     )
-    plan_name = result.scalar_one_or_none()
-    return plan_name if plan_name else "free"
+    row = result.one_or_none()
+    if row:
+        return row.id, row.name
+    free = await db.execute(select(Plan.id, Plan.name).where(Plan.name == "free"))
+    free_row = free.one_or_none()
+    if free_row:
+        return free_row.id, free_row.name
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Free plan not configured")
 
 
-async def _get_limit(db: AsyncSession, plan: str, feature: str) -> int | None:
-    """Return the limit value for (plan, feature). None = unlimited."""
+async def _get_limit(db: AsyncSession, plan_id: UUID, feature: str) -> int | None:
+    """Return the limit value for (plan_id, feature). None = unlimited."""
     result = await db.execute(
         select(PlanFeatureLimit.value).where(
-            PlanFeatureLimit.plan == plan,
+            PlanFeatureLimit.plan_id == plan_id,
             PlanFeatureLimit.feature == feature,
         )
     )
     row = result.one_or_none()
     return row[0] if row is not None else None
+
+
+async def _get_plan_with_period(
+    db: AsyncSession, user_id: UUID
+) -> tuple[UUID, str, datetime | None]:
+    """一次查詢取得 plan_id、plan_name、period_end，合并 _get_plan + _get_period_end。"""
+    result = await db.execute(
+        select(Plan.id, Plan.name, Subscription.current_period_end)
+        .join(Subscription, Plan.id == Subscription.plan_id)
+        .where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
+        )
+    )
+    row = result.one_or_none()
+    if row:
+        return row.id, row.name, row.current_period_end
+    free = await db.execute(select(Plan.id, Plan.name).where(Plan.name == "free"))
+    free_row = free.one_or_none()
+    if free_row:
+        return free_row.id, free_row.name, None
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Free plan not configured")
+
+
+async def _get_all_limits(db: AsyncSession, plan_id: UUID) -> dict[str, int | None]:
+    """一次撈出該 plan 所有 feature 的 limit，回傳 {feature: value}。"""
+    result = await db.execute(
+        select(PlanFeatureLimit.feature, PlanFeatureLimit.value)
+        .where(PlanFeatureLimit.plan_id == plan_id)
+    )
+    return {row.feature: row.value for row in result.all()}
+
+
+async def _get_multi_usage(
+    db: AsyncSession,
+    user_id: UUID,
+    features: list[tuple[str, str]],
+) -> dict[str, int]:
+    """一次查多個 (feature, period_key)，回傳 {feature: count}，缺少的 feature 預設為 0。"""
+    conditions = or_(*[
+        and_(UserFeatureUsage.feature == f, UserFeatureUsage.period_key == p)
+        for f, p in features
+    ])
+    result = await db.execute(
+        select(UserFeatureUsage.feature, UserFeatureUsage.count)
+        .where(UserFeatureUsage.user_id == user_id, conditions)
+    )
+    return {row.feature: row.count for row in result.all()}
 
 
 async def _get_usage(db: AsyncSession, user_id: UUID, feature: str, period_key: str) -> int:
@@ -138,26 +195,26 @@ async def check_save_quota(current_user: CurrentUser, db: DbSession) -> None:
     User item 創建後 saved_at 自動記錄，count 從 user_items 直接計算，無需手動維護。
     """
     user_id = UUID(current_user["sub"])
-    plan = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan, "saves_monthly")
+    plan_id, plan_name = await _get_plan(db, user_id)
+    limit = await _get_limit(db, plan_id, "saves_monthly")
     if limit is None:
         return
     used = await _count_monthly_saves(db, user_id)
     if used >= limit:
-        raise _quota_exceeded("saves_monthly", used, limit, plan)
+        raise _quota_exceeded("saves_monthly", used, limit, plan_name)
 
 
 async def check_chat_quota(current_user: CurrentUser, db: DbSession) -> None:
     """Check + increment。並發安全：在串流開始前就鎖定用量。"""
     user_id = UUID(current_user["sub"])
-    plan = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan, "chat_daily")
+    plan_id, plan_name = await _get_plan(db, user_id)
+    limit = await _get_limit(db, plan_id, "chat_daily")
     if limit is None:
         return
     period = _daily_key()
     used = await _get_usage(db, user_id, "chat_daily", period)
     if used >= limit:
-        raise _quota_exceeded("chat_daily", used, limit, plan)
+        raise _quota_exceeded("chat_daily", used, limit, plan_name)
     await _increment(db, user_id, "chat_daily", period)
     await db.commit()
 
@@ -165,32 +222,32 @@ async def check_chat_quota(current_user: CurrentUser, db: DbSession) -> None:
 async def check_explore_quota(current_user: CurrentUser, db: DbSession) -> None:
     """Check + increment。Surprise / chain hop / chain full 各算一次。"""
     user_id = UUID(current_user["sub"])
-    plan = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan, "explore_monthly")
+    plan_id, plan_name = await _get_plan(db, user_id)
+    limit = await _get_limit(db, plan_id, "explore_monthly")
     if limit is None:
         return
     period = _monthly_key()
     used = await _get_usage(db, user_id, "explore_monthly", period)
     if used >= limit:
-        raise _quota_exceeded("explore_monthly", used, limit, plan)
+        raise _quota_exceeded("explore_monthly", used, limit, plan_name)
     await _increment(db, user_id, "explore_monthly", period)
     await db.commit()
 
 
 async def check_search_access(current_user: CurrentUser, db: DbSession) -> None:
     user_id = UUID(current_user["sub"])
-    plan = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan, "search")
+    plan_id, plan_name = await _get_plan(db, user_id)
+    limit = await _get_limit(db, plan_id, "search")
     if limit == 0:
-        raise _access_denied("search", plan)
+        raise _access_denied("search", plan_name)
 
 
 async def check_fork_access(current_user: CurrentUser, db: DbSession) -> None:
     user_id = UUID(current_user["sub"])
-    plan = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan, "fork")
+    plan_id, plan_name = await _get_plan(db, user_id)
+    limit = await _get_limit(db, plan_id, "fork")
     if limit == 0:
-        raise _access_denied("fork", plan)
+        raise _access_denied("fork", plan_name)
 
 
 async def get_video_max_sec(db: AsyncSession, user_id: UUID) -> int:
@@ -198,8 +255,8 @@ async def get_video_max_sec(db: AsyncSession, user_id: UUID) -> int:
     影片長度上限（秒）。供 item_service 查完 plan 後傳給 background task，
     不作為 Depends，因為 duration 在 background task 才能驗證。
     """
-    plan = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan, "video_max_sec")
+    plan_id, _ = await _get_plan(db, user_id)
+    limit = await _get_limit(db, plan_id, "video_max_sec")
     return limit if limit is not None else 1200
 
 

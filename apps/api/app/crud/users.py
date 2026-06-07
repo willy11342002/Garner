@@ -11,8 +11,6 @@ from app.models.subscription import Subscription
 from app.models.tag import Tag
 from app.models.user import User
 from app.models.user_item import UserItem
-from app.models.whisper_usage import WhisperUsage
-
 
 async def get_by_id(db: AsyncSession, user_id: UUID) -> User | None:
     result = await db.execute(select(User).where(User.id == user_id))
@@ -68,9 +66,6 @@ async def delete_user(db: AsyncSession, user: User) -> None:
     # 7. subscriptions
     await db.execute(delete(Subscription).where(Subscription.user_id == uid))
 
-    # 8. whisper_usage
-    await db.execute(delete(WhisperUsage).where(WhisperUsage.user_id == uid))
-
-    # 9. user（chat_folders / chat_sessions 有 ondelete=CASCADE，DB 自動處理）
+    # 8. user（chat_folders / chat_sessions 有 ondelete=CASCADE，DB 自動處理）
     await db.delete(user)
     await db.flush()

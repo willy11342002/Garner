@@ -1,8 +1,10 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, HttpUrl, model_validator
+
+T = TypeVar("T")
 
 from app.models.user_item import UserItemStatus
 from app.schemas.tag import TagRead
@@ -59,6 +61,13 @@ class ArticleUpdate(BaseModel):
 
 class ItemSummaryUpdate(BaseModel):
     summary_i18n: dict[str, Any]   # full Tiptap JSON doc per locale, e.g. {"zh-TW": {...}}
+
+
+class PaginatedResult(BaseModel, Generic[T]):
+    items: list[T]
+    page: int
+    page_size: int
+    has_next: bool
 
 
 class ItemPendingReviewRead(BaseModel):

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { Tag } from '~/types/api'
+import type { Tag, UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — 我的知識庫' })
 
+const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const { getItemTags, getPendingReview } = useItems()
 const { pendingItems } = usePendingItems()
@@ -11,6 +12,7 @@ const { t } = useI18n()
 
 const loading = ref(true)
 const itemTagsMap = ref<Record<string, Tag[]>>({})
+const quota = ref<UsageSummary | null>(null)
 
 // URL quick-save (empty state CTA)
 const newUrl = ref('')
@@ -67,7 +69,11 @@ watch(activeItemId, async (newId, oldId) => {
 })
 
 onMounted(async () => {
-  const [, pending] = await Promise.all([itemStore.load(), getPendingReview()])
+  const [, pending] = await Promise.all([
+    itemStore.load(),
+    getPendingReview(),
+    apiFetch<UsageSummary>('/quota/me').then(q => { quota.value = q }).catch(() => {}),
+  ])
   pendingItems.value = pending
   for (const item of itemStore.items) {
     itemTagsMap.value[item.id] = item.tags
@@ -115,7 +121,7 @@ onMounted(async () => {
       <HomePendingSection @item-tags-updated="refreshTags" />
       <div class="page-header">
         <h1 class="page-header__title">{{ t('home.title') }}</h1>
-        <HomeViewSwitcher />
+        <HomeViewSwitcher :search-enabled="quota?.search_enabled ?? false" />
       </div>
       <HomeTagView
         v-if="currentView === 'tags'"

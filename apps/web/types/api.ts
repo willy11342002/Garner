@@ -258,6 +258,13 @@ export interface QuotaItem {
   limit: number | null  // null = unlimited
 }
 
+export interface PaginatedResult<T> {
+  items: T[]
+  page: number
+  page_size: number
+  has_next: boolean
+}
+
 export interface UsageSummary {
   plan: string
   period_end: string | null

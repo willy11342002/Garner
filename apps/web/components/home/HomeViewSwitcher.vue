@@ -1,21 +1,20 @@
 <script setup lang="ts">
+const props = defineProps<{ searchEnabled: boolean }>()
+
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-const authStore = useAuthStore()
-
-const isPro = computed(() => authStore.user?.plan === 'pro')
 
 const VIEWS = computed(() => [
   { key: 'tags', label: t('home.view_tags') },
   { key: 'map', label: t('home.view_map') },
-  { key: 'semantic', label: t('home.view_semantic'), badge: 'PRO', proOnly: true },
+  { key: 'semantic', label: t('home.view_semantic'), badge: !props.searchEnabled ? 'PRO' : undefined, locked: !props.searchEnabled },
 ])
 
 const currentView = computed(() => (route.query.view as string) || 'tags')
 
-function handleTabClick(view: { key: string; proOnly?: boolean }) {
-  if (view.proOnly && !isPro.value) {
+function handleTabClick(view: { key: string; locked?: boolean }) {
+  if (view.locked) {
     router.push('/pricing')
     return
   }
@@ -31,7 +30,7 @@ function handleTabClick(view: { key: string; proOnly?: boolean }) {
       class="view-tab"
       :class="{
         'view-tab--active': currentView === v.key,
-        'view-tab--locked': v.proOnly && !isPro,
+        'view-tab--locked': v.locked,
       }"
       @click="handleTabClick(v)"
     >
