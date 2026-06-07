@@ -2,9 +2,6 @@
 import type { Item, Tag } from '~/types/api'
 
 definePageMeta({ ssr: false, layout: 'write' })
-useHead(computed(() => ({
-  title: title.value ? `Garner — ${title.value}` : 'Garner — 文章編輯',
-})))
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +26,9 @@ const loading = ref(true)
 const loadError = ref(false)
 
 const title = ref('')
+useHead(computed(() => ({
+  title: title.value ? `Garner — ${title.value}` : 'Garner — 文章編輯',
+})))
 const editorContent = ref<Record<string, unknown>>({ type: 'doc', content: [] })
 const isPublic = ref(false)
 const isDraft = ref(true)
