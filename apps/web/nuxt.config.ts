@@ -10,6 +10,7 @@ export default defineNuxtConfig({
     head: {
       title: 'Garner',
       meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'google-site-verification', content: 'mn4FALR8YfPLHEDiknxZhOmqff6_ArRkz3m73epDvow' },
       ],
       link: [
