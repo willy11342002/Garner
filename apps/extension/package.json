@@ -29,8 +29,7 @@
     ],
     "permissions": [
       "activeTab",
-      "storage",
-      "tabs"
+      "storage"
     ],
     "action": {
       "default_title": "儲存到 Garner",
