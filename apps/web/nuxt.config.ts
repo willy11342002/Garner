@@ -9,6 +9,9 @@ export default defineNuxtConfig({
   app: {
     head: {
       title: 'Garner',
+      meta: [
+        { name: 'google-site-verification', content: 'mn4FALR8YfPLHEDiknxZhOmqff6_ArRkz3m73epDvow' },
+      ],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       ],
