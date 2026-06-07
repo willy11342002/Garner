@@ -55,32 +55,52 @@
         <div class="connected__steps">
           <div class="connected__step">
             <span class="connected__step-num">1</span>
-            <span>點擊下方取得個人 Token</span>
+            <span>下載並安裝 Garner 捷徑</span>
           </div>
           <div class="connected__step">
             <span class="connected__step-num">2</span>
-            <span>下載並安裝 Garner 捷徑</span>
+            <span>點擊下方取得個人 Token</span>
           </div>
           <div class="connected__step">
             <span class="connected__step-num">3</span>
             <span>在捷徑設定中貼入 Token</span>
           </div>
         </div>
-        <template v-if="!iosToken">
-          <button class="connected__ios-btn" :disabled="iosLoading" @click="generateIosToken">
-            {{ iosLoading ? '生成中…' : '取得 Token' }}
+
+        <!-- 階段一：下載 -->
+        <template v-if="iosStep === 'download'">
+          <a
+            href="https://www.icloud.com/shortcuts/854b6616a6174901aeafb5870aba6749"
+            target="_blank"
+            rel="noopener"
+            class="connected__ios-btn"
+            @click="iosStep = 'token'"
+          >
+            下載 Garner 捷徑
+          </a>
+          <button class="connected__skip-link" @click="iosStep = 'token'">
+            已安裝，直接取得 Token →
           </button>
         </template>
+
+        <!-- 階段二：取得並複製 Token -->
         <template v-else>
-          <p class="connected__ios-label">複製後貼入捷徑設定</p>
-          <button class="connected__token-btn" :class="{ copied: iosCopied }" @click="copyIosToken">
-            <span class="connected__token-text">{{ iosCopied ? '已複製！' : iosToken }}</span>
+          <template v-if="!iosToken">
+            <button class="connected__ios-btn" :disabled="iosLoading" @click="generateIosToken">
+              {{ iosLoading ? '生成中…' : '取得 Token' }}
+            </button>
+          </template>
+          <template v-else>
+            <p class="connected__ios-label">複製後貼入捷徑設定</p>
+            <button class="connected__token-btn" :class="{ copied: iosCopied }" @click="copyIosToken">
+              <span class="connected__token-text">{{ iosCopied ? '已複製！' : iosToken }}</span>
+            </button>
+            <p class="connected__ios-hint">Token 只顯示一次，請立即複製</p>
+          </template>
+          <button class="connected__skip-link" @click="iosStep = 'download'">
+            ← 返回下載捷徑
           </button>
-          <p class="connected__ios-hint">Token 只顯示一次，請立即複製</p>
         </template>
-        <a href="" target="_blank" rel="noopener" class="connected__shortcut-link">
-          下載 Garner 捷徑 →
-        </a>
       </template>
 
       <!-- Android / other mobile -->
@@ -125,6 +145,7 @@ const status = ref<Status>('loading')
 // null = 偵測中，true/false = 偵測結果
 const extInstalled = ref<boolean | null>(null)
 
+const iosStep = ref<'download' | 'token'>('download')
 const iosToken = ref<string | null>(null)
 const iosLoading = ref(false)
 const iosCopied = ref(false)
@@ -426,15 +447,17 @@ async function copyIosToken() {
   line-height: 1.5;
 }
 
-.connected__shortcut-link {
-  display: inline-block;
-  font-size: 13px;
-  font-weight: 500;
+.connected__skip-link {
+  background: none;
+  border: none;
+  font-size: 12px;
   color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  margin-top: 12px;
   text-decoration: none;
-  margin-top: 4px;
 }
-.connected__shortcut-link:hover { text-decoration: underline; }
+.connected__skip-link:hover { text-decoration: underline; }
 
 /* Android */
 .connected__back-btn {
