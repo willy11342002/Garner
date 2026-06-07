@@ -379,7 +379,6 @@
   align-items: center;
   gap: 10px;
   padding: 12px 0;
-  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px;
 }

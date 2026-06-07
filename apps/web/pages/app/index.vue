@@ -58,9 +58,12 @@ watch(() => itemStore.recentlyProcessed, async (itemId) => {
   await refreshTags(itemId)
 })
 
-// Refresh tags when item modal is closed
+// Refresh tags and pending list when item modal is closed
 watch(activeItemId, async (newId, oldId) => {
-  if (!newId && oldId) await refreshTags(oldId)
+  if (!newId && oldId) {
+    await refreshTags(oldId)
+    pendingItems.value = await getPendingReview()
+  }
 })
 
 onMounted(async () => {

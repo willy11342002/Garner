@@ -107,7 +107,13 @@ async def _download_video_and_audio(
         audio_path = os.path.join(tmpdir, "audio.mp3")
 
         ydl_opts = {
-            "format": "best[height<=480][ext=mp4]/best[height<=480]/best[ext=mp4]/best",
+            # logged-in YouTube returns adaptive streams (separate video+audio);
+            # fall back to combined streams for unauthenticated requests
+            "format": (
+                "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]"
+                "/bestvideo[height<=480]+bestaudio"
+                "/best[height<=480]/best"
+            ),
             "outtmpl": video_base + ".%(ext)s",
             "quiet": True,
             "no_warnings": True,
