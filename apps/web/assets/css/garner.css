@@ -684,7 +684,7 @@ input, textarea { font-family: inherit; color: inherit; }
   .nav__tab { padding: 6px 10px; font-size: 12px; }
   .nav__right { gap: 6px; }
   .nav__add:not(.nav__login) span { display: none; }
-  .shell { padding: 18px 16px 48px; }
+  .shell { padding: 18px 16px 48px; width: 100%; }
   .shell--tight { padding: 14px 16px; }
 }
 
