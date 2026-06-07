@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 import httpx
 
@@ -38,10 +39,10 @@ def _run_actor(actor_id: str, run_input: dict) -> list[dict]:
     from apify_client import ApifyClient
 
     client = ApifyClient(settings.apify_api_token)
-    run = client.actor(actor_id).call(run_input=run_input, timeout_secs=180)
+    run = client.actor(actor_id).call(run_input=run_input, run_timeout=timedelta(seconds=180))
     if not run:
         return []
-    return list(client.dataset(run["defaultDatasetId"]).iterate_items())
+    return list(client.dataset(run.default_dataset_id).iterate_items())
 
 
 async def fetch_youtube(url: str) -> ApifyMediaResult:
