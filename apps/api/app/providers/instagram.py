@@ -1,9 +1,14 @@
-from uuid import UUID
+import re
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.providers.base import ContentProvider, FetchInfo
 
-from app.models.content_object import ContentObject, TranscriptionSource
-from app.providers.base import ContentProvider, FetchResult
+
+def normalize_instagram_url(url: str) -> str:
+    """Return canonical /p/ URL; pass non-Instagram URLs through unchanged."""
+    match = re.search(r"instagram\.com/(?:p|reel|tv)/([A-Za-z0-9_-]+)", url)
+    if match:
+        return f"https://www.instagram.com/p/{match.group(1)}/"
+    return url
 
 
 class InstagramProvider(ContentProvider):
@@ -11,30 +16,59 @@ class InstagramProvider(ContentProvider):
     def matches(cls, url: str) -> bool:
         return "instagram.com" in url
 
-    async def fetch(
+    async def fetch_info(
         self,
-        db: AsyncSession,
-        user_id: UUID,
         url: str,
-        content: ContentObject,
-        stage_cb=None,
-        max_duration_sec: int = 1200,
-    ) -> FetchResult:
-        from app.services import instagram_service
+        content_id: str,
+        content_md: str | None = None,
+    ) -> FetchInfo:
+        from app.services import apify_service
 
-        raw, whisper_sec, duration, title, thumbnail_bytes = await instagram_service.fetch_content(
-            db, user_id, url, stage_cb=stage_cb
-        )
+        result = await apify_service.fetch_instagram(url)
 
+        # Thumbnail = first image (cover) cached to Storage
         thumbnail_url = None
-        if thumbnail_bytes:
-            thumbnail_url = await self._cache_thumbnail(str(content.id), thumbnail_bytes)
+        if result.thumbnail_url:
+            thumb_bytes = await apify_service.download_bytes(result.thumbnail_url)
+            if thumb_bytes:
+                thumbnail_url = await self._cache_thumbnail(content_id, thumb_bytes)
+        if not thumbnail_url:
+            thumbnail_url = result.thumbnail_url
 
-        return FetchResult(
-            raw_content=raw,
-            title=title,
-            duration_sec=duration,
-            transcription_source=TranscriptionSource.whisper if whisper_sec else None,
-            whisper_seconds=whisper_sec,
+        return FetchInfo(
+            raw_data=result.raw_data,
+            title=None,  # generated from summary later
+            duration_sec=result.duration_sec,
             thumbnail_url=thumbnail_url,
         )
+
+    async def fetch_content(
+        self,
+        url: str,
+        info: FetchInfo,
+        stage_cb=None,
+    ) -> str | None:
+        import asyncio
+
+        from app.services import ai_service, apify_service
+        from app.services.apify_service import _extract_ig_media
+
+        if stage_cb:
+            stage_cb("fetching_content")
+
+        caption = info.raw_data.get("caption") or info.raw_data.get("text") or ""
+        image_urls, video_urls, _ = _extract_ig_media(info.raw_data)
+
+        # Download all media in parallel (memory only, never stored to DB)
+        image_results, video_results = await asyncio.gather(
+            asyncio.gather(*[apify_service.download_bytes(u) for u in image_urls]),
+            asyncio.gather(*[apify_service.download_bytes(u) for u in video_urls]),
+        ) if image_urls or video_urls else ([], [])
+
+        image_bytes_list = [b for b in image_results if b]
+        video_bytes_list = [b for b in video_results if b]
+
+        if stage_cb:
+            stage_cb("understanding")
+
+        return await ai_service.understand_instagram(video_bytes_list, image_bytes_list, caption)

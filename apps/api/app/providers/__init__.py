@@ -1,5 +1,5 @@
 from app.providers.article import ArticleProvider
-from app.providers.base import ContentProvider, FetchResult
+from app.providers.base import ContentProvider, FetchInfo
 from app.providers.default import DefaultProvider
 from app.providers.instagram import InstagramProvider
 from app.providers.youtube import YouTubeProvider

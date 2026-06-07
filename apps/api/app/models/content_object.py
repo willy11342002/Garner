@@ -50,6 +50,7 @@ class ContentObject(Base):
         Enum(TranscriptionSource, name="transcription_source_enum"), nullable=True
     )
     content_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by_user_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
 

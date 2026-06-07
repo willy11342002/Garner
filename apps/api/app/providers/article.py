@@ -1,29 +1,32 @@
 import json
-from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.content_object import ContentObject
-from app.providers.base import ContentProvider, FetchResult
+from app.providers.base import ContentProvider, FetchInfo
 
 
 class ArticleProvider(ContentProvider):
+    """Internal content created directly in the app (URL starts with /)."""
+
     @classmethod
     def matches(cls, url: str) -> bool:
-        return not url.startswith("http")  # internal content (URL starts with /)
+        return not url.startswith("http")
 
-    async def fetch(
+    async def fetch_info(
         self,
-        db: AsyncSession,
-        user_id: UUID,
         url: str,
-        content: ContentObject,
+        content_id: str,
+        content_md: str | None = None,
+    ) -> FetchInfo:
+        raw_content = _extract_text_from_tiptap(content_md) if content_md else None
+        return FetchInfo(raw_data={}, raw_content=raw_content)
+
+    async def fetch_content(
+        self,
+        url: str,
+        info: FetchInfo,
         stage_cb=None,
-        max_duration_sec: int = 1200,
-    ) -> FetchResult:
-        raw = _extract_text_from_tiptap(content.content_md) if content.content_md else None
-        thumbnail_url = await self.fetch_thumbnail(str(content.id), url)
-        return FetchResult(raw_content=raw, thumbnail_url=thumbnail_url)
+    ) -> str | None:
+        # raw_content already set in fetch_info; this path is never reached
+        return info.raw_content
 
 
 def _extract_text_from_tiptap(content_md: str) -> str | None:

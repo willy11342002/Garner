@@ -735,6 +735,60 @@ async def describe_images(images: list[bytes]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+async def understand_youtube(
+    video_bytes: bytes | None,
+    mime_type: str,
+    title: str | None,
+    description: str | None,
+) -> str | None:
+    """Combine video analysis with title/description into raw_content."""
+    parts: list[str] = []
+
+    if title:
+        parts.append(f"[影片標題]\n{title}")
+    if description:
+        parts.append(f"[作者說明]\n{description[:3000]}")
+
+    if video_bytes:
+        video_text = await describe_video(video_bytes, mime_type)
+        if video_text:
+            parts.append(f"[影片內容分析]\n{video_text}")
+
+    return "\n\n".join(parts) if parts else None
+
+
+async def understand_instagram(
+    video_bytes_list: list[bytes],
+    image_bytes_list: list[bytes],
+    caption: str | None,
+) -> str | None:
+    """Combine video and image analysis with caption into raw_content."""
+    parts: list[str] = []
+
+    if caption:
+        parts.append(f"[貼文說明]\n{caption}")
+
+    tasks: list = []
+    if image_bytes_list:
+        tasks.append(("images", describe_images(image_bytes_list)))
+    for i, vb in enumerate(video_bytes_list):
+        tasks.append((f"video_{i}", describe_video(vb, "video/mp4")))
+
+    if tasks:
+        import asyncio as _asyncio
+        results = await _asyncio.gather(*[t for _, t in tasks])
+        for (label, _), text in zip(tasks, results):
+            if not text:
+                continue
+            if label == "images":
+                parts.append(f"[圖片內容]\n{text}")
+            else:
+                idx = int(label.split("_")[1]) + 1
+                parts.append(f"[影片 {idx} 內容]\n{text}")
+
+    return "\n\n".join(parts) if parts else None
+
+
 async def embed(text: str) -> list[float]:
     from openai import AsyncOpenAI
 

@@ -8,6 +8,9 @@ export const config: PlasmoCSConfig = {
   run_at: "document_start",
 }
 
+// 讓 web app 能偵測 Extension 是否已安裝
+document.documentElement.setAttribute("data-garner-ext", "true")
+
 // 接收 web app 推送的 PAT
 window.addEventListener("message", (e) => {
   if (e.origin !== window.location.origin) return

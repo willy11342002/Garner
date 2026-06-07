@@ -1,21 +1,4 @@
-import asyncio
-import logging
-from uuid import UUID
-
-import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.content_object import ContentObject
-from app.providers.base import ContentProvider, FetchResult
-
-logger = logging.getLogger(__name__)
-
-_FETCH_TIMEOUT = 20
-_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
+from app.providers.base import ContentProvider, FetchInfo
 
 
 class DefaultProvider(ContentProvider):
@@ -25,51 +8,38 @@ class DefaultProvider(ContentProvider):
     def matches(cls, url: str) -> bool:
         return True
 
-    async def fetch(
+    async def fetch_info(
         self,
-        db: AsyncSession,
-        user_id: UUID,
         url: str,
-        content: ContentObject,
+        content_id: str,
+        content_md: str | None = None,
+    ) -> FetchInfo:
+        from app.services import apify_service
+
+        result = await apify_service.fetch_article(url)
+
+        thumbnail_url = None
+        if result.thumbnail_url:
+            thumb_bytes = await apify_service.download_bytes(result.thumbnail_url)
+            if thumb_bytes:
+                thumbnail_url = await self._cache_thumbnail(content_id, thumb_bytes)
+        if not thumbnail_url:
+            thumbnail_url = result.thumbnail_url
+
+        return FetchInfo(
+            raw_data=result.raw_data,
+            title=result.title,
+            duration_sec=None,
+            thumbnail_url=thumbnail_url,
+        )
+
+    async def fetch_content(
+        self,
+        url: str,
+        info: FetchInfo,
         stage_cb=None,
-        max_duration_sec: int = 1200,
-    ) -> FetchResult:
+    ) -> str | None:
         if stage_cb:
             stage_cb("fetching_content")
-        raw, title = await _fetch_and_extract(url)
-        thumbnail_url = await self.fetch_thumbnail(str(content.id), url)
-        return FetchResult(raw_content=raw, title=title, thumbnail_url=thumbnail_url)
-
-
-async def _fetch_and_extract(url: str) -> tuple[str | None, str | None]:
-    """Fetch URL and extract main text + title via trafilatura."""
-    import trafilatura
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=_FETCH_TIMEOUT,
-            follow_redirects=True,
-            headers={"User-Agent": _USER_AGENT},
-        ) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            html = response.text
-    except Exception as exc:
-        logger.warning("DefaultProvider: fetch failed for %s: %s", url, exc)
-        return None, None
-
-    try:
-        text = await asyncio.to_thread(
-            trafilatura.extract,
-            html,
-            include_comments=False,
-            include_tables=True,
-            no_fallback=False,
-            favor_recall=True,
-        )
-        meta = await asyncio.to_thread(trafilatura.extract_metadata, html)
-        title = meta.title if meta else None
-        return text or None, title or None
-    except Exception as exc:
-        logger.warning("DefaultProvider: trafilatura extraction failed for %s: %s", url, exc)
-        return None, None
+        # Article text comes directly from Apify — no LLM understanding needed
+        return info.raw_data.get("text") or info.raw_data.get("markdown") or None

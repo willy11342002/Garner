@@ -21,13 +21,9 @@ dependencies = [
     "supabase>=2.10.0",
     "openai>=1.60.0", # used as OpenRouter client (OpenAI-compatible SDK)
     "sentry-sdk[fastapi]>=2.0.0",
-    "youtube-transcript-api>=0.6.0",
-    "yt-dlp>=2025.1.1",
-    "groq>=0.9.0",
+    "apify-client>=1.8.0",
     "python-multipart>=0.0.9",
     "Pillow>=11.0.0",
-    "instaloader>=4.13",
-    "trafilatura>=2.0.0",
 ]
 
 [project.optional-dependencies]

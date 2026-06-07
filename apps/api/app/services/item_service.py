@@ -13,8 +13,8 @@ from app.crud import items as crud_items
 from app.models.content_object import ContentObject, SourceType, detect_source_type
 from app.quota_depends import get_video_max_sec
 from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemSummaryUpdate, ItemUpdate
-from app.services.instagram_service import normalize_instagram_url
-from app.services.youtube_service import normalize_youtube_url
+from app.providers.instagram import normalize_instagram_url
+from app.providers.youtube import normalize_youtube_url
 from app.workers.process_item import process_item
 
 

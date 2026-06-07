@@ -1,10 +1,14 @@
 import re
-from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.providers.base import ContentProvider, FetchInfo
 
-from app.models.content_object import ContentObject, TranscriptionSource
-from app.providers.base import ContentProvider, FetchResult
+
+def normalize_youtube_url(url: str) -> str:
+    """Return canonical watch?v= URL; pass non-YouTube URLs through unchanged."""
+    match = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
+    if match:
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
+    return url
 
 
 class YouTubeProvider(ContentProvider):
@@ -12,37 +16,53 @@ class YouTubeProvider(ContentProvider):
     def matches(cls, url: str) -> bool:
         return "youtube.com" in url or "youtu.be" in url
 
-    async def fetch(
+    async def fetch_info(
         self,
-        db: AsyncSession,
-        user_id: UUID,
         url: str,
-        content: ContentObject,
-        stage_cb=None,
-        max_duration_sec: int = 1200,
-    ) -> FetchResult:
-        from app.services import youtube_service
+        content_id: str,
+        content_md: str | None = None,
+    ) -> FetchInfo:
+        from app.services import apify_service
 
-        raw, whisper_sec, duration, title, ts_str = await youtube_service.fetch_content(
-            db, user_id, url, stage_cb=stage_cb, max_duration_sec=max_duration_sec
-        )
-        thumbnail_url = await self.fetch_thumbnail(str(content.id), url)
-        ts = TranscriptionSource(ts_str) if ts_str else None
-        return FetchResult(
-            raw_content=raw,
-            title=title,
-            duration_sec=duration,
-            transcription_source=ts,
-            whisper_seconds=whisper_sec,
+        result = await apify_service.fetch_youtube(url)
+
+        thumbnail_url = None
+        if result.thumbnail_url:
+            thumb_bytes = await apify_service.download_bytes(result.thumbnail_url)
+            if thumb_bytes:
+                thumbnail_url = await self._cache_thumbnail(content_id, thumb_bytes)
+        if not thumbnail_url:
+            thumbnail_url = result.thumbnail_url
+
+        return FetchInfo(
+            raw_data=result.raw_data,
+            title=result.title,
+            duration_sec=result.duration_sec,
             thumbnail_url=thumbnail_url,
         )
 
-    async def fetch_thumbnail(self, content_id: str, url: str) -> str | None:
-        match = re.search(r"(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})", url)
-        if not match:
-            return await super().fetch_thumbnail(content_id, url)
-        yt_url = f"https://img.youtube.com/vi/{match.group(1)}/maxresdefault.jpg"
-        image_bytes = await self._download_bytes(yt_url)
-        if not image_bytes:
-            return yt_url
-        return await self._cache_thumbnail(content_id, image_bytes) or yt_url
+    async def fetch_content(
+        self,
+        url: str,
+        info: FetchInfo,
+        stage_cb=None,
+    ) -> str | None:
+        from app.services import ai_service, apify_service
+
+        if stage_cb:
+            stage_cb("fetching_content")
+
+        title = info.title or info.raw_data.get("title")
+        description = info.raw_data.get("description") or info.raw_data.get("text") or ""
+
+        # Download video to memory (not stored to DB)
+        video_bytes: bytes | None = None
+        mime_type = "video/mp4"
+        video_url = info.raw_data.get("videoUrl") or info.raw_data.get("streamUrl")
+        if video_url:
+            video_bytes = await apify_service.download_bytes(video_url)
+
+        if stage_cb:
+            stage_cb("understanding")
+
+        return await ai_service.understand_youtube(video_bytes, mime_type, title, description)
