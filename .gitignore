@@ -23,6 +23,7 @@ venv/
 
 # Plasmo
 .plasmo/
+keys.json
 
 # OS
 .DS_Store

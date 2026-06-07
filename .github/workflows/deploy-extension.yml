@@ -1,4 +1,4 @@
-name: 發佈 Extension
+name: Deploy Extension
 
 on:
   push:
