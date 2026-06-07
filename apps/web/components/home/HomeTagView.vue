@@ -17,6 +17,38 @@ const { t } = useI18n()
 
 const processingHover = ref<string | null>(null)
 const selectedTagIds = ref(new Set<string>())
+
+// Drag-to-scroll for desktop
+const chipsRef = ref<HTMLElement | null>(null)
+let dragState: { startX: number; scrollLeft: number } | null = null
+let didDrag = false
+
+function onChipsMouseDown(e: MouseEvent) {
+  if (!chipsRef.value) return
+  dragState = { startX: e.pageX - chipsRef.value.offsetLeft, scrollLeft: chipsRef.value.scrollLeft }
+  didDrag = false
+  chipsRef.value.style.cursor = 'grabbing'
+}
+
+function onChipsMouseMove(e: MouseEvent) {
+  if (!dragState || !chipsRef.value) return
+  e.preventDefault()
+  const x = e.pageX - chipsRef.value.offsetLeft
+  const delta = x - dragState.startX
+  if (Math.abs(delta) > 4) didDrag = true
+  chipsRef.value.scrollLeft = dragState.scrollLeft - delta
+}
+
+function onChipsMouseUp() {
+  if (!chipsRef.value) return
+  dragState = null
+  chipsRef.value.style.cursor = ''
+}
+
+function onChipClick(e: MouseEvent, action: () => void) {
+  if (didDrag) { e.preventDefault(); e.stopPropagation(); didDrag = false; return }
+  action()
+}
 const filterLogic = ref<'and' | 'or'>('and')
 const timeFilter = ref<'all' | '7d' | '30d' | 'year'>('all')
 const sortOrder = ref<'saved_desc' | 'saved_asc'>('saved_desc')
@@ -190,13 +222,20 @@ const filterSummary = computed(() => {
     <div class="filter-row">
       <span class="filter-row__label">{{ t('home.filter_label') }}</span>
 
-      <div class="filter-chips">
+      <div
+        ref="chipsRef"
+        class="filter-chips"
+        @mousedown="onChipsMouseDown"
+        @mousemove="onChipsMouseMove"
+        @mouseup="onChipsMouseUp"
+        @mouseleave="onChipsMouseUp"
+      >
         <button
           v-for="(group) in orderedTagGroups"
           :key="group.tag.id"
           class="tag-filter-chip"
           :class="{ 'tag-filter-chip--active': selectedTagIds.has(group.tag.id) }"
-          @click="toggleTag(group.tag.id)"
+          @click="onChipClick($event, () => toggleTag(group.tag.id))"
         >
           <span
             class="tag-filter-chip__dot"
@@ -207,7 +246,7 @@ const filterSummary = computed(() => {
           <span
             v-if="selectedTagIds.has(group.tag.id)"
             class="tag-filter-chip__remove"
-            @click.stop="removeTag(group.tag.id)"
+            @click.stop="onChipClick($event, () => removeTag(group.tag.id))"
           >×</span>
         </button>
       </div>

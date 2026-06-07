@@ -400,6 +400,8 @@
   -ms-overflow-style: none;
   flex: 1;
   min-width: 0;
+  cursor: grab;
+  user-select: none;
 }
 .filter-chips::-webkit-scrollbar { display: none; }
 
