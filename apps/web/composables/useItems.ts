@@ -1,10 +1,30 @@
-import type { Item, ItemCreate, ItemPendingReview, ItemUpdate, Tag } from '~/types/api'
+import type { Item, ItemCreate, ItemPage, ItemPendingReview, ItemUpdate, Tag } from '~/types/api'
 
 export function useItems() {
   const apiFetch = useApiFetch()
 
   function listItems(): Promise<Item[]> {
     return apiFetch('/items/')
+  }
+
+  function listItemsPage(params: {
+    page?: number
+    page_size?: number
+    tag_ids?: string[]
+    tag_logic?: 'and' | 'or'
+    saved_after?: string
+    sort?: 'saved_desc' | 'saved_asc'
+  }): Promise<ItemPage> {
+    return apiFetch('/items/', {
+      params: {
+        page: params.page ?? 1,
+        page_size: params.page_size ?? 25,
+        ...(params.tag_ids?.length ? { tag_ids: params.tag_ids } : {}),
+        tag_logic: params.tag_logic ?? 'and',
+        ...(params.saved_after ? { saved_after: params.saved_after } : {}),
+        sort: params.sort ?? 'saved_desc',
+      },
+    })
   }
 
   function createItem(data: ItemCreate): Promise<Item> {
@@ -61,7 +81,7 @@ export function useItems() {
   }
 
   return {
-    listItems, createItem, getItem, updateItem, deleteItem,
+    listItems, listItemsPage, createItem, getItem, updateItem, deleteItem,
     getItemTags, getPendingItemTags, attachTag, detachTag,
     listArchivedItems, getPendingReview, confirmItemTag, confirmItemTagsBulk,
     updateItemSummary,

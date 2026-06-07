@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
@@ -11,16 +12,34 @@ from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
 from app.quota_depends import SaveQuota
-from app.schemas.item import ItemCreate, ItemPendingReviewRead, ItemRead, ItemSummaryUpdate, ItemUpdate
+from app.schemas.item import ItemCreate, ItemPage, ItemPendingReviewRead, ItemRead, ItemSummaryUpdate, ItemUpdate
 from app.schemas.tag import TagBulkConfirm, TagCreate, TagRead, TagSingleConfirm
 from app.services import item_service
 
 router = APIRouter()
 
 
-@router.get("/", response_model=list[ItemRead])
-async def list_items(current_user: CurrentUser, db: DbSession):
-    return await item_service.list_items(db, UUID(current_user["sub"]))
+@router.get("/", response_model=ItemPage)
+async def list_items(
+    current_user: CurrentUser,
+    db: DbSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    tag_ids: list[UUID] = Query(default=[]),
+    tag_logic: str = Query(default="and"),
+    saved_after: datetime | None = Query(default=None),
+    sort: str = Query(default="saved_desc"),
+):
+    return await item_service.list_items_page(
+        db,
+        UUID(current_user["sub"]),
+        tag_ids=tag_ids or None,
+        tag_logic=tag_logic,
+        saved_after=saved_after,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)

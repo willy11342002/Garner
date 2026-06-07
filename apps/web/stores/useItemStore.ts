@@ -1,14 +1,33 @@
 import { defineStore } from 'pinia'
 import type { Item, ItemCreate, ItemUpdate } from '~/types/api'
 
+interface LoadParams {
+  page?: number
+  page_size?: number
+  tag_ids?: string[]
+  tag_logic?: 'and' | 'or'
+  saved_after?: string
+  sort?: 'saved_desc' | 'saved_asc'
+}
+
 export const useItemStore = defineStore('item', () => {
   const items = ref<Item[]>([])
+  const total = ref(0)
+  const totalAll = ref<number | null>(null)
   const recentlyProcessed = ref<string | null>(null)
   const processingStages = ref<Map<string, string>>(new Map())
 
-  async function load() {
-    const { listItems } = useItems()
-    items.value = await listItems()
+  async function load(params?: LoadParams) {
+    const { listItemsPage } = useItems()
+    const result = await listItemsPage(params ?? {})
+    items.value = result.items
+    total.value = result.total
+
+    const hasFilters = !!(params?.tag_ids?.length || params?.saved_after)
+    if (!hasFilters) {
+      totalAll.value = result.total
+    }
+
     for (const item of items.value) {
       if (!item.parsed_at && !item.url.startsWith('/')) _watchProcessing(item.id)
     }
@@ -33,6 +52,8 @@ export const useItemStore = defineStore('item', () => {
 
     const item = await response.json() as Item
     items.value.unshift(item)
+    total.value++
+    if (totalAll.value !== null) totalAll.value++
     if (!item.parsed_at && !item.url.startsWith('/')) {
       _watchProcessing(item.id)
     }
@@ -43,7 +64,11 @@ export const useItemStore = defineStore('item', () => {
     const { deleteItem } = useItems()
     await deleteItem(id)
     const idx = items.value.findIndex(i => i.id === id)
-    if (idx !== -1) items.value.splice(idx, 1)
+    if (idx !== -1) {
+      items.value.splice(idx, 1)
+      total.value = Math.max(0, total.value - 1)
+      if (totalAll.value !== null) totalAll.value = Math.max(0, totalAll.value - 1)
+    }
   }
 
   async function patch(id: string, data: ItemUpdate): Promise<Item> {
@@ -116,5 +141,5 @@ export const useItemStore = defineStore('item', () => {
     }
   }
 
-  return { items, load, add, remove, patch, recentlyProcessed, processingStages }
+  return { items, total, totalAll, load, add, remove, patch, recentlyProcessed, processingStages }
 })

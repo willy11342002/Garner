@@ -70,6 +70,13 @@ class PaginatedResult(BaseModel, Generic[T]):
     has_next: bool
 
 
+class ItemPage(BaseModel):
+    items: list[ItemRead]
+    total: int
+    page: int
+    page_size: int
+
+
 class ItemPendingReviewRead(BaseModel):
     id: UUID
     url: str

@@ -89,6 +89,86 @@ async def soft_delete(db: AsyncSession, user_item: UserItem) -> UserItem:
     return user_item
 
 
+async def get_page(
+    db: AsyncSession,
+    user_id: UUID,
+    *,
+    tag_ids: list[UUID] | None = None,
+    tag_logic: str = "and",
+    saved_after: datetime | None = None,
+    sort: str = "saved_desc",
+    offset: int = 0,
+    limit: int = 25,
+) -> tuple[list[UserItem], int]:
+    base_filters = [
+        UserItem.user_id == user_id,
+        UserItem.deleted_at.is_(None),
+        UserItem.status == UserItemStatus.active,
+    ]
+    if saved_after:
+        base_filters.append(UserItem.saved_at >= saved_after)
+
+    order_col = UserItem.saved_at.desc() if sort == "saved_desc" else UserItem.saved_at.asc()
+
+    if tag_ids:
+        if tag_logic == "and":
+            ids_subq = (
+                select(UserItem.id)
+                .join(ItemTag, (ItemTag.user_item_id == UserItem.id) & (ItemTag.confirmed == True))  # noqa: E712
+                .where(*base_filters, ItemTag.tag_id.in_(tag_ids))
+                .group_by(UserItem.id)
+                .having(func.count(func.distinct(ItemTag.tag_id)) == len(tag_ids))
+                .subquery()
+            )
+        else:
+            ids_subq = (
+                select(UserItem.id)
+                .join(ItemTag, (ItemTag.user_item_id == UserItem.id) & (ItemTag.confirmed == True))  # noqa: E712
+                .where(*base_filters, ItemTag.tag_id.in_(tag_ids))
+                .distinct()
+                .subquery()
+            )
+
+        total_result = await db.execute(select(func.count()).select_from(ids_subq))
+        total = total_result.scalar_one()
+
+        ids_result = await db.execute(
+            select(UserItem.id)
+            .where(UserItem.id.in_(select(ids_subq.c.id)))
+            .order_by(order_col)
+            .offset(offset)
+            .limit(limit)
+        )
+    else:
+        base_q = select(UserItem.id).where(*base_filters)
+        total_result = await db.execute(select(func.count()).select_from(base_q.subquery()))
+        total = total_result.scalar_one()
+
+        ids_result = await db.execute(
+            base_q.order_by(order_col).offset(offset).limit(limit)
+        )
+
+    ids = [row[0] for row in ids_result.all()]
+    if not ids:
+        return [], total
+
+    result = await db.execute(
+        select(UserItem)
+        .where(UserItem.id.in_(ids))
+        .options(
+            joinedload(UserItem.content).options(
+                defer(ContentObject.embedding),
+                defer(ContentObject.content_md),
+            ),
+            selectinload(
+                UserItem.item_tags.and_(ItemTag.confirmed == True)  # noqa: E712
+            ).joinedload(ItemTag.tag),
+        )
+    )
+    items_by_id = {ui.id: ui for ui in result.scalars().unique().all()}
+    return [items_by_id[id_] for id_ in ids if id_ in items_by_id], total
+
+
 async def count_all(db: AsyncSession, user_id: UUID) -> int:
     result = await db.execute(
         select(func.count())

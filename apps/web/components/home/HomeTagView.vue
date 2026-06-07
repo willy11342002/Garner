@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import type { Item, Tag } from '~/types/api'
-
-const props = defineProps<{
-  itemTagsMap: Record<string, Tag[]>
-}>()
+import type { Tag } from '~/types/api'
 
 const emit = defineEmits<{
   'open-share': [tagId: string]
 }>()
 
+const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const { localize } = useI18nContent()
 const { open: openItemModal } = useItemModal()
@@ -49,6 +46,7 @@ function onChipClick(e: MouseEvent, action: () => void) {
   if (didDrag) { e.preventDefault(); e.stopPropagation(); didDrag = false; return }
   action()
 }
+
 const filterLogic = ref<'and' | 'or'>('and')
 const timeFilter = ref<'all' | '7d' | '30d' | 'year'>('all')
 const sortOrder = ref<'saved_desc' | 'saved_asc'>('saved_desc')
@@ -77,18 +75,16 @@ function relativeTime(dateStr: string) {
   return t('home.time_nd', { n: d })
 }
 
-// All tags sorted by count
-const allTagGroups = computed(() => {
-  const groups = new Map<string, { tag: Tag; count: number }>()
-  for (const item of itemStore.items) {
-    if (!item.parsed_at || pendingItemIds.value.has(item.id)) continue
-    for (const tag of props.itemTagsMap[item.id] ?? []) {
-      if (!groups.has(tag.id)) groups.set(tag.id, { tag, count: 0 })
-      groups.get(tag.id)!.count++
-    }
-  }
-  return [...groups.values()].sort((a, b) => b.count - a.count)
-})
+// Tags from API (for chip bar counts)
+const tags = ref<Tag[]>([])
+
+// All tags sorted by count, derived from API tags list
+const allTagGroups = computed(() =>
+  tags.value
+    .filter(t => t.item_count > 0)
+    .map(tag => ({ tag, count: tag.item_count }))
+    .sort((a, b) => b.count - a.count)
+)
 
 // Color index map (stable across strip and cards)
 const tagColorIndex = computed(() => {
@@ -112,76 +108,55 @@ function toggleTag(tagId: string) {
   if (next.has(tagId)) next.delete(tagId)
   else next.add(tagId)
   selectedTagIds.value = next
-  currentPage.value = 1
 }
 
 function removeTag(tagId: string) {
   const next = new Set(selectedTagIds.value)
   next.delete(tagId)
   selectedTagIds.value = next
-  currentPage.value = 1
 }
 
 function clearFilters() {
   selectedTagIds.value = new Set()
   timeFilter.value = 'all'
-  currentPage.value = 1
 }
 
 const hasActiveFilters = computed(() =>
   selectedTagIds.value.size > 0 || timeFilter.value !== 'all'
 )
 
-function getTimeFilterDate(): Date | null {
+function getSavedAfterParam(): string | undefined {
   const now = new Date()
-  if (timeFilter.value === '7d') return new Date(now.getTime() - 7 * 86400000)
-  if (timeFilter.value === '30d') return new Date(now.getTime() - 30 * 86400000)
-  if (timeFilter.value === 'year') return new Date(now.getFullYear(), 0, 1)
-  return null
+  if (timeFilter.value === '7d') return new Date(now.getTime() - 7 * 86400000).toISOString()
+  if (timeFilter.value === '30d') return new Date(now.getTime() - 30 * 86400000).toISOString()
+  if (timeFilter.value === 'year') return new Date(now.getFullYear(), 0, 1).toISOString()
+  return undefined
 }
-
-// Reactive filtering — no search button needed
-const filteredItems = computed(() => {
-  const since = getTimeFilterDate()
-  let items = itemStore.items.filter(i => {
-    if (!i.parsed_at || pendingItemIds.value.has(i.id)) return false
-    if (since && new Date(i.saved_at) < since) return false
-    return true
-  })
-  if (selectedTagIds.value.size > 0) {
-    if (filterLogic.value === 'and') {
-      items = items.filter(item => {
-        const tags = new Set((props.itemTagsMap[item.id] ?? []).map(t => t.id))
-        return [...selectedTagIds.value].every(id => tags.has(id))
-      })
-    } else {
-      items = items.filter(item => {
-        const tags = new Set((props.itemTagsMap[item.id] ?? []).map(t => t.id))
-        return [...selectedTagIds.value].some(id => tags.has(id))
-      })
-    }
-  }
-  return items
-})
-
-// Sort is also reactive
-const allDisplayItems = computed(() => {
-  return [...filteredItems.value].sort((a, b) => {
-    const diff = new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime()
-    return sortOrder.value === 'saved_desc' ? diff : -diff
-  })
-})
 
 const PAGE_SIZE = 25
 const currentPage = ref(1)
-const totalPages = computed(() => Math.ceil(allDisplayItems.value.length / PAGE_SIZE))
-const displayItems = computed(() => {
-  const start = (currentPage.value - 1) * PAGE_SIZE
-  return allDisplayItems.value.slice(start, start + PAGE_SIZE)
-})
+const totalPages = computed(() => Math.max(1, Math.ceil(itemStore.total / PAGE_SIZE)))
 
-// Reset page on filter changes
-watch([timeFilter, filterLogic], () => { currentPage.value = 1 })
+async function fetchItems(page = 1) {
+  currentPage.value = page
+  await itemStore.load({
+    page,
+    page_size: PAGE_SIZE,
+    tag_ids: selectedTagIds.value.size > 0 ? [...selectedTagIds.value] : undefined,
+    tag_logic: filterLogic.value,
+    saved_after: getSavedAfterParam(),
+    sort: sortOrder.value,
+  })
+}
+
+// Items to display on current page (excluding pending-review and still-processing)
+const displayItems = computed(() =>
+  itemStore.items.filter(i => !!i.parsed_at && !pendingItemIds.value.has(i.id))
+)
+
+// Watchers: reset to page 1 on any filter change
+watch([timeFilter, filterLogic, sortOrder], () => fetchItems(1))
+watch(selectedTagIds, () => fetchItems(1))
 
 // Dropdown display labels (reactive to locale)
 const timeLabel = computed(() => ({
@@ -212,6 +187,10 @@ const filterSummary = computed(() => {
     parts.push(timeLabel.value)
   }
   return parts.join(' · ')
+})
+
+onMounted(async () => {
+  tags.value = await apiFetch<Tag[]>('/tags/')
 })
 </script>
 
@@ -273,7 +252,7 @@ const filterSummary = computed(() => {
     <!-- Results Row -->
     <div class="results-row">
       <p class="results-row__summary">
-        {{ t('home.results', { n: allDisplayItems.length }) }}
+        {{ t('home.results', { n: itemStore.total }) }}
         <span v-if="filterSummary" class="results-row__filter-desc">{{ filterSummary }}</span>
       </p>
       <div class="results-row__controls">
@@ -334,7 +313,7 @@ const filterSummary = computed(() => {
             </span>
             <div v-else class="card__tags">
               <span
-                v-for="tag in (itemTagsMap[item.id] ?? []).slice(0, 2)"
+                v-for="tag in (item.tags ?? []).slice(0, 2)"
                 :key="tag.id"
                 :class="`tag-chip tag-chip--${getTagColor(tag.id)}`"
               >{{ localize(tag.name_i18n, tag.name) }}</span>
@@ -352,13 +331,13 @@ const filterSummary = computed(() => {
       <button
         class="pagination__btn"
         :disabled="currentPage === 1"
-        @click="currentPage--"
+        @click="fetchItems(currentPage - 1)"
       >←</button>
       <span class="pagination__info mono">{{ currentPage }} / {{ totalPages }}</span>
       <button
         class="pagination__btn"
         :disabled="currentPage === totalPages"
-        @click="currentPage++"
+        @click="fetchItems(currentPage + 1)"
       >→</button>
     </div>
   </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Tag, UsageSummary } from '~/types/api'
+import type { UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — 我的知識庫' })
 
 const apiFetch = useApiFetch()
@@ -11,7 +11,6 @@ const { t } = useI18n()
 
 
 const loading = ref(true)
-const itemTagsMap = ref<Record<string, Tag[]>>({})
 const quota = ref<UsageSummary | null>(null)
 
 // URL quick-save (empty state CTA)
@@ -32,7 +31,9 @@ function openShareModal(tagId: string) {
 }
 
 async function refreshTags(itemId: string) {
-  itemTagsMap.value = { ...itemTagsMap.value, [itemId]: await getItemTags(itemId) }
+  const tags = await getItemTags(itemId)
+  const idx = itemStore.items.findIndex(i => i.id === itemId)
+  if (idx !== -1) itemStore.items[idx] = { ...itemStore.items[idx], tags }
 }
 
 async function quickSave() {
@@ -41,9 +42,8 @@ async function quickSave() {
   saving.value = true
   saveError.value = ''
   try {
-    const item = await itemStore.add({ url })
+    await itemStore.add({ url })
     newUrl.value = ''
-    itemTagsMap.value[item.id] = await getItemTags(item.id)
   } catch (err: any) {
     if (err?.response?.status === 429) {
       saveError.value = t('home.error_quota_full')
@@ -54,11 +54,6 @@ async function quickSave() {
     saving.value = false
   }
 }
-
-watch(() => itemStore.recentlyProcessed, async (itemId) => {
-  if (!itemId) return
-  await refreshTags(itemId)
-})
 
 // Refresh tags and pending list when item modal is closed
 watch(activeItemId, async (newId, oldId) => {
@@ -75,9 +70,6 @@ onMounted(async () => {
     apiFetch<UsageSummary>('/quota/me').then(q => { quota.value = q }).catch(() => {}),
   ])
   pendingItems.value = pending
-  for (const item of itemStore.items) {
-    itemTagsMap.value[item.id] = item.tags
-  }
   loading.value = false
 })
 </script>
@@ -88,7 +80,7 @@ onMounted(async () => {
     <div v-if="loading" class="loading-state">載入中...</div>
 
     <!-- Empty: Ghost Preview + CTA -->
-    <template v-else-if="itemStore.items.length === 0">
+    <template v-else-if="itemStore.totalAll === 0">
       <section class="empty-state fadeup">
         <div class="placeholder placeholder--b empty-state__art">
           <div class="placeholder__stripes"></div>
@@ -125,7 +117,6 @@ onMounted(async () => {
       </div>
       <HomeTagView
         v-if="currentView === 'tags'"
-        :item-tags-map="itemTagsMap"
         @open-share="openShareModal"
       />
       <HomeMapView v-else-if="currentView === 'map'" />

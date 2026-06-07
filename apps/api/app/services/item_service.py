@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,35 @@ async def list_items(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
         _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_content_md=False)
         for ui in user_items
     ]
+
+
+async def list_items_page(
+    db: AsyncSession,
+    user_id: UUID,
+    *,
+    tag_ids: list[UUID] | None = None,
+    tag_logic: str = "and",
+    saved_after: datetime | None = None,
+    sort: str = "saved_desc",
+    page: int = 1,
+    page_size: int = 25,
+) -> "ItemPage":
+    from app.schemas.item import ItemPage as _ItemPage
+    offset = (page - 1) * page_size
+    user_items, total = await crud_items.get_page(
+        db, user_id,
+        tag_ids=tag_ids,
+        tag_logic=tag_logic,
+        saved_after=saved_after,
+        sort=sort,
+        offset=offset,
+        limit=page_size,
+    )
+    items = [
+        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_content_md=False)
+        for ui in user_items
+    ]
+    return _ItemPage(items=items, total=total, page=page, page_size=page_size)
 
 
 async def get_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> ItemRead:

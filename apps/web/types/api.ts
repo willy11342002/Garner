@@ -265,6 +265,13 @@ export interface PaginatedResult<T> {
   has_next: boolean
 }
 
+export interface ItemPage {
+  items: Item[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export interface UsageSummary {
   plan: string
   period_end: string | null
