@@ -298,6 +298,7 @@ async function jumpTo(item: ChainItem) {
   const hopIdx = chain.value.length - 1
   activeHopIdx.value = hopIdx
   fullAnalysis.value = null
+  nextLoading.value = true
 
   chainLoading.value = true
   try {
@@ -397,7 +398,7 @@ function sourceLabel(type: string | null) {
 .item-chip__t { width: 24px; height: 18px; border-radius: 3px; overflow: hidden; flex-shrink: 0; }
 
 /* ── Chain Explorer ── */
-.chain-section { max-width: 920px; }
+.chain-section { max-width: 70vw; }
 .chain-section__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
 .chain-section__desc { font-size: 12.5px; color: var(--text-dim); }
 
@@ -413,7 +414,7 @@ function sourceLabel(type: string | null) {
 
 .chain-candidates { margin-top: 16px; }
 .chain-candidates__label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
-.chain-cand-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.chain-cand-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .chain-cand-card { width: auto; }
 .chain-cand-card--skel { pointer-events: none; }
 .chain-cand-card--skel .card__thumb { animation: skel-pulse 1.4s ease infinite; }

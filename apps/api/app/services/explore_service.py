@@ -387,7 +387,7 @@ async def get_chain_start_items(
     db: AsyncSession, user_id: UUID, start_type: str
 ) -> list[ChainItem]:
     allow_public = await _get_user_allow_public_chain(db, user_id)
-    own_limit = 2 if allow_public else 3
+    own_limit = 3 if allow_public else 5
 
     if start_type == "random":
         items = await crud_items.get_random_with_embedding(db, user_id, limit=own_limit)
@@ -399,7 +399,7 @@ async def get_chain_start_items(
     result = [_to_chain_item(ui) for ui in items]
 
     if allow_public:
-        needed = 3 - len(result)
+        needed = 5 - len(result)
         public_items = await _get_public_chain_items(db, None, needed, user_id)
         result.extend(public_items)
 
@@ -494,7 +494,7 @@ async def get_chain_candidates(
         current_content_id = item_id
 
     allow_public = await _get_user_allow_public_chain(db, user_id)
-    own_limit = 2 if allow_public else 3
+    own_limit = 3 if allow_public else 5
 
     own_hits = await crud_items.get_random_with_embedding(
         db, user_id, limit=own_limit + len(exclude_ids) + 1
@@ -508,7 +508,7 @@ async def get_chain_candidates(
     candidates = own_candidates
 
     if allow_public:
-        needed = 3 - len(candidates)
+        needed = 5 - len(candidates)
         chain_content_ids = await _resolve_content_ids(db, user_id, [item_id, *exclude_ids])
         exclude_content_ids = list({cid for cid in chain_content_ids if cid is not None})
         public_items = await _get_public_chain_items(db, None, needed, user_id, exclude_content_ids)
