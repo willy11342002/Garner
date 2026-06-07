@@ -123,6 +123,7 @@ onMounted(async () => {
       <HomeSemanticSearchView v-else-if="currentView === 'semantic'" />
     </template>
 
+    <div class="shell__spacer"></div>
     <LayoutAppFooter />
   </main>
 
