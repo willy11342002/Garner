@@ -2,39 +2,106 @@
   <main class="connected">
     <div class="connected__card">
       <div class="connected__icon">✦</div>
-      <h1 class="connected__title">Garner</h1>
+      <h1 class="connected__title">設置極速存入</h1>
 
-      <template v-if="status === 'loading'">
-        <p class="connected__hint">正在授權中…</p>
+      <!-- Desktop: Chrome Extension -->
+      <template v-if="device === 'desktop'">
+        <!-- 偵測中 -->
+        <template v-if="extInstalled === null">
+          <p class="connected__hint">偵測 Extension 中…</p>
+        </template>
+
+        <!-- 未安裝 Extension -->
+        <template v-else-if="extInstalled === false">
+          <p class="connected__desc">安裝 Garner Extension，在任何網頁上按一下即可存入。</p>
+          <a
+            href="https://chrome.google.com/webstore"
+            target="_blank"
+            rel="noopener"
+            class="connected__install-btn"
+          >
+            前往安裝 Chrome Extension →
+          </a>
+          <p class="connected__hint-sm">安裝完成後，重新整理此頁面即可授權。</p>
+        </template>
+
+        <!-- 已安裝：授權中 -->
+        <template v-else-if="status === 'loading'">
+          <p class="connected__hint">正在授權 Extension…</p>
+        </template>
+
+        <!-- 已安裝：授權成功 -->
+        <template v-else-if="status === 'done'">
+          <div class="connected__success-icon">✓</div>
+          <p class="connected__status">Extension 已連結</p>
+          <p class="connected__hint">可以開始在任何頁面一鍵存入了。</p>
+          <div class="connected__key">
+            <kbd>Ctrl</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
+            <span class="connected__key-or">或</span>
+            <kbd>⌘</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
+            <span class="connected__key-or">關閉此頁</span>
+          </div>
+        </template>
+
+        <!-- 授權失敗 -->
+        <template v-else>
+          <p class="connected__error">授權失敗，請重新整理後再試。</p>
+        </template>
       </template>
 
-      <template v-else-if="status === 'done'">
-        <p class="connected__status">連結成功</p>
-        <p class="connected__hint">Extension 已取得授權，請關閉此分頁。</p>
-        <div class="connected__key">
-          <kbd>Ctrl</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
-          <span class="connected__key-or">或</span>
-          <kbd>⌘</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
+      <!-- iOS: Shortcut Token -->
+      <template v-else-if="device === 'ios'">
+        <p class="connected__desc">在 iPhone 上安裝 Garner 捷徑，即可從任何 App 一鍵存入內容。</p>
+        <div class="connected__steps">
+          <div class="connected__step">
+            <span class="connected__step-num">1</span>
+            <span>點擊下方取得個人 Token</span>
+          </div>
+          <div class="connected__step">
+            <span class="connected__step-num">2</span>
+            <span>下載並安裝 Garner 捷徑</span>
+          </div>
+          <div class="connected__step">
+            <span class="connected__step-num">3</span>
+            <span>在捷徑設定中貼入 Token</span>
+          </div>
         </div>
-
-        <div class="connected__divider" />
-
-        <p class="connected__ios-label">iOS 捷徑</p>
         <template v-if="!iosToken">
           <button class="connected__ios-btn" :disabled="iosLoading" @click="generateIosToken">
-            {{ iosLoading ? '生成中…' : '取得 iOS 捷徑 Token' }}
+            {{ iosLoading ? '生成中…' : '取得 Token' }}
           </button>
         </template>
         <template v-else>
+          <p class="connected__ios-label">複製後貼入捷徑設定</p>
           <button class="connected__token-btn" :class="{ copied: iosCopied }" @click="copyIosToken">
             <span class="connected__token-text">{{ iosCopied ? '已複製！' : iosToken }}</span>
           </button>
-          <p class="connected__ios-hint">Token 只顯示一次，請立即複製後貼入捷徑</p>
+          <p class="connected__ios-hint">Token 只顯示一次，請立即複製</p>
         </template>
+        <a href="" target="_blank" rel="noopener" class="connected__shortcut-link">
+          下載 Garner 捷徑 →
+        </a>
       </template>
 
+      <!-- Android / other mobile -->
       <template v-else>
-        <p class="connected__error">授權失敗，請關閉後重試。</p>
+        <p class="connected__desc">在 Android 上，可以透過複製網址後回到 Garner 貼入快速存入。</p>
+        <div class="connected__steps">
+          <div class="connected__step">
+            <span class="connected__step-num">1</span>
+            <span>在 Chrome 開啟想存入的頁面</span>
+          </div>
+          <div class="connected__step">
+            <span class="connected__step-num">2</span>
+            <span>點上方網址列 → 長按複製</span>
+          </div>
+          <div class="connected__step">
+            <span class="connected__step-num">3</span>
+            <span>回到 Garner 首頁貼入網址存入</span>
+          </div>
+        </div>
+        <NuxtLink to="/app" class="connected__back-btn btn btn--accent">回首頁存入</NuxtLink>
+        <p class="connected__android-hint">我們正在開發 Android 原生支援，敬請期待。</p>
       </template>
     </div>
   </main>
@@ -42,21 +109,43 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false })
-useHead({ title: 'Garner — 連結成功' })
+useHead({ title: 'Garner — 設置極速存入' })
 
 const client = useSupabaseClient()
 const config = useRuntimeConfig()
 
+// 裝置偵測
+const ua = import.meta.client ? navigator.userAgent : ''
+const isIOSPhone = /iPhone|iPod/.test(ua)
+const isMobile = /Mobi|Android|iPhone|iPad|iPod/.test(ua)
+const device = isIOSPhone ? 'ios' : isMobile ? 'android' : 'desktop'
+
 type Status = 'loading' | 'done' | 'error'
 const status = ref<Status>('loading')
+// null = 偵測中，true/false = 偵測結果
+const extInstalled = ref<boolean | null>(null)
 
-// iOS PAT
 const iosToken = ref<string | null>(null)
 const iosLoading = ref(false)
 const iosCopied = ref(false)
 let sessionCache: { access_token: string } | null = null
 
 onMounted(async () => {
+  if (device !== 'desktop') {
+    try {
+      const { data: { session } } = await client.auth.getSession()
+      if (session) sessionCache = session
+    } catch {}
+    return
+  }
+
+  // 等待 content script 注入 DOM 屬性（最多 500ms）
+  await new Promise(resolve => setTimeout(resolve, 500))
+  extInstalled.value = document.documentElement.getAttribute('data-garner-ext') === 'true'
+
+  if (!extInstalled.value) return
+
+  // Extension 已安裝 → 自動授權
   try {
     const { data: { session } } = await client.auth.getSession()
     if (!session) { status.value = 'error'; return }
@@ -120,7 +209,7 @@ async function copyIosToken() {
 
 .connected__card {
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -138,9 +227,23 @@ async function copyIosToken() {
   line-height: 1;
 }
 
+.connected__success-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
 .connected__title {
   font-family: var(--font-brand);
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.03em;
   margin: 0 0 20px;
@@ -153,10 +256,24 @@ async function copyIosToken() {
   margin: 0 0 8px;
 }
 
+.connected__desc {
+  font-size: 13px;
+  color: var(--text-mid);
+  line-height: 1.7;
+  margin: 0 0 20px;
+}
+
 .connected__hint {
   font-size: 13px;
   color: var(--text-mid);
-  margin: 0 0 24px;
+  margin: 0 0 20px;
+  line-height: 1.6;
+}
+
+.connected__hint-sm {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin: 10px 0 0;
   line-height: 1.6;
 }
 
@@ -167,12 +284,31 @@ async function copyIosToken() {
   line-height: 1.6;
 }
 
+/* Install button */
+.connected__install-btn {
+  display: block;
+  width: 100%;
+  padding: 11px 16px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+  transition: opacity 0.15s;
+}
+.connected__install-btn:hover { opacity: 0.88; }
+
+/* Key shortcut */
 .connected__key {
   display: flex;
   align-items: center;
   gap: 4px;
   color: var(--text-mid);
   font-size: 13px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .connected__key kbd {
@@ -189,51 +325,67 @@ async function copyIosToken() {
   color: var(--text);
 }
 
-.connected__key-sep {
-  font-size: 11px;
-  color: var(--text-mid);
-}
+.connected__key-sep { font-size: 11px; color: var(--text-mid); }
+.connected__key-or { margin: 0 4px; color: var(--text-dim); font-size: 12px; }
 
-.connected__key-or {
-  margin: 0 6px;
-  color: var(--text-mid);
-}
-
-.connected__divider {
+/* Steps */
+.connected__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   width: 100%;
-  height: 1px;
-  background: var(--border);
-  margin: 24px 0;
+  margin-bottom: 20px;
 }
 
+.connected__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-mid);
+  line-height: 1.5;
+}
+
+.connected__step-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+/* iOS Token */
 .connected__ios-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-mid);
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 
 .connected__ios-btn {
   width: 100%;
   padding: 10px 16px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
   border-radius: 10px;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: opacity 0.15s;
+  margin-bottom: 16px;
 }
-.connected__ios-btn:hover:not(:disabled) {
-  background: var(--surface-hover, var(--border));
-}
-.connected__ios-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+.connected__ios-btn:disabled { opacity: 0.5; cursor: default; }
 
 .connected__token-btn {
   width: 100%;
@@ -248,10 +400,9 @@ async function copyIosToken() {
   word-break: break-all;
   text-align: center;
   transition: background 0.15s, border-color 0.15s;
+  margin-bottom: 6px;
 }
-.connected__token-btn:hover {
-  border-color: var(--accent);
-}
+.connected__token-btn:hover { border-color: var(--accent); }
 .connected__token-btn.copied {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   border-color: var(--accent);
@@ -270,8 +421,32 @@ async function copyIosToken() {
 
 .connected__ios-hint {
   font-size: 11px;
-  color: var(--text-mid);
-  margin: 8px 0 0;
+  color: var(--text-dim);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.connected__shortcut-link {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  margin-top: 4px;
+}
+.connected__shortcut-link:hover { text-decoration: underline; }
+
+/* Android */
+.connected__back-btn {
+  width: 100%;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.connected__android-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0;
   line-height: 1.5;
 }
 </style>

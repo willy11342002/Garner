@@ -102,7 +102,7 @@ onMounted(async () => {
           </div>
           <p v-if="saveError" class="cta-error">{{ saveError }}</p>
           <div class="cta-divider"><span>或</span></div>
-          <a href="#" class="btn cta-ext-btn">安裝 Chrome Extension →</a>
+          <NuxtLink to="/app/connected" class="btn cta-ext-btn">設置極速存入 →</NuxtLink>
         </div>
       </section>
     </template>

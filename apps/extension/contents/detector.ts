@@ -1,5 +1,8 @@
 export {}
 
+// 告知頁面 Extension 已安裝
+document.documentElement.setAttribute('data-garner-ext', 'true')
+
 function getOgImage(): string | null {
   const el = document.querySelector<HTMLMetaElement>('meta[property="og:image"]')
   return el?.content ?? null
