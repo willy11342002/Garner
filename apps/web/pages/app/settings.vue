@@ -80,11 +80,8 @@ function openDeleteDialog() {
 </script>
 
 <template>
-  <main class="shell shell--narrow settings-page fadeup">
-    <div class="settings-layout">
-
-      <!-- Content -->
-      <div class="settings-content">
+  <main class="settings-page fadeup">
+    <div class="settings-content">
 
         <!-- Profile section -->
         <section class="settings-section">
@@ -170,7 +167,6 @@ function openDeleteDialog() {
           </div>
         </section>
 
-      </div>
     </div>
   </main>
 
@@ -208,14 +204,15 @@ function openDeleteDialog() {
 <style>
 .settings-page {
   min-height: calc(100vh - 52px);
-}
-
-.settings-layout {
-  padding-top: 28px;
+  padding: 28px 32px 64px;
+  box-sizing: border-box;
 }
 
 /* Content */
-.settings-content { min-width: 0; }
+.settings-content {
+  width: 70vw;
+  margin: 0 auto;
+}
 .settings-section { display: flex; flex-direction: column; gap: 20px; }
 
 /* Cards */
@@ -514,9 +511,12 @@ function openDeleteDialog() {
 .btn-confirm-delete:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Responsive */
-@media (max-width: 640px) {
-  .settings-layout {
-    padding-top: 18px;
+@media (max-width: 768px) {
+  .settings-page {
+    padding: 18px 16px 48px;
+  }
+  .settings-content {
+    width: 100%;
   }
 }
 </style>
