@@ -172,7 +172,7 @@ const allDisplayItems = computed(() => {
   })
 })
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 25
 const currentPage = ref(1)
 const totalPages = computed(() => Math.ceil(allDisplayItems.value.length / PAGE_SIZE))
 const displayItems = computed(() => {
