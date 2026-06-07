@@ -22,75 +22,21 @@ export const useItemStore = defineStore('item', () => {
 
     const response = await fetch(`${config.public.apiBase}/items/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Response-Mode': 'async' },
       body: JSON.stringify(data),
     })
 
-    if (!response.ok || !response.body) {
+    if (!response.ok) {
       const err = await response.json().catch(() => ({}))
       throw Object.assign(new Error(`HTTP ${response.status}`), { data: err, statusCode: response.status })
     }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buf = ''
-    let resolved = false
-    let createdId: string | null = null
-
-    let resolveItem!: (item: Item) => void
-    let rejectItem!: (err: unknown) => void
-    const waitForCreated = new Promise<Item>((res, rej) => { resolveItem = res; rejectItem = rej })
-
-    // Single reader loop – runs fully in background.
-    // Resolves waitForCreated on 'created', then keeps reading progress/done.
-    ;(async () => {
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          buf += decoder.decode(value, { stream: true })
-          const parts = buf.split('\n')
-          buf = parts.pop() ?? ''
-
-          for (const line of parts) {
-            if (!line.startsWith('data: ')) continue
-            let msg: any
-            try { msg = JSON.parse(line.slice(6)) } catch { continue }
-
-            if (msg.status === 'created' && msg.item && !resolved) {
-              const item = msg.item as Item
-              createdId = item.id
-              items.value.unshift(item)
-              if (!item.parsed_at && !item.url.startsWith('/')) {
-                processingStages.value.set(item.id, 'fetching')
-              }
-              resolved = true
-              resolveItem(item)
-            } else if (createdId) {
-              if (msg.status === 'progress' && msg.stage) {
-                processingStages.value.set(createdId, msg.stage)
-              } else if (msg.status === 'done' && msg.item) {
-                const updated = msg.item as Item
-                const idx = items.value.findIndex(i => i.id === createdId)
-                if (idx !== -1) items.value[idx] = updated
-                recentlyProcessed.value = createdId
-                processingStages.value.delete(createdId)
-              } else if (msg.status === 'failed' || msg.status === 'timeout' || msg.status === 'error') {
-                processingStages.value.set(createdId, msg.status)
-              }
-            }
-          }
-        }
-      } catch (err) {
-        if (!resolved) rejectItem(err)
-      } finally {
-        reader.cancel()
-        if (!resolved) rejectItem(new Error('SSE stream closed before created event'))
-      }
-    })()
-
-    return waitForCreated
+    const item = await response.json() as Item
+    items.value.unshift(item)
+    if (!item.parsed_at && !item.url.startsWith('/')) {
+      _watchProcessing(item.id)
+    }
+    return item
   }
 
   async function remove(id: string) {
