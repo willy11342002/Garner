@@ -151,9 +151,8 @@ def _daily_key() -> str:
 
 
 async def _count_monthly_saves(db: AsyncSession, user_id: UUID) -> int:
-    """Count active external-URL UserItems created this calendar month (UTC).
-    Excludes user-written articles (source_type=article) since those use a separate endpoint
-    with no quota gate and should not consume the URL save budget.
+    """本月已儲存的外部 URL 數量（不含手寫 note，note 不消耗儲存額度）。
+    re-analyze 另外透過 UserFeatureUsage 計入。
     """
     month_start = datetime.now(timezone.utc).replace(
         day=1, hour=0, minute=0, second=0, microsecond=0
@@ -161,12 +160,11 @@ async def _count_monthly_saves(db: AsyncSession, user_id: UUID) -> int:
     result = await db.execute(
         select(func.count())
         .select_from(UserItem)
-        .join(UserItem.content)
         .where(
             UserItem.user_id == user_id,
             UserItem.saved_at >= month_start,
             UserItem.deleted_at.is_(None),
-            ContentObject.source_type != SourceType.article,
+            UserItem.source_type != SourceType.note.value,
         )
     )
     return result.scalar_one()
@@ -202,6 +200,23 @@ async def check_save_quota(current_user: CurrentUser, db: DbSession) -> None:
     used = await _count_monthly_saves(db, user_id)
     if used >= limit:
         raise _quota_exceeded("saves_monthly", used, limit, plan_name)
+
+
+async def check_reanalyze_quota(current_user: CurrentUser, db: DbSession) -> None:
+    """Re-analyze 計入 saves_monthly（check + increment）。
+    前端需先顯示 confirm dialog，確認後才打此 endpoint。
+    """
+    user_id = UUID(current_user["sub"])
+    plan_id, plan_name = await _get_plan(db, user_id)
+    limit = await _get_limit(db, plan_id, "saves_monthly")
+    if limit is None:
+        return
+    used = await _count_monthly_saves(db, user_id)
+    if used >= limit:
+        raise _quota_exceeded("saves_monthly", used, limit, plan_name)
+    period = _monthly_key()
+    await _increment(db, user_id, "saves_monthly", period)
+    await db.commit()
 
 
 async def check_chat_quota(current_user: CurrentUser, db: DbSession) -> None:
@@ -278,6 +293,7 @@ async def get_video_max_sec(db: AsyncSession, user_id: UUID) -> int:
 # ── Annotated type aliases（在 router 直接當型別標注用）────────────────────────
 
 SaveQuota = Annotated[None, Depends(check_save_quota)]
+ReanalyzeQuota = Annotated[None, Depends(check_reanalyze_quota)]
 ChatQuota = Annotated[None, Depends(check_chat_quota)]
 ExploreQuota = Annotated[None, Depends(check_explore_quota)]
 SynthesisQuota = Annotated[None, Depends(check_synthesis_quota)]

@@ -38,10 +38,8 @@ class ItemRead(BaseModel):
     status: str | None = None
     source_type: str | None = None
     transcription_source: str | None = None
-    is_owner: bool = False
     content_md: str | None = None
     is_draft: bool = True
-    is_public: bool = False
     tags: list[TagRead] = []
 
     model_config = {"from_attributes": True}
@@ -56,7 +54,6 @@ class ArticleUpdate(BaseModel):
     title: str | None = None
     content_md: str | None = None
     is_draft: bool | None = None
-    is_public: bool | None = None
 
 
 class ItemSummaryUpdate(BaseModel):

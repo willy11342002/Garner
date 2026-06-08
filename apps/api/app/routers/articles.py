@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, status
 
 from app.dependencies import CurrentUser, DbSession
+from app.quota_depends import ReanalyzeQuota
 from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead
 from app.services import item_service
 
@@ -32,11 +33,16 @@ async def update_article(item_id: UUID, data: ArticleUpdate, current_user: Curre
     return await item_service.update_article(db, UUID(current_user["sub"]), item_id, data)
 
 
-@router.post("/{item_id}/publish", response_model=ItemRead)
-async def publish_article(
-    item_id: UUID, background_tasks: BackgroundTasks, current_user: CurrentUser, db: DbSession
+@router.post("/{item_id}/reanalyze", response_model=ItemRead)
+async def reanalyze_article(
+    item_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: CurrentUser,
+    db: DbSession,
+    _quota: ReanalyzeQuota,
 ):
-    return await item_service.publish_article(db, UUID(current_user["sub"]), item_id, background_tasks)
+    """完整重新 AI 分析。計入 saves_monthly quota，前端需先顯示確認 dialog。"""
+    return await item_service.reanalyze_item(db, UUID(current_user["sub"]), item_id, background_tasks)
 
 
 @router.post("/{item_id}/cover", response_model=ItemRead)

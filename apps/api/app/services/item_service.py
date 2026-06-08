@@ -41,9 +41,6 @@ def _item_to_read(
     from app.schemas.tag import TagRead as _TagRead
     resolved_tags = [_TagRead.model_validate(t) for t in (tags or [])]
 
-    # is_owner: 由 source_type 判斷，note 代表使用者手寫
-    is_owner = user_item.source_type == SourceType.note.value
-
     content = user_item.content  # 可能為 None（未來 nullable 時）
     content_id = content.id if content is not None else None
 
@@ -61,10 +58,8 @@ def _item_to_read(
         status=user_item.status,
         source_type=user_item.source_type,
         transcription_source=user_item.transcription_source,
-        is_owner=is_owner,
         content_md=user_item.content_md if include_content_md else None,
         is_draft=user_item.is_draft,
-        is_public=user_item.is_public,
         tags=resolved_tags,
     )
 
@@ -265,12 +260,6 @@ async def update_item_summary(
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    if user_item.source_type != SourceType.note.value:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot edit summary of external content",
-        )
-
     user_item.summary_i18n = data.summary_i18n
     await db.commit()
     await db.refresh(user_item)
@@ -328,59 +317,57 @@ async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID, *, hard: b
 
 
 async def list_articles(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
+    """列出所有 user_item（含外部連結與手寫筆記），統一在 /app/write 顯示。"""
     from app.models.user_item import UserItem as UserItemModel
     result = await db.execute(
         select(UserItemModel)
         .where(
             UserItemModel.user_id == user_id,
             UserItemModel.deleted_at.is_(None),
-            UserItemModel.source_type == SourceType.note.value,
         )
         .order_by(UserItemModel.saved_at.desc())
     )
-    # 不需要 JOIN ContentObject：snapshot 欄位直接在 UserItem 上
     return [_item_to_read(ui, user_id) for ui in result.scalars().all()]
 
 
 async def update_article(
     db: AsyncSession, user_id: UUID, item_id: UUID, data: ArticleUpdate
 ) -> ItemRead:
+    """儲存用戶編輯內容（所有 source_type 皆可）。不觸發 AI 重分析。"""
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    if user_item.source_type != SourceType.note.value:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
     if data.title is not None:
         user_item.title = data.title
     if data.content_md is not None:
         user_item.content_md = data.content_md
     if data.is_draft is not None:
         user_item.is_draft = data.is_draft
-    if data.is_public is not None:
-        user_item.is_public = data.is_public
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
 
 
-async def publish_article(
+async def reanalyze_item(
     db: AsyncSession,
     user_id: UUID,
     item_id: UUID,
     background_tasks: BackgroundTasks,
 ) -> ItemRead:
+    """完整重新 AI 分析（計入 saves_monthly quota）。
+    - note 類型：以 content_md 為輸入重分析
+    - 外部 item：re-fetch 原始 URL + content_md 合併分析
+    前端應先顯示確認 dialog 再呼叫此 endpoint。
+    """
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    if user_item.source_type != SourceType.note.value:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
-    user_item.is_draft = False
-    await db.commit()
-    await db.refresh(user_item)
-    # 每次保存都重新 AI 分析（文章內容會變動）
     content = user_item.content
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No content object")
+    url = user_item.url or content.url
     background_tasks.add_task(
-        _run_process_item, content.id, user_id, user_item.id, user_item.url or content.url
+        _run_process_item, content.id, user_id, user_item.id, url
     )
     return _item_to_read(user_item, user_id)
 
@@ -395,8 +382,6 @@ async def upload_article_cover(
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    if user_item.source_type != SourceType.note.value:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
 
     from app.core.supabase import get_supabase
     from app.core.config import settings
@@ -428,8 +413,6 @@ async def delete_article_cover(
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    if user_item.source_type != SourceType.note.value:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
 
     if user_item.thumbnail_url:
         from app.core.supabase import get_supabase
