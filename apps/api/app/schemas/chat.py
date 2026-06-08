@@ -75,3 +75,4 @@ class ChatSource(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str
+    item_ids: list[UUID] = []  # 明確指定要注入 context 的知識節點（探索頁跳轉用）

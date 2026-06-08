@@ -61,6 +61,23 @@ async def get_one(db: AsyncSession, user_id: UUID, item_id: UUID) -> UserItem | 
     return result.scalar_one_or_none()
 
 
+async def get_by_ids(db: AsyncSession, user_id: UUID, item_ids: list[UUID]) -> list[UserItem]:
+    """批次取得指定 item_ids，保留原始順序，忽略不屬於該 user 或已刪除的。"""
+    if not item_ids:
+        return []
+    result = await db.execute(
+        select(UserItem)
+        .where(
+            UserItem.id.in_(item_ids),
+            UserItem.user_id == user_id,
+            UserItem.deleted_at.is_(None),
+        )
+        .options(joinedload(UserItem.content))
+    )
+    items = {ui.id: ui for ui in result.scalars().all()}
+    return [items[iid] for iid in item_ids if iid in items]
+
+
 async def get_by_content_id(
     db: AsyncSession, user_id: UUID, content_id: UUID, include_deleted: bool = False
 ) -> UserItem | None:

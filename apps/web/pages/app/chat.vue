@@ -71,6 +71,34 @@
           <!-- 歷史訊息 -->
           <template v-for="msg in messages" :key="msg.id">
             <div class="msg" :class="`msg--${msg.role}`">
+              <!-- user 訊息：已選知識節點（可收合） -->
+              <template v-if="msg.role === 'user' && userContextMap[msg.id]?.length">
+                <div class="context-block">
+                  <button class="context-block__toggle" @click="toggleContext(msg.id)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    <span class="context-block__label">{{ userContextMap[msg.id].length }} 個知識節點</span>
+                    <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openContexts.has(msg.id) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                  <Transition name="thinking">
+                    <div v-if="openContexts.has(msg.id)" class="context-block__body">
+                      <NuxtLink
+                        v-for="item in userContextMap[msg.id]"
+                        :key="item.id"
+                        class="src-card"
+                        :to="`/app/item/${item.id}`"
+                      >
+                        <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="src-card__thumb">
+                        <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                        <div class="src-card__body">
+                          <span class="src-card__title">{{ item.title || item.url }}</span>
+                          <span class="src-card__type">{{ sourceLabel(item.source_type) }}</span>
+                        </div>
+                      </NuxtLink>
+                    </div>
+                  </Transition>
+                </div>
+              </template>
+
               <!-- assistant 訊息：顯示永久保存的 process log -->
               <template v-if="msg.role === 'assistant' && processMap[msg.id]">
                 <div class="process-block">
@@ -281,6 +309,7 @@ useHead({ title: 'Garner — AI Chat' })
 const { t } = useI18n()
 const apiFetch = useApiFetch()
 const router = useRouter()
+const route = useRoute()
 const config = useRuntimeConfig()
 const session = useSupabaseSession()
 
@@ -301,6 +330,8 @@ const mobileView = ref<'list' | 'chat'>('list')
 
 // 哪些訊息的 thinking 是展開的（'live' = 進行中）
 const openThinking = ref<Set<string>>(new Set(['live']))
+// 哪些 user 訊息的知識節點是展開的
+const openContexts = ref<Set<string>>(new Set())
 // 哪些訊息的 sources 是展開的
 const openSources = ref<Set<string>>(new Set())
 
@@ -311,6 +342,12 @@ const liveProcess = ref<ProcessLog & { sources: ChatSource[] }>({ thinking: '', 
 
 // 每則 assistant 訊息永久保存的 process log
 const processMap = ref<Record<string, ProcessLog>>({})
+
+// 探索頁跳轉時帶入的知識節點 IDs（一次性，send() 後清空）
+const pendingItemIds = ref<string[]>([])
+
+// user message 的知識節點詳細資料（keyed by message id）
+const userContextMap = ref<Record<string, ChatSource[]>>({})
 
 // 文章草稿（keyed by assistantId）
 const draftMap = ref<Record<string, ArticleDraft>>({})
@@ -334,6 +371,19 @@ const chatQuotaFull = computed(() => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([loadFolders(), loadSessions(), loadQuota()])
+  const sid = route.query.session as string | undefined
+  const prefill = route.query.prefill as string | undefined
+  const itemsParam = route.query.items as string | undefined
+  if (sid) {
+    await openSession(sid)
+    router.replace({ query: {} })  // 清掉 URL query
+    if (prefill) {
+      if (itemsParam) pendingItemIds.value = itemsParam.split(',').filter(Boolean)
+      inputText.value = prefill
+      await nextTick()
+      send()
+    }
+  }
 })
 
 async function loadQuota() {
@@ -386,8 +436,13 @@ async function openSession(id: string) {
     const lastAssistant = [...detail.messages].reverse().find(m => m.role === 'assistant' && m.process_log)
     if (lastAssistant) openThinking.value.add(lastAssistant.id)
 
+    // 收集所有需要 fetch 的 item IDs（assistant citations + user context items）
     const assistantMsgs = detail.messages.filter(m => m.role === 'assistant' && m.cited_item_ids?.length)
-    const allIds = [...new Set(assistantMsgs.flatMap(m => m.cited_item_ids!))]
+    const userCtxMsgs = detail.messages.filter(m => m.role === 'user' && m.cited_item_ids?.length)
+    const allIds = [...new Set([
+      ...assistantMsgs.flatMap(m => m.cited_item_ids!),
+      ...userCtxMsgs.flatMap(m => m.cited_item_ids!),
+    ])]
     if (allIds.length) {
       const itemResults = await Promise.allSettled(
         allIds.map(itemId => apiFetch<ChatSource>(`/items/${itemId}`))
@@ -399,6 +454,10 @@ async function openSession(id: string) {
       for (const msg of assistantMsgs) {
         const sources = (msg.cited_item_ids ?? []).map(iid => itemMap[iid]).filter(Boolean)
         if (sources.length) sourcesMap.value[msg.id] = sources
+      }
+      for (const msg of userCtxMsgs) {
+        const items = (msg.cited_item_ids ?? []).map(iid => itemMap[iid]).filter(Boolean)
+        if (items.length) userContextMap.value[msg.id] = items
       }
     }
 
@@ -450,6 +509,12 @@ function toggleSources(id: string) {
   openSources.value = new Set(s)
 }
 
+function toggleContext(id: string) {
+  const s = openContexts.value
+  if (s.has(id)) { s.delete(id) } else { s.add(id) }
+  openContexts.value = new Set(s)
+}
+
 
 async function send() {
   if (!inputText.value.trim() || loading.value || !activeSessionId.value || chatQuotaFull.value) return
@@ -476,13 +541,33 @@ async function send() {
   const isFirstMessage = messages.value.filter(m => m.role === 'user').length === 1
 
   try {
+    const itemIds = pendingItemIds.value.slice()
+    pendingItemIds.value = []  // 一次性，立即清空
+
+    // 立即設定 userMsg 的 cited_item_ids，並非同步 fetch item 詳細資料
+    if (itemIds.length) {
+      userMsg.cited_item_ids = itemIds
+      const msgId = userMsg.id
+      Promise.allSettled(
+        itemIds.map(id => apiFetch<ChatSource>(`/items/${id}`))
+      ).then(results => {
+        const items = results
+          .filter((r): r is PromiseFulfilledResult<ChatSource> => r.status === 'fulfilled')
+          .map(r => r.value)
+        if (items.length) {
+          userContextMap.value[msgId] = items
+          openContexts.value = new Set([...openContexts.value, msgId])
+        }
+      })
+    }
+
     const resp = await fetch(`${apiBase}/chat/sessions/${activeSessionId.value}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, ...(itemIds.length ? { item_ids: itemIds } : {}) }),
     })
     if (!resp.ok) throw new Error('request failed')
 
@@ -654,14 +739,14 @@ function sourceLabel(type: string | null) {
 .msg__bubble { padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
 .msg--user .msg__bubble { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-bdr); }
 .msg--assistant .msg__bubble { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
-.msg__bubble--streaming { position: relative; max-width: 68%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.msg__bubble--streaming { position: relative; width: 480px; max-width: 480px; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
 .cursor { display: inline-block; animation: blink 1s infinite; color: var(--accent); margin-left: 2px; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* Agentic process blocks */
 .process-block {
-  width: 68%;
-  max-width: 68%;
+  width: 480px;
+  max-width: 480px;
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
@@ -758,8 +843,41 @@ function sourceLabel(type: string | null) {
   font-size: 10px;
 }
 
+/* User context block（知識節點摺疊框，右對齊） */
+.context-block {
+  width: 480px;
+  max-width: 480px;
+  border: 1px solid var(--accent-bdr);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 12.5px;
+}
+.context-block__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  background: var(--accent-dim);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--accent);
+  transition: background .1s;
+}
+.context-block__toggle:hover { background: color-mix(in oklab, var(--accent) 15%, transparent); }
+.context-block__label { flex: 1; font-family: var(--font-mono); font-size: 11px; }
+.context-block__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-top: 1px solid var(--accent-bdr);
+}
+
 /* Bubble with sources gets extra bottom padding for badge */
-.msg__bubble { position: relative; max-width: 68%; }
+.msg__bubble { position: relative; width: 480px; max-width: 480px; }
 .msg__bubble--has-sources { padding-bottom: 26px; }
 
 /* Source badge — inside bubble, bottom-right, matches process-block chevron style */
@@ -785,7 +903,7 @@ function sourceLabel(type: string | null) {
 .src-badge--open svg { transform: rotate(180deg); }
 
 /* Expanded source list */
-.sources-list { display: flex; flex-direction: column; gap: 6px; max-width: 68%; }
+.sources-list { display: flex; flex-direction: column; gap: 6px; width: 480px; max-width: 480px; }
 
 /* Sources transition */
 .sources-enter-active { animation: sources-drop .2s ease; }
@@ -899,6 +1017,6 @@ function sourceLabel(type: string | null) {
   .chat-back-btn { display: none; }
   .chat-view__head { display: flex; align-items: center; }
 
-  .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block { max-width: 92%; width: 92%; }
+  .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block, .context-block, .chat-article-card { width: 92%; max-width: 92%; }
 }
 </style>

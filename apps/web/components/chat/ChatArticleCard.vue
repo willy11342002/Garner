@@ -44,7 +44,12 @@ function openInEditor() {
   border: 1px solid var(--border2);
   border-left: 3px solid var(--accent);
   border-radius: 10px;
+  width: 480px;
   max-width: 480px;
+}
+
+@media (max-width: 768px) {
+  .chat-article-card { width: 92%; max-width: 92%; }
 }
 
 .chat-article-card__icon {

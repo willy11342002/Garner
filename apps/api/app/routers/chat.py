@@ -106,7 +106,10 @@ async def send_message(
         raise HTTPException(status_code=404, detail="Session not found")
 
     return StreamingResponse(
-        chat_service.stream_reply(db, session_id, user_id, body.content.strip(), background_tasks),
+        chat_service.stream_reply(
+            db, session_id, user_id, body.content.strip(),
+            background_tasks, context_item_ids=body.item_ids or [],
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

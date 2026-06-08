@@ -130,54 +130,17 @@
       </div>
     </section>
 
-    <!-- ══ 合成結果 Modal ══════════════════════════════════ -->
-    <Teleport to="body">
-      <div v-if="synthModalOpen" class="id-overlay" @click.self="synthModalOpen = false">
-        <div class="synth-modal">
-          <button class="synth-modal__close" @click="synthModalOpen = false">×</button>
-          <div class="synth-modal__body">
-            <div class="synth-modal__content">
-              <TiptapEditor v-if="synthTiptapDoc" :model-value="synthTiptapDoc" :readonly="true" />
-            </div>
-            <div v-if="synthResult?.sources.length" class="synth-modal__sources">
-              <span class="synth-modal__sources-label">知識來源</span>
-              <div class="synth-modal__sources-list">
-                <a
-                  v-for="s in synthResult.sources"
-                  :key="s.id"
-                  :href="s.url"
-                  target="_blank"
-                  rel="noopener"
-                  class="synth-source-chip"
-                >
-                  <img v-if="s.thumbnail_url" :src="s.thumbnail_url" class="synth-source-chip__thumb" :alt="s.title || ''">
-                  <div v-else class="synth-source-chip__thumb synth-source-chip__thumb--empty"></div>
-                  <span class="synth-source-chip__title">{{ s.title || s.url }}</span>
-                </a>
-              </div>
-            </div>
-          </div>
-          <div class="synth-modal__foot">
-            <button class="btn btn--accent" :disabled="savingArticle" @click="saveAsArticle">
-              {{ savingArticle ? '建立中...' : '轉換成文章 →' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
   </main>
 </template>
 
 <script setup lang="ts">
-import type { Item, SynthesizeResult, Tag, UsageSummary } from '~/types/api'
+import type { ChatSession, Item, Tag, UsageSummary } from '~/types/api'
 
 definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 探索' })
 
 const apiFetch = useApiFetch()
 const { listItemsPage } = useItems()
-const { createArticle, updateArticle } = useArticles()
 const router = useRouter()
 const { t } = useI18n()
 
@@ -241,14 +204,6 @@ const synthCandLoading = ref(false)
 const synthSelectedItems = ref<Item[]>([])
 const synthPrompt = ref('')
 const synthLoading = ref(false)
-const synthResult = ref<SynthesizeResult | null>(null)
-const synthModalOpen = ref(false)
-const savingArticle = ref(false)
-
-const synthTiptapDoc = computed<Record<string, unknown> | null>(() => {
-  if (!synthResult.value?.content_tiptap) return null
-  try { return JSON.parse(synthResult.value.content_tiptap) } catch { return null }
-})
 
 function isSelected(id: string) {
   return synthSelectedItems.value.some(i => i.id === id)
@@ -316,36 +271,20 @@ async function doSynthesize() {
   if (!synthPrompt.value.trim() || !synthSelectedItems.value.length) return
   synthLoading.value = true
   try {
-    const result = await apiFetch<SynthesizeResult>('/explore/synthesize', {
-      method: 'POST',
-      body: {
-        item_ids: synthSelectedItems.value.map(i => i.id),
-        prompt: synthPrompt.value.trim(),
+    // 建立新 chat session
+    const chatSession = await apiFetch<ChatSession>('/chat/sessions', { method: 'POST', body: {} })
+
+    // 帶 prefill（乾淨 prompt）+ items IDs 跳轉，讓 chat 頁面走正常 send() 流程
+    await router.push({
+      path: '/app/chat',
+      query: {
+        session: chatSession.id,
+        prefill: synthPrompt.value.trim(),
+        items: synthSelectedItems.value.map(i => i.id).join(','),
       },
     })
-    synthResult.value = result
-    synthModalOpen.value = true
-    await loadQuota()
-  } catch (err: any) {
-    if (err?.response?.status === 429) await loadQuota()
   } finally {
     synthLoading.value = false
-  }
-}
-
-async function saveAsArticle() {
-  if (!synthResult.value) return
-  savingArticle.value = true
-  try {
-    const article = await createArticle()
-    await updateArticle(article.id, {
-      content_md: synthResult.value.content_tiptap,
-      is_draft: true,
-    })
-    synthModalOpen.value = false
-    await router.push(`/app/write/${article.id}`)
-  } finally {
-    savingArticle.value = false
   }
 }
 
@@ -414,23 +353,6 @@ function sourceLabel(type: string | null) {
 .synth-pulse span { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 1.2s infinite; }
 .synth-pulse span:nth-child(2) { animation-delay: .18s; }
 .synth-pulse span:nth-child(3) { animation-delay: .36s; }
-
-/* ── Synthesis Modal ── */
-.synth-modal { position: relative; background: var(--surface); border: 1px solid var(--border2); border-radius: 16px; width: 680px; max-width: calc(100vw - 32px); max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
-.synth-modal__close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-mid); cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: all .15s; z-index: 1; }
-.synth-modal__close:hover { background: var(--surface3); color: var(--text); }
-.synth-modal__body { flex: 1; overflow-y: auto; padding: 28px 28px 20px; }
-.synth-modal__content { background: var(--surface2); border-radius: 10px; padding: 16px 18px; border: 1px solid var(--border); }
-.synth-modal__sources { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
-.synth-modal__sources-label { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); display: block; margin-bottom: 10px; }
-.synth-modal__sources-list { display: flex; flex-direction: column; gap: 6px; }
-.synth-modal__foot { padding: 16px 28px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; background: var(--surface); }
-
-.synth-source-chip { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: var(--text-mid); font-size: 12px; transition: all .15s; }
-.synth-source-chip:hover { background: var(--surface3); color: var(--text); }
-.synth-source-chip__thumb { width: 36px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
-.synth-source-chip__thumb--empty { background: var(--surface3); }
-.synth-source-chip__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Shared ── */
 .chain-cand-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }

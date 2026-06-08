@@ -101,6 +101,7 @@ async def stream_reply(
     user_id: UUID,
     user_content: str,
     background_tasks: BackgroundTasks,
+    context_item_ids: list[UUID] | None = None,
 ):
     """
     Agentic SSE stream：
@@ -138,6 +139,14 @@ async def stream_reply(
     seen_ids: set[UUID] = set()
     process_steps: list[dict] = []
     created_article: dict | None = None  # 本輪建立的文章草稿
+
+    # ── Preload 指定 items（探索頁跳轉時直接注入 context）──────────────────────
+    if context_item_ids:
+        preloaded = await crud_items.get_by_ids(db, user_id, context_item_ids)
+        for ui in preloaded:
+            if ui.id not in seen_ids:
+                seen_ids.add(ui.id)
+                all_items.append((ui, None))
 
     for tool in tools:
         name = tool.get("name", "")
@@ -193,8 +202,11 @@ async def stream_reply(
 
     yield _sse("sources", [s.model_dump(mode="json") for s in sources])
 
-    # 儲存用戶訊息
-    await crud_chat.add_message(db, session_id, MessageRole.user, user_content)
+    # 儲存用戶訊息（若帶有知識節點，一起存入 cited_item_ids 供前端重建顯示）
+    await crud_chat.add_message(
+        db, session_id, MessageRole.user, user_content,
+        cited_item_ids=context_item_ids if context_item_ids else None,
+    )
 
     # ── Step 3：Streaming 回覆 ────────────────────────────────────────────────
     # 用 chunk 原文取代 summary，讓 AI 能回答細節問題
