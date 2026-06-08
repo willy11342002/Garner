@@ -15,7 +15,7 @@ const isOpen = computed(() => !!(props.itemId || props.item))
 // 是否為唯讀公開模式
 const readonly = computed(() => !props.itemId)
 
-const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, confirmItemTagsBulk, updateItemSummary } = useItems()
+const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, confirmItemTagsBulk } = useItems()
 const { localize, locale } = useI18nContent()
 
 const localizedTiptap = computed(() => {
@@ -28,39 +28,6 @@ const localizedTiptap = computed(() => {
   }
   return null
 })
-
-// Edit mode (only available when is_owner)
-const isEditing = ref(false)
-const editDoc = ref<Record<string, unknown> | null>(null)
-const saving = ref(false)
-
-const canEdit = computed(() => !readonly.value && !!(item.value as Item)?.is_owner)
-
-function startEdit() {
-  editDoc.value = localizedTiptap.value ? JSON.parse(JSON.stringify(localizedTiptap.value)) : { type: 'doc', content: [] }
-  isEditing.value = true
-}
-
-function cancelEdit() {
-  isEditing.value = false
-  editDoc.value = null
-}
-
-async function saveEdit() {
-  if (!item.value || !editDoc.value) return
-  saving.value = true
-  try {
-    const currentLocale = locale.value || 'zh-TW'
-    const existing = (item.value as Item).summary_i18n ?? {}
-    const updated = { ...existing, [currentLocale]: editDoc.value }
-    const saved = await updateItemSummary(item.value.id, updated)
-    fetchedItem.value = saved
-    isEditing.value = false
-    editDoc.value = null
-  } finally {
-    saving.value = false
-  }
-}
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
@@ -310,22 +277,9 @@ async function confirmArchive() {
               </button>
             </div>
 
-            <div v-if="item.summary || (item as Item).summary_i18n || canEdit" class="id-body__summary">
-              <div class="id-body__summary-label mono">
-                SUMMARY
-                <button v-if="canEdit && !isEditing" class="id-summary__edit-btn" @click="startEdit">編輯</button>
-              </div>
-              <template v-if="isEditing">
-                <TiptapEditor v-model="editDoc" :readonly="false" />
-                <div class="id-summary__edit-actions">
-                  <button class="btn btn--accent" :disabled="saving" @click="saveEdit">{{ saving ? '儲存中…' : '儲存' }}</button>
-                  <button class="btn" :disabled="saving" @click="cancelEdit">取消</button>
-                </div>
-              </template>
-              <template v-else>
-                <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
-                <p v-else-if="canEdit" class="id-body__summary-empty">點擊「編輯」開始記錄想法…</p>
-              </template>
+            <div v-if="item.summary || (item as Item).summary_i18n" class="id-body__summary">
+              <div class="id-body__summary-label mono">SUMMARY</div>
+              <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
             </div>
             <div v-else-if="!readonly && !(item as Item).parsed_at">
               <span class="processing-badge">AI 處理中...</span>
@@ -417,22 +371,9 @@ async function confirmArchive() {
             </div>
 
             <!-- Summary -->
-            <div v-if="item.summary || (item as Item).summary_i18n || canEdit" class="id-body__summary">
-              <div class="id-body__summary-label mono">
-                SUMMARY
-                <button v-if="canEdit && !isEditing" class="id-summary__edit-btn" @click="startEdit">編輯</button>
-              </div>
-              <template v-if="isEditing">
-                <TiptapEditor v-model="editDoc" :readonly="false" />
-                <div class="id-summary__edit-actions">
-                  <button class="btn btn--accent" :disabled="saving" @click="saveEdit">{{ saving ? '儲存中…' : '儲存' }}</button>
-                  <button class="btn" :disabled="saving" @click="cancelEdit">取消</button>
-                </div>
-              </template>
-              <template v-else>
-                <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
-                <p v-else-if="canEdit" class="id-body__summary-empty">點擊「編輯」開始記錄想法…</p>
-              </template>
+            <div v-if="item.summary || (item as Item).summary_i18n" class="id-body__summary">
+              <div class="id-body__summary-label mono">SUMMARY</div>
+              <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
             </div>
             <div v-else-if="!readonly && !(item as Item).parsed_at">
               <span class="processing-badge">AI 處理中...</span>

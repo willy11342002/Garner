@@ -278,6 +278,17 @@
   padding-top: 4px;
 }
 
+/* 沒有縮圖時隱藏 media 欄、body 佔滿整個 panel */
+.id-panel:not(:has(.id-media__img)) {
+  grid-template-columns: 1fr;
+}
+.id-panel:not(:has(.id-media__img)) .id-media {
+  display: none;
+}
+.id-panel:not(:has(.id-media__img)) .id-body {
+  padding-left: 28px;
+}
+
 /* ---------- Page mode (idp-*) ---------- */
 
 .idp-state {

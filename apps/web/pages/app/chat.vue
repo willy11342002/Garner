@@ -167,7 +167,7 @@
               <ChatArticleCard
                 v-if="msg.role === 'assistant' && draftMap[msg.id]"
                 :draft="draftMap[msg.id]"
-                @preview="previewDraft = draftMap[msg.id]; previewOpen = true"
+                @preview="(id) => previewItemId = id"
               />
             </div>
           </template>
@@ -251,7 +251,7 @@
             <ChatArticleCard
               v-if="liveDraft"
               :draft="liveDraft"
-              @preview="previewDraft = liveDraft; previewOpen = true"
+              @preview="(id) => previewItemId = id"
             />
           </div>
         </div>
@@ -279,27 +279,7 @@
   </div>
 
   <!-- 文章草稿預覽 Modal -->
-  <Teleport to="body">
-    <div v-if="previewOpen && previewDraft" class="id-overlay" @click.self="previewOpen = false">
-      <div class="synth-modal">
-        <button class="synth-modal__close" @click="previewOpen = false">×</button>
-        <div class="synth-modal__body">
-          <div class="synth-modal__content">
-            <TiptapEditor
-              v-if="parseTiptap(previewDraft.content_tiptap)"
-              :model-value="parseTiptap(previewDraft.content_tiptap)"
-              :readonly="true"
-            />
-          </div>
-        </div>
-        <div class="synth-modal__foot">
-          <button class="btn btn--accent" @click="openDraftInEditor(previewDraft.id)">
-            在編輯器開啟 →
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <ItemDetailModal :item-id="previewItemId" @close="previewItemId = null" />
 </template>
 
 <script setup lang="ts">
@@ -352,8 +332,7 @@ const userContextMap = ref<Record<string, ChatSource[]>>({})
 // 文章草稿（keyed by assistantId）
 const draftMap = ref<Record<string, ArticleDraft>>({})
 const liveDraft = ref<ArticleDraft | null>(null)
-const previewDraft = ref<ArticleDraft | null>(null)
-const previewOpen = ref(false)
+const previewItemId = ref<string | null>(null)
 
 const messagesEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -675,14 +654,6 @@ function scrollBottom() {
   if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
 }
 
-function parseTiptap(json: string): Record<string, unknown> | null {
-  try { return JSON.parse(json) } catch { return null }
-}
-
-function openDraftInEditor(articleId: string) {
-  previewOpen.value = false
-  router.push(`/app/write/${articleId}`)
-}
 
 function autoResize() {
   if (!inputEl.value) return

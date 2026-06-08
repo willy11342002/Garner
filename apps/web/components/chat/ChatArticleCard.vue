@@ -14,7 +14,7 @@
       <p class="chat-article-card__summary">{{ draft.summary }}</p>
     </div>
     <div class="chat-article-card__actions">
-      <button class="btn chat-article-card__btn" @click="$emit('preview')">預覽</button>
+      <button class="btn chat-article-card__btn" @click="$emit('preview', draft.id)">預覽</button>
       <button class="btn btn--accent chat-article-card__btn" @click="openInEditor">在編輯器開啟</button>
     </div>
   </div>
@@ -24,7 +24,7 @@
 import type { ArticleDraft } from '~/types/api'
 
 const props = defineProps<{ draft: ArticleDraft }>()
-defineEmits<{ preview: [] }>()
+defineEmits<{ preview: [id: string] }>()
 
 const router = useRouter()
 
