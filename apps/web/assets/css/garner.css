@@ -174,46 +174,6 @@ input, textarea { font-family: inherit; color: inherit; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---------- Explore dropdown ---------- */
-.nav__tab-group { position: relative; display: inline-flex; }
-.nav__tab-group:hover .nav__explore-menu { pointer-events: auto; }
-.nav__tab-group:hover .nav__explore-menu-inner { opacity: 1; transform: translateY(0); }
-.nav__explore-menu {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding-top: 6px;
-  width: 160px;
-  z-index: 200;
-  pointer-events: none;
-}
-.nav__explore-menu-inner {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-  padding: 4px;
-  opacity: 0;
-  transform: translateY(-4px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.nav__explore-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-family: var(--font-ui);
-  color: var(--text-mid);
-  border-radius: 7px;
-  transition: background 0.1s, color 0.1s;
-}
-.nav__explore-item:hover { background: var(--bg); color: var(--text); }
-.nav__explore-item--active { color: var(--accent); }
-.nav__explore-item svg { width: 14px; height: 14px; flex-shrink: 0; }
-
 /* ---------- User avatar + dropdown ---------- */
 .nav__user { position: relative; }
 .nav__menu {

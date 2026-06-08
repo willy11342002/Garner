@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 
 from app.dependencies import CurrentUser, DbSession
-from app.quota_depends import ExploreQuota
+from app.quota_depends import ExploreQuota, SynthesisQuota
 from app.schemas.explore import (
     ChainFullAnalysis,
     ChainFullRequest,
@@ -15,6 +15,8 @@ from app.schemas.explore import (
     FocusResult,
     PublicCollectionRead,
     SurpriseResult,
+    SynthesizeRequest,
+    SynthesizeResult,
 )
 from app.services import explore_service
 
@@ -81,6 +83,38 @@ async def chain_hop(body: ChainHopRequest, current_user: CurrentUser, db: DbSess
         return await explore_service.analyze_hop(
             db, UUID(current_user["sub"]), body.from_item_id, body.to_item_id
         )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.get("/random-items", response_model=list[ChainItem])
+async def get_random_items(
+    current_user: CurrentUser,
+    db: DbSession,
+    count: int = Query(default=5, ge=1, le=10),
+):
+    return await explore_service.get_random_items(db, UUID(current_user["sub"]), count)
+
+
+@router.post("/synthesize", response_model=SynthesizeResult)
+async def synthesize(
+    body: SynthesizeRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    _quota: SynthesisQuota,
+):
+    if not body.prompt.strip():
+        raise HTTPException(status_code=422, detail="prompt cannot be empty")
+    if not body.item_ids:
+        raise HTTPException(status_code=422, detail="item_ids cannot be empty")
+    if len(body.item_ids) > 10:
+        raise HTTPException(status_code=422, detail="最多選 10 個知識節點")
+    try:
+        return await explore_service.synthesize_with_items(
+            db, UUID(current_user["sub"]), body.item_ids, body.prompt.strip()
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 

@@ -25,7 +25,7 @@ const year = new Date().getFullYear()
 .app-footer {
   text-align: center;
   padding: 32px 16px 24px;
-  margin-top: 48px;
+  margin-top: 0px;
   border-top: 1px solid var(--border);
 }
 .app-footer__links {

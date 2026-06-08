@@ -288,6 +288,48 @@ async def synthesize_focus(query: str, items: list[dict]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+_SYNTHESIZE_SYSTEM = """\
+你是用戶的個人知識庫助理。用戶提供了一組他收集過的知識內容，以及一個任務指令。
+請根據提供的知識內容，完成用戶的任務指令。
+- 回應語言請配合用戶的指令語言
+- 可自由使用 Markdown 格式（標題、段落、列表、粗體等）
+- 只能引用提供的知識內容，不要憑空捏造
+- 若提供的內容不足以完成任務，請說明原因
+"""
+
+_SYNTHESIZE_TEMPLATE = """\
+用戶的知識內容：
+{items}
+
+用戶指令：{prompt}
+"""
+
+
+async def synthesize_custom(prompt: str, items: list[dict]) -> str:
+    items_text = "\n".join(
+        f"[{i+1}] 標題：{it['title'] or '(無標題)'}\n    摘要：{it['summary'] or '(無摘要)'}"
+        for i, it in enumerate(items)
+    )
+    user_msg = _SYNTHESIZE_TEMPLATE.format(items=items_text, prompt=prompt)
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json={
+                "model": _llm(),
+                "messages": [
+                    {"role": "system", "content": _SYNTHESIZE_SYSTEM},
+                    {"role": "user", "content": user_msg},
+                ],
+            },
+            timeout=90,
+        )
+        if resp.status_code == 401:
+            raise RuntimeError("OpenRouter service unavailable")
+        resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
 _HOP_SYSTEM = """\
 你是用戶的個人知識庫助理。分析兩筆內容之間的關聯，用繁體中文回答，返回 JSON。
 """

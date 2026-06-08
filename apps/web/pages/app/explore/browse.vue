@@ -84,6 +84,7 @@
 
 <script setup lang="ts">
 import type { PublicCollectionRead, Tag } from '~/types/api'
+definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 公開集合' })
 
 const PLACEHOLDER_COLORS = ['a', 'b', 'c', 'd', 'e', 'accent']

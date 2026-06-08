@@ -164,6 +164,13 @@ export interface FocusResult {
   sources: FocusSource[]
 }
 
+// Custom synthesis
+export interface SynthesizeResult {
+  content: string         // raw markdown，modal 預覽用
+  content_tiptap: string  // JSON string of Tiptap doc，write 頁面用
+  sources: FocusSource[]
+}
+
 // Surprise (AI insights)
 export type InsightType = 'connection' | 'forgotten' | 'trend'
 
@@ -278,6 +285,7 @@ export interface UsageSummary {
   saves: QuotaItem
   chat: QuotaItem
   explore: QuotaItem
+  synthesis: QuotaItem
   search_enabled: boolean
   fork_enabled: boolean
   video_max_minutes: number

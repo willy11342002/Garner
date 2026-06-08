@@ -22,6 +22,7 @@ class UsageSummary(BaseModel):
     saves: QuotaItem
     chat: QuotaItem
     explore: QuotaItem
+    synthesis: QuotaItem
     search_enabled: bool
     fork_enabled: bool
     video_max_minutes: int
@@ -66,13 +67,18 @@ SELECT
     COALESCE((SELECT ufu.count FROM user_feature_usage ufu
               WHERE ufu.user_id = :user_id AND ufu.feature = 'explore_monthly'
                 AND ufu.period_key = :monthly_key), 0)  AS explore_used,
+    COALESCE((SELECT ufu.count FROM user_feature_usage ufu
+              WHERE ufu.user_id = :user_id AND ufu.feature = 'synthesis_monthly'
+                AND ufu.period_key = :monthly_key), 0)  AS synthesis_used,
     -- limits（各走 PK index point lookup）
     (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'saves_monthly')   AS saves_limit,
+     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'saves_monthly')      AS saves_limit,
     (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'chat_daily')      AS chat_limit,
+     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'chat_daily')         AS chat_limit,
     (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'explore_monthly') AS explore_limit,
+     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'explore_monthly')    AS explore_limit,
+    (SELECT pfl.value FROM plan_feature_limits pfl
+     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'synthesis_monthly')  AS synthesis_limit,
     (SELECT pfl.value FROM plan_feature_limits pfl
      WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'video_max_sec')   AS video_max_sec,
     (SELECT pfl.value FROM plan_feature_limits pfl
@@ -106,9 +112,10 @@ async def get_my_quota(current_user: CurrentUser, db: DbSession):
     return UsageSummary(
         plan=row["plan_name"],
         period_end=row["current_period_end"],
-        saves=QuotaItem(used=row["saves_used"],    limit=row["saves_limit"]),
-        chat=QuotaItem(used=row["chat_used"],       limit=row["chat_limit"]),
-        explore=QuotaItem(used=row["explore_used"], limit=row["explore_limit"]),
+        saves=QuotaItem(used=row["saves_used"],           limit=row["saves_limit"]),
+        chat=QuotaItem(used=row["chat_used"],              limit=row["chat_limit"]),
+        explore=QuotaItem(used=row["explore_used"],        limit=row["explore_limit"]),
+        synthesis=QuotaItem(used=row["synthesis_used"],    limit=row["synthesis_limit"]),
         search_enabled=bool(row["search_val"]),
         fork_enabled=bool(row["fork_val"]),
         video_max_minutes=video_max_sec // 60,

@@ -1,186 +1,198 @@
 <template>
   <main class="ex-pane">
-    <!-- ── 連鎖探索 ─────────────────────────────── -->
-    <section class="chain-section">
-      <header class="chain-section__head">
-        <span class="eyebrow">{{ $t('explore.chain.eyebrow') }}</span>
-        <span class="chain-section__desc">{{ $t('explore.chain.desc') }}</span>
+
+    <!-- ══ 知識合成 ══════════════════════════════════ -->
+    <section class="synth-section">
+      <header class="synth-section__head">
+        <div class="synth-section__title-row">
+          <span class="eyebrow">知識合成</span>
+          <span v-if="quota?.synthesis" class="synth-quota-badge" :class="{ 'synth-quota-badge--warn': synthQuotaFull }">
+            剩餘 {{ synthQuotaRemaining }} / {{ quota.synthesis.limit }} 次
+          </span>
+        </div>
+        <span class="synth-section__desc">選擇知識節點，輸入指令，讓 AI 幫你提煉洞察或撰寫文章</span>
       </header>
 
-      <!-- 起點選擇 -->
-      <div v-if="!chain.length" class="chain-start">
-        <button class="chain-start__lucky" :disabled="chainLoading || exploreQuotaFull" @click="startChain">
-          <span class="chain-start__lucky-icon">{{ chainLoading ? '' : '◎' }}</span>
-          <span v-if="chainLoading" class="chain-start__lucky-pulse">
+      <!-- Tag filter + 好手氣 -->
+      <div class="filter-row synth-filter-row">
+        <div
+          ref="filterChipsRef"
+          class="filter-chips"
+          :class="{ 'filter-chips--dragging': isDragging }"
+          @mousedown="onDragStart"
+          @mousemove="onDragMove"
+          @mouseup="onDragEnd"
+          @mouseleave="onDragEnd"
+        >
+          <button
+            class="tag-filter-chip"
+            :class="{ 'tag-filter-chip--active': !synthTagIds.length }"
+            @click="clearSynthTags"
+          >全部</button>
+          <button
+            v-for="tag in tags"
+            :key="tag.id"
+            class="tag-filter-chip"
+            :class="{ 'tag-filter-chip--active': synthTagIds.includes(tag.id) }"
+            @click="toggleSynthTag(tag.id)"
+          >{{ tag.name }} <span class="tag-filter-chip__count">{{ tag.item_count }}</span></button>
+        </div>
+        <button class="btn synth-lucky-btn" :disabled="synthCandLoading" @click="loadRandomItems">
+          <span v-if="synthCandLoading" class="synth-pulse">
             <span></span><span></span><span></span>
           </span>
-          <span>{{ $t('explore.chain.start_lucky') }}</span>
+          <template v-else>◎ 好手氣</template>
         </button>
-        <p v-if="exploreQuotaFull" class="chain-quota-full">{{ $t('explore.chain.quota_full') }}</p>
       </div>
-      <!-- 起點候選選擇 -->
-      <div v-if="startCandidates.length && !chain.length && !exploreQuotaFull" class="chain-candidates">
-        <p class="chain-candidates__label">{{ $t('explore.chain.pick_label') }}</p>
-        <div class="chain-cand-grid">
+
+      <!-- Candidate grid -->
+      <div v-if="synthCandLoading" class="chain-cand-grid synth-cand-grid">
+        <div v-for="n in 5" :key="n" class="card chain-cand-card chain-cand-card--skel">
+          <div class="card__thumb"></div>
+          <div class="card__body">
+            <div class="skel-line" style="width:85%; height:12px;"></div>
+            <div class="skel-line" style="width:50%; height:10px; margin-top:6px;"></div>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="synthCandidates.length" class="chain-cand-grid synth-cand-grid">
+        <button
+          v-for="item in synthCandidates"
+          :key="item.id"
+          class="card chain-cand-card"
+          :class="{
+            'synth-cand--selected': isSelected(item.id),
+            'synth-cand--full': synthSelectedItems.length >= 10 && !isSelected(item.id),
+          }"
+          :disabled="synthSelectedItems.length >= 10 && !isSelected(item.id)"
+          @click="toggleChain(item)"
+        >
+          <div class="card__thumb">
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="card__img">
+            <div v-else class="placeholder placeholder--b"><div class="placeholder__stripes"></div></div>
+            <span class="source-badge">{{ sourceLabel(item.source_type) }}</span>
+            <span v-if="isSelected(item.id)" class="synth-selected-badge">✓</span>
+          </div>
+          <div class="card__body">
+            <h3 class="card__title">{{ item.title || item.url }}</h3>
+            <div class="card__footer">
+              <span class="mono">{{ timeAgo(item.saved_at) }}</span>
+            </div>
+          </div>
+        </button>
+      </div>
+      <div v-else-if="synthMode !== 'idle'" class="synth-cand-empty">找不到符合條件的內容</div>
+      <div v-else class="synth-cand-empty">
+        點選標籤篩選知識節點，或按 <strong>好手氣</strong> 隨機探索
+      </div>
+
+      <!-- Selected chain -->
+      <div v-if="synthSelectedItems.length" class="synth-chain fadeup">
+        <div class="synth-chain__head">
+          <span class="synth-chain__label">已選節點</span>
+          <span class="synth-chain__count" :class="{ 'synth-chain__count--full': synthSelectedItems.length >= 10 }">
+            {{ synthSelectedItems.length }} / 10
+          </span>
+          <button class="btn synth-chain__clear" @click="synthSelectedItems = []">清除全部</button>
+        </div>
+        <div class="synth-chain__nodes">
+          <div v-for="item in synthSelectedItems" :key="item.id" class="synth-node">
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="synth-node__thumb">
+            <div v-else class="synth-node__thumb synth-node__thumb--empty"></div>
+            <span class="synth-node__label">{{ truncate(item.title || item.url || '', 18) }}</span>
+            <button class="synth-node__remove" @click="removeFromChain(item.id)">×</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prompt + Generate -->
+      <div v-if="synthSelectedItems.length" class="synth-prompt-area fadeup">
+        <textarea
+          v-model="synthPrompt"
+          class="synth-prompt"
+          placeholder="你想用這些知識做什麼？例如：寫一篇比較這些概念的文章、整理出我對這個主題的理解..."
+          rows="3"
+          :disabled="synthLoading"
+        />
+        <div class="synth-prompt-actions">
+          <span v-if="synthQuotaFull" class="synth-quota-warn">本月合成次數已用完</span>
           <button
-            v-for="item in startCandidates"
-            :key="item.id"
-            class="card chain-cand-card"
-            @click="pickStart(item)"
+            class="btn btn--accent synth-submit-btn"
+            :disabled="!synthPrompt.trim() || synthLoading || synthQuotaFull"
+            @click="doSynthesize"
           >
-            <div class="card__thumb">
-              <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="card__img">
-              <div v-else class="placeholder placeholder--b"><div class="placeholder__stripes"></div></div>
-              <span class="source-badge">{{ sourceLabel(item.source_type) }}</span>
-              <span v-if="item.is_public" class="chain-public-badge chain-public-badge--thumb">公開</span>
-            </div>
-            <div class="card__body">
-              <h3 class="card__title">{{ item.title || item.url }}</h3>
-              <div class="card__footer">
-                <span class="mono">{{ timeAgo(item.saved_at) }}</span>
-              </div>
-            </div>
+            <span v-if="synthLoading" class="synth-pulse">
+              <span></span><span></span><span></span>
+            </span>
+            <span>{{ synthLoading ? '生成中...' : '生成內容' }}</span>
           </button>
         </div>
       </div>
-
-      <!-- 鏈條 -->
-      <template v-if="chain.length">
-        <!-- 麵包屑路徑 -->
-        <div class="chain-path">
-          <template v-for="(hop, i) in chain" :key="hop.item.id">
-            <button
-              class="chain-node"
-              :class="{ 'chain-node--active': i === activeHopIdx }"
-              @click="i === activeHopIdx ? openDetail(hop.item) : activeHopIdx = i"
-            >
-              <img v-if="hop.item.thumbnail_url" :src="hop.item.thumbnail_url" :alt="hop.item.title || ''" class="chain-node__thumb">
-              <div v-else class="chain-node__thumb chain-node__thumb--empty"></div>
-              <span class="chain-node__label">{{ hop.item.title ? hop.item.title.slice(0, 20) + (hop.item.title.length > 20 ? '...' : '') : $t('explore.chain.no_title') }}</span>
-            </button>
-            <span v-if="i < chain.length - 1" class="chain-arrow">→</span>
-          </template>
-          <button class="btn btn--ghost chain-reset" @click="resetChain">{{ $t('explore.chain.start_over') }}</button>
-        </div>
-
-        <!-- 從任意節點重寫提示（點了非末端節點） -->
-        <div v-if="activeHopIdx < chain.length - 1" class="chain-rewrite-bar">
-          <span class="chain-rewrite-bar__hint">{{ $t('explore.chain.rewrite_hint') }}</span>
-          <button class="btn chain-rewrite-bar__btn" @click="rewriteFrom(activeHopIdx)">
-            {{ $t('explore.chain.rewrite_btn') }}
-          </button>
-        </div>
-
-        <!-- 當前節點詳情 -->
-        <div class="chain-detail">
-          <!-- AI 分析（這一跳） -->
-          <template v-if="activeHop.analysis">
-            <div class="hop-analysis fadeup">
-              <div class="hop-block hop-block--connect">
-                <span class="hop-block__label">{{ $t('explore.chain.connection_label') }}</span>
-                <!-- eslint-disable-next-line vue/no-v-html -->
-                <p v-html="activeHop.analysis.connection"></p>
-              </div>
-              <div class="hop-block hop-block--idea">
-                <span class="hop-block__label">{{ $t('explore.chain.ideation_label') }}</span>
-                <p>{{ activeHop.analysis.ideation }}</p>
-              </div>
-              <div class="hop-block hop-block--question">
-                <span class="hop-block__label">{{ $t('explore.chain.question_label') }}</span>
-                <p class="hop-question">{{ activeHop.analysis.question }}</p>
-              </div>
-            </div>
-          </template>
-          <div v-else-if="activeHopIdx === 0 && chain.length === 1" class="hop-start-hint">{{ $t('explore.chain.start_hint') }}</div>
-
-          <!-- 分析 loading -->
-          <div v-if="chainLoading && activeHopIdx === chain.length - 1 && !activeHop.analysis" class="hop-loading">
-            <div class="pulse-row"><span></span><span></span><span></span></div>
-            <span>{{ $t('explore.chain.loading_hop') }}</span>
-          </div>
-        </div>
-
-        <!-- 整條路徑分析 -->
-        <div v-if="chain.length >= 3" class="full-chain">
-          <button v-if="!fullAnalysis && !fullLoading && !exploreQuotaFull" class="btn full-chain__btn" @click="doFullAnalysis">
-            {{ $t('explore.chain.full_btn', { n: chain.length }) }}
-          </button>
-          <div v-if="fullLoading" class="hop-loading">
-            <div class="pulse-row"><span></span><span></span><span></span></div>
-            <span>{{ $t('explore.chain.loading_full') }}</span>
-          </div>
-          <div v-if="fullAnalysis" class="full-chain__result fadeup">
-            <span class="synth__badge">{{ $t('explore.chain.synth_badge') }}</span>
-            <!-- eslint-disable-next-line vue/no-v-html -->
-            <p v-html="fullAnalysis"></p>
-          </div>
-        </div>
-
-        <!-- 候選下一跳 -->
-        <div v-if="activeHopIdx === chain.length - 1" class="chain-next">
-          <p v-if="exploreQuotaFull" class="chain-quota-full">{{ $t('explore.chain.quota_full') }}</p>
-          <template v-else>
-          <p class="chain-next__label">{{ $t('explore.chain.next_label') }}</p>
-          <div v-if="nextLoading" class="chain-cand-grid">
-            <div v-for="n in 4" :key="n" class="card chain-cand-card chain-cand-card--skel">
-              <div class="card__thumb"></div>
-              <div class="card__body">
-                <div class="skel-line" style="width:85%; height:12px;"></div>
-                <div class="skel-line" style="width:50%; height:10px; margin-top:6px;"></div>
-              </div>
-            </div>
-          </div>
-          <div v-else-if="activeHop.candidates.length" class="chain-cand-grid">
-            <button
-              v-for="item in activeHop.candidates"
-              :key="item.id"
-              class="card chain-cand-card"
-              @click="jumpTo(item)"
-            >
-              <div class="card__thumb">
-                <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="card__img">
-                <div v-else class="placeholder placeholder--d"><div class="placeholder__stripes"></div></div>
-                <span class="source-badge">{{ sourceLabel(item.source_type) }}</span>
-                <span v-if="item.is_public" class="chain-public-badge chain-public-badge--thumb">公開</span>
-              </div>
-              <div class="card__body">
-                <h3 class="card__title">{{ item.title || item.url }}</h3>
-                <div class="card__footer">
-                  <span class="mono">{{ timeAgo(item.saved_at) }}</span>
-                </div>
-              </div>
-            </button>
-          </div>
-          <p v-else class="chain-empty">{{ $t('explore.chain.empty') }}</p>
-          </template>
-        </div>
-      </template>
     </section>
-  <ItemDetailModal :itemId="detailItemId" @close="detailItemId = null" />
+
+    <!-- ══ 合成結果 Modal ══════════════════════════════════ -->
+    <Teleport to="body">
+      <div v-if="synthModalOpen" class="id-overlay" @click.self="synthModalOpen = false">
+        <div class="synth-modal">
+          <button class="synth-modal__close" @click="synthModalOpen = false">×</button>
+          <div class="synth-modal__body">
+            <div class="synth-modal__content">
+              <TiptapEditor v-if="synthTiptapDoc" :model-value="synthTiptapDoc" :readonly="true" />
+            </div>
+            <div v-if="synthResult?.sources.length" class="synth-modal__sources">
+              <span class="synth-modal__sources-label">知識來源</span>
+              <div class="synth-modal__sources-list">
+                <a
+                  v-for="s in synthResult.sources"
+                  :key="s.id"
+                  :href="s.url"
+                  target="_blank"
+                  rel="noopener"
+                  class="synth-source-chip"
+                >
+                  <img v-if="s.thumbnail_url" :src="s.thumbnail_url" class="synth-source-chip__thumb" :alt="s.title || ''">
+                  <div v-else class="synth-source-chip__thumb synth-source-chip__thumb--empty"></div>
+                  <span class="synth-source-chip__title">{{ s.title || s.url }}</span>
+                </a>
+              </div>
+            </div>
+          </div>
+          <div class="synth-modal__foot">
+            <button class="btn btn--accent" :disabled="savingArticle" @click="saveAsArticle">
+              {{ savingArticle ? '建立中...' : '轉換成文章 →' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </main>
 </template>
 
 <script setup lang="ts">
-import type { ChainHop, ChainItem, UsageSummary } from '~/types/api'
+import type { Item, SynthesizeResult, Tag, UsageSummary } from '~/types/api'
+
+definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 探索' })
 
-// ── Detail Modal ──────────────────────────────
-const detailItemId = ref<string | null>(null)
-function openDetail(item: ChainItem) {
-  if (item.is_public) return
-  detailItemId.value = item.id
-}
+const apiFetch = useApiFetch()
+const { listItemsPage } = useItems()
+const { createArticle, updateArticle } = useArticles()
+const router = useRouter()
+const { t } = useI18n()
 
 const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG' }
 
-const { t } = useI18n()
-
-const apiFetch = useApiFetch()
-
-// ── Quota ──────────────────────────────────────
+// ── Quota ─────────────────────────────────────────────────
 const quota = ref<UsageSummary | null>(null)
-const exploreQuotaFull = computed(() => {
-  const q = quota.value?.explore
+
+const synthQuotaRemaining = computed(() => {
+  const q = quota.value?.synthesis
+  if (!q || q.limit === null) return '∞'
+  return Math.max(0, q.limit - q.used)
+})
+const synthQuotaFull = computed(() => {
+  const q = quota.value?.synthesis
   return !!q && q.limit !== null && q.used >= q.limit
 })
 
@@ -188,163 +200,156 @@ async function loadQuota() {
   try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
 }
 
-// 還原後補齊被中斷的跳轉（analysis / candidates 可能因 navigate-away 而遺失）
-async function resumeIncomplete() {
-  const lastIdx = chain.value.length - 1
-  if (lastIdx < 1) return
+// ── Tags ──────────────────────────────────────────────────
+const tags = ref<Tag[]>([])
 
-  const lastHop = chain.value[lastIdx]
-
-  if (lastHop.analysis === null) {
-    const fromItem = chain.value[lastIdx - 1].item
-    chainLoading.value = true
-    try {
-      const analysis = await apiFetch('/explore/chain/hop', {
-        method: 'POST',
-        body: { from_item_id: fromItem.id, to_item_id: lastHop.item.id },
-      })
-      chain.value[lastIdx].analysis = analysis
-      saveChainState()
-    } catch {} finally {
-      chainLoading.value = false
-    }
-  }
-
-  if (activeHopIdx.value === lastIdx && !lastHop.candidates.length) {
-    await loadCandidates(lastIdx)
-  }
+async function loadTags() {
+  try { tags.value = await apiFetch<Tag[]>('/tags') } catch {}
 }
 
-// ── Chain ──────────────────────────────────────
-const chain = ref<ChainHop[]>([])
-const activeHopIdx = ref(0)
-const startCandidates = ref<ChainItem[]>([])
-const chainLoading = ref(false)
-const nextLoading = ref(false)
-const fullLoading = ref(false)
-const fullAnalysis = ref<string | null>(null)
+// ── Tag strip drag-to-scroll ──────────────────────────────
+const filterChipsRef = ref<HTMLElement | null>(null)
+const isDragging = ref(false)
+let dragStartX = 0
+let dragScrollLeft = 0
 
-const activeHop = computed(() => chain.value[activeHopIdx.value])
-
-const STORAGE_KEY = 'garner_chain_state'
-
-function saveChainState() {
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-      chain: chain.value,
-      activeHopIdx: activeHopIdx.value,
-      fullAnalysis: fullAnalysis.value,
-    }))
-  } catch {}
+function onDragStart(e: MouseEvent) {
+  if (!filterChipsRef.value) return
+  isDragging.value = true
+  dragStartX = e.pageX - filterChipsRef.value.offsetLeft
+  dragScrollLeft = filterChipsRef.value.scrollLeft
 }
 
-function restoreChainState() {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    if (!raw) return
-    const state = JSON.parse(raw)
-    if (state.chain?.length) {
-      chain.value = state.chain
-      activeHopIdx.value = state.activeHopIdx ?? 0
-      fullAnalysis.value = state.fullAnalysis ?? null
-    }
-  } catch {}
+function onDragMove(e: MouseEvent) {
+  if (!isDragging.value || !filterChipsRef.value) return
+  e.preventDefault()
+  const x = e.pageX - filterChipsRef.value.offsetLeft
+  filterChipsRef.value.scrollLeft = dragScrollLeft - (x - dragStartX)
 }
 
-onMounted(async () => {
-  restoreChainState()
-  await Promise.all([resumeIncomplete(), loadQuota()])
+function onDragEnd() {
+  isDragging.value = false
+}
+
+// ── 知識合成 ──────────────────────────────────────────────
+type SynthMode = 'idle' | 'tag' | 'lucky'
+
+const synthMode = ref<SynthMode>('idle')
+const synthTagIds = ref<string[]>([])
+const synthCandidates = ref<Item[]>([])
+const synthCandLoading = ref(false)
+const synthSelectedItems = ref<Item[]>([])
+const synthPrompt = ref('')
+const synthLoading = ref(false)
+const synthResult = ref<SynthesizeResult | null>(null)
+const synthModalOpen = ref(false)
+const savingArticle = ref(false)
+
+const synthTiptapDoc = computed<Record<string, unknown> | null>(() => {
+  if (!synthResult.value?.content_tiptap) return null
+  try { return JSON.parse(synthResult.value.content_tiptap) } catch { return null }
 })
-watch([chain, activeHopIdx, fullAnalysis], saveChainState, { deep: true })
 
-async function startChain() {
-  chainLoading.value = true
-  startCandidates.value = []
-  chain.value = []
-  fullAnalysis.value = null
-  try {
-    startCandidates.value = await apiFetch<ChainItem[]>('/explore/chain/start?type=random')
-  } finally {
-    chainLoading.value = false
+function isSelected(id: string) {
+  return synthSelectedItems.value.some(i => i.id === id)
+}
+
+function toggleChain(item: Item) {
+  if (isSelected(item.id)) {
+    removeFromChain(item.id)
+  } else {
+    if (synthSelectedItems.value.length >= 10) return
+    synthSelectedItems.value.push(item)
   }
 }
 
-async function pickStart(item: ChainItem) {
-  startCandidates.value = []
-  chain.value = [{ item, analysis: null, candidates: [] }]
-  activeHopIdx.value = 0
-  await loadCandidates(0)
+function removeFromChain(id: string) {
+  synthSelectedItems.value = synthSelectedItems.value.filter(i => i.id !== id)
 }
 
-async function loadCandidates(hopIdx: number) {
-  nextLoading.value = true
-  const currentId = chain.value[hopIdx].item.id
-  const excludeIds = chain.value.map(h => h.item.id).join(',')
-  try {
-    const candidates = await apiFetch<ChainItem[]>(
-      `/explore/chain/next?item_id=${currentId}&exclude=${excludeIds}`
-    )
-    const chainIdSet = new Set(chain.value.map(h => h.item.id))
-    chain.value[hopIdx].candidates = candidates.filter(c => !chainIdSet.has(c.id))
-    saveChainState()
-  } finally {
-    nextLoading.value = false
-  }
+function truncate(str: string, len: number) {
+  return str.length > len ? str.slice(0, len) + '...' : str
 }
 
-async function jumpTo(item: ChainItem) {
-  const fromItem = chain.value[chain.value.length - 1].item
-  chain.value.push({ item, analysis: null, candidates: [] })
-  const hopIdx = chain.value.length - 1
-  activeHopIdx.value = hopIdx
-  fullAnalysis.value = null
-  nextLoading.value = true
+function toggleSynthTag(id: string) {
+  synthTagIds.value = synthTagIds.value.includes(id)
+    ? synthTagIds.value.filter(t => t !== id)
+    : [...synthTagIds.value, id]
+  synthMode.value = synthTagIds.value.length ? 'tag' : 'idle'
+}
 
-  chainLoading.value = true
+function clearSynthTags() {
+  synthTagIds.value = []
+  synthMode.value = 'idle'
+  synthCandidates.value = []
+}
+
+async function loadRandomItems() {
+  synthCandLoading.value = true
+  synthMode.value = 'lucky'
   try {
-    const analysis = await apiFetch('/explore/chain/hop', {
-      method: 'POST',
-      body: { from_item_id: fromItem.id, to_item_id: item.id },
-    })
-    chain.value[hopIdx].analysis = analysis
-    saveChainState()
+    synthCandidates.value = await apiFetch<Item[]>('/explore/random-items?count=5')
   } catch {
-    chain.value[hopIdx].analysis = null
+    synthCandidates.value = []
   } finally {
-    chainLoading.value = false
+    synthCandLoading.value = false
   }
-
-  await loadCandidates(hopIdx)
 }
 
-async function doFullAnalysis() {
-  fullLoading.value = true
+async function loadTaggedItems() {
+  if (!synthTagIds.value.length) { synthCandidates.value = []; return }
+  synthCandLoading.value = true
   try {
-    const res = await apiFetch('/explore/chain/full', {
-      method: 'POST',
-      body: { item_ids: chain.value.map(h => h.item.id) },
-    })
-    fullAnalysis.value = res.analysis
+    const res = await listItemsPage({ tag_ids: synthTagIds.value, page_size: 20 })
+    synthCandidates.value = res.items
+  } catch {
+    synthCandidates.value = []
   } finally {
-    fullLoading.value = false
+    synthCandLoading.value = false
   }
 }
 
-function resetChain() {
-  chain.value = []
-  startCandidates.value = []
-  activeHopIdx.value = 0
-  fullAnalysis.value = null
-  try { sessionStorage.removeItem(STORAGE_KEY) } catch {}
+watch(synthTagIds, () => { if (synthMode.value === 'tag') loadTaggedItems() }, { deep: true })
+watch(synthMode, (val) => { if (val === 'tag') loadTaggedItems() })
+
+async function doSynthesize() {
+  if (!synthPrompt.value.trim() || !synthSelectedItems.value.length) return
+  synthLoading.value = true
+  try {
+    const result = await apiFetch<SynthesizeResult>('/explore/synthesize', {
+      method: 'POST',
+      body: {
+        item_ids: synthSelectedItems.value.map(i => i.id),
+        prompt: synthPrompt.value.trim(),
+      },
+    })
+    synthResult.value = result
+    synthModalOpen.value = true
+    await loadQuota()
+  } catch (err: any) {
+    if (err?.response?.status === 429) await loadQuota()
+  } finally {
+    synthLoading.value = false
+  }
 }
 
-async function rewriteFrom(hopIdx: number) {
-  chain.value = chain.value.slice(0, hopIdx + 1)
-  chain.value[hopIdx].candidates = []
-  activeHopIdx.value = hopIdx
-  fullAnalysis.value = null
-  await loadCandidates(hopIdx)
+async function saveAsArticle() {
+  if (!synthResult.value) return
+  savingArticle.value = true
+  try {
+    const article = await createArticle()
+    await updateArticle(article.id, {
+      content_md: synthResult.value.content_tiptap,
+      is_draft: true,
+    })
+    synthModalOpen.value = false
+    await router.push(`/app/write/${article.id}`)
+  } finally {
+    savingArticle.value = false
+  }
 }
+
+onMounted(() => Promise.all([loadQuota(), loadTags()]))
 
 function timeAgo(isoDate: string) {
   const days = Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000)
@@ -356,127 +361,88 @@ function timeAgo(isoDate: string) {
 function sourceLabel(type: string | null) {
   return type ? (SOURCE_LABELS[type] ?? type) : 'Article'
 }
-
-
 </script>
 
 <style>
-/* ── Insights (原有) ── */
-.surprise-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 80px 0; color: var(--text-dim); text-align: center; max-width: 400px; margin: 0 auto; }
-.surprise-empty p { font-size: 13px; line-height: 1.6; }
-.surprise-refresh { margin-top: 20px; font-size: 12px; }
-.insights { display: flex; flex-direction: column; gap: 12px; max-width: 920px; }
-.insight { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px 18px 26px; transition: all .15s ease; }
-.insight:hover { transform: translateX(4px); }
-.insight::before { content: ''; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 2px; }
-.insight--connection::before { background: var(--tag-b); }
-.insight--connection:hover { border-color: var(--tag-b); }
-.insight--forgotten::before { background: var(--tag-e); }
-.insight--forgotten:hover { border-color: var(--tag-e); }
-.insight--trend::before { background: var(--tag-a); }
-.insight--trend:hover { border-color: var(--tag-a); }
-.insight--skel { pointer-events: none; min-height: 140px; }
-.insight__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.ins-badge { font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; padding: 3px 10px; border-radius: 5px; }
-.ins-badge--b { color: var(--tag-b); background: color-mix(in oklab, var(--tag-b) 14%, transparent); }
-.ins-badge--e { color: var(--tag-e); background: color-mix(in oklab, var(--tag-e) 14%, transparent); }
-.ins-badge--a { color: var(--tag-a); background: color-mix(in oklab, var(--tag-a) 14%, transparent); }
-.insight__when { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
-.insight__title { font-family: var(--font-brand); font-weight: 600; font-size: 16.5px; line-height: 1.4; margin: 0 0 8px; }
-.insight__body { font-size: 13px; color: var(--text-mid); line-height: 1.7; margin: 0 0 12px; }
-.insight__foot { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--border); align-items: center; }
-.feedback { margin-left: auto; display: flex; gap: 8px; }
-.feedback button { width: 26px; height: 26px; border-radius: 6px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-mid); transition: all .15s ease; cursor: pointer; }
-.feedback button:hover { border-color: var(--accent-bdr); }
-.topic-bars { display: flex; align-items: flex-end; gap: 12px; height: 80px; margin: 12px 0 14px; padding: 0 4px; }
-.topic-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.topic-bar__col { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; position: relative; min-height: 4px; }
-.topic-bar__col::after { content: attr(data-pct) '%'; position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-family: var(--font-mono); font-size: 9.5px; color: var(--accent); white-space: nowrap; }
-.topic-bar__label { font-family: var(--font-mono); font-size: 10px; color: var(--text-mid); }
-.item-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; font-size: 11.5px; transition: all .15s ease; cursor: pointer; max-width: 220px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.item-chip:hover { background: var(--surface3); }
-.item-chip__t { width: 24px; height: 18px; border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+/* ── 知識合成 ── */
+.synth-section { max-width: 70vw; margin-bottom: 40px; }
+.synth-section__head { margin-bottom: 18px; }
+.synth-section__title-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.synth-section__desc { font-size: 12.5px; color: var(--text-dim); }
 
-/* ── Chain Explorer ── */
-.chain-section { max-width: 70vw; }
-.chain-section__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
-.chain-section__desc { font-size: 12.5px; color: var(--text-dim); }
+.synth-quota-badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 10px; border-radius: 6px; background: var(--surface2); color: var(--text-mid); border: 1px solid var(--border); }
+.synth-quota-badge--warn { color: var(--tag-e); border-color: color-mix(in oklab, var(--tag-e) 30%, transparent); background: color-mix(in oklab, var(--tag-e) 8%, transparent); }
 
-.chain-start { display: flex; justify-content: center; padding: 8px 0 4px; }
-.chain-start__lucky { display: inline-flex; align-items: center; gap: 10px; padding: 14px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 40px; font-size: 14px; color: var(--text-mid); cursor: pointer; transition: all .18s ease; }
-.chain-start__lucky:hover { border-color: var(--accent-bdr); color: var(--accent); background: var(--accent-dim); }
-.chain-start__lucky:disabled { opacity: 0.5; cursor: not-allowed; }
-.chain-start__lucky-icon { font-size: 18px; line-height: 1; }
-.chain-start__lucky-pulse { display: flex; gap: 5px; }
-.chain-start__lucky-pulse span { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 1.2s infinite; }
-.chain-start__lucky-pulse span:nth-child(2) { animation-delay: .18s; }
-.chain-start__lucky-pulse span:nth-child(3) { animation-delay: .36s; }
+.synth-filter-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.synth-filter-row .filter-chips { flex: 1; min-width: 0; cursor: grab; }
+.filter-chips--dragging { cursor: grabbing !important; user-select: none; }
+.synth-lucky-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 
-.chain-candidates { margin-top: 16px; }
-.chain-candidates__label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
+.synth-cand-grid { margin-bottom: 16px; }
+.synth-cand--selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+.synth-cand--selected .card__thumb::after { content: ''; position: absolute; inset: 0; background: color-mix(in oklab, var(--accent) 12%, transparent); }
+.synth-cand--full { opacity: 0.4; cursor: not-allowed; }
+.synth-selected-badge { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #000; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+.synth-cand-empty { padding: 36px 0; font-size: 13px; color: var(--text-dim); text-align: center; }
+.synth-cand-empty strong { color: var(--text-mid); }
+
+.synth-chain { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+.synth-chain__head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.synth-chain__label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+.synth-chain__count { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--text-mid); }
+.synth-chain__count--full { color: var(--tag-e); }
+.synth-chain__clear { margin-left: auto; font-size: 11px; height: 26px; padding: 0 10px; color: var(--text-dim); }
+.synth-chain__nodes { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.synth-node { display: flex; align-items: center; gap: 7px; padding: 5px 8px 5px 6px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px; max-width: 200px; }
+.synth-node__thumb { width: 28px; height: 20px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.synth-node__thumb--empty { background: var(--surface3); }
+.synth-node__label { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.synth-node__remove { flex-shrink: 0; width: 18px; height: 18px; border-radius: 4px; background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: all .12s; }
+.synth-node__remove:hover { background: color-mix(in oklab, var(--tag-e) 14%, transparent); color: var(--tag-e); }
+
+.synth-prompt-area { display: flex; flex-direction: column; gap: 10px; }
+.synth-prompt { width: 100%; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; color: var(--text); font-size: 13.5px; font-family: var(--font-ui); line-height: 1.6; resize: vertical; transition: border-color .15s; box-sizing: border-box; }
+.synth-prompt:focus { outline: none; border-color: var(--accent-bdr); }
+.synth-prompt:disabled { opacity: 0.5; }
+.synth-prompt-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.synth-quota-warn { font-family: var(--font-mono); font-size: 11.5px; color: var(--tag-e); }
+.synth-submit-btn { display: inline-flex; align-items: center; gap: 8px; min-width: 110px; justify-content: center; }
+
+.synth-pulse { display: flex; gap: 5px; }
+.synth-pulse span { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 1.2s infinite; }
+.synth-pulse span:nth-child(2) { animation-delay: .18s; }
+.synth-pulse span:nth-child(3) { animation-delay: .36s; }
+
+/* ── Synthesis Modal ── */
+.synth-modal { position: relative; background: var(--surface); border: 1px solid var(--border2); border-radius: 16px; width: 680px; max-width: calc(100vw - 32px); max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+.synth-modal__close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-mid); cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: all .15s; z-index: 1; }
+.synth-modal__close:hover { background: var(--surface3); color: var(--text); }
+.synth-modal__body { flex: 1; overflow-y: auto; padding: 28px 28px 20px; }
+.synth-modal__content { background: var(--surface2); border-radius: 10px; padding: 16px 18px; border: 1px solid var(--border); }
+.synth-modal__sources { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.synth-modal__sources-label { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); display: block; margin-bottom: 10px; }
+.synth-modal__sources-list { display: flex; flex-direction: column; gap: 6px; }
+.synth-modal__foot { padding: 16px 28px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; background: var(--surface); }
+
+.synth-source-chip { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: var(--text-mid); font-size: 12px; transition: all .15s; }
+.synth-source-chip:hover { background: var(--surface3); color: var(--text); }
+.synth-source-chip__thumb { width: 36px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.synth-source-chip__thumb--empty { background: var(--surface3); }
+.synth-source-chip__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Shared ── */
 .chain-cand-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .chain-cand-card { width: auto; }
 .chain-cand-card--skel { pointer-events: none; }
 .chain-cand-card--skel .card__thumb { animation: skel-pulse 1.4s ease infinite; }
-
-.chain-rewrite-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; margin-bottom: 12px; background: color-mix(in oklab, var(--tag-e) 8%, transparent); border: 1px solid color-mix(in oklab, var(--tag-e) 22%, transparent); border-radius: 8px; }
-.chain-rewrite-bar__hint { font-family: var(--font-mono); font-size: 11px; color: var(--text-mid); }
-.chain-rewrite-bar__btn { font-size: 11.5px; height: 28px; padding: 0 14px; margin-left: auto; }
-
-.chain-path { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
-.chain-node { display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; cursor: pointer; transition: all .15s ease; max-width: 160px; }
-.chain-node:hover { background: var(--surface2); }
-.chain-node--active { background: var(--accent-dim); border-color: var(--accent-bdr); color: var(--accent); }
-.chain-node__thumb { width: 28px; height: 20px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface2); }
-.chain-node__thumb--empty { background: var(--surface2); }
-.chain-node__label { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chain-arrow { color: var(--text-dim); font-size: 14px; flex-shrink: 0; }
-.chain-reset { margin-left: auto; font-size: 11.5px; height: 28px; padding: 0 12px; }
-
-.chain-detail { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
-
-.chain-public-badge { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; padding: 2px 7px; border-radius: 5px; background: color-mix(in oklab, var(--tag-d) 14%, transparent); color: var(--tag-d); border: 1px solid color-mix(in oklab, var(--tag-d) 25%, transparent); }
-.chain-public-badge--thumb { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,0.55); color: #fff; border: none; border-radius: 4px; }
-
-.hop-analysis { display: flex; flex-direction: column; gap: 10px; }
-.hop-block { padding: 14px 16px; border-radius: 10px; }
-.hop-block--connect { background: color-mix(in oklab, var(--tag-b) 8%, transparent); border: 1px solid color-mix(in oklab, var(--tag-b) 22%, transparent); }
-.hop-block--idea { background: color-mix(in oklab, var(--accent) 8%, transparent); border: 1px solid var(--accent-bdr); }
-.hop-block--question { background: var(--surface); border: 1px solid var(--border); }
-.hop-block__label { font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; display: block; margin-bottom: 7px; }
-.hop-block--connect .hop-block__label { color: var(--tag-b); }
-.hop-block--idea .hop-block__label { color: var(--accent); }
-.hop-block--question .hop-block__label { color: var(--text-dim); }
-.hop-block p { font-size: 13px; color: var(--text); line-height: 1.75; margin: 0; }
-.hop-block p em { font-style: normal; font-weight: 500; color: var(--tag-b); }
-.hop-question { font-style: italic; color: var(--text-mid) !important; }
-.hop-start-hint { font-size: 12.5px; color: var(--text-dim); padding: 12px 0; }
-.hop-loading { display: flex; align-items: center; gap: 12px; padding: 14px; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
-.hop-loading .pulse-row { margin: 0; }
-.hop-loading .pulse-row span { width: 7px; height: 7px; }
-
-.chain-next { margin-top: 4px; }
-.chain-next__label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
-.chain-empty { font-size: 12.5px; color: var(--text-dim); padding: 20px 0; }
-.chain-quota-full { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); margin: 10px 0 0; text-align: center; }
-
-.full-chain { margin-top: 6px; }
-.full-chain__btn { font-size: 12.5px; }
-.full-chain__result { background: var(--surface); border: 1px solid var(--accent-bdr); border-radius: 12px; padding: 18px 20px; margin-top: 12px; }
-.full-chain__result p { font-size: 13.5px; line-height: 1.85; margin: 10px 0 0; color: var(--text); }
-.full-chain__result p em { font-style: normal; color: var(--accent); font-weight: 500; }
-
 .skel-line { background: var(--surface2); border-radius: 6px; animation: skel-pulse 1.4s ease infinite; }
 @keyframes skel-pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
 .fadeup { animation: fadeup .3s ease; }
 @keyframes fadeup { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-
-.pulse-row { display: flex; gap: 8px; }
-.pulse-row span { width: 9px; height: 9px; background: var(--accent); border-radius: 50%; animation: pulse 1.2s infinite; }
-.pulse-row span:nth-child(2) { animation-delay: .18s; }
-.pulse-row span:nth-child(3) { animation-delay: .36s; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.5); opacity: 1; } }
 
-@media (max-width: 980px) { .chain-cand-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 640px) { .chain-start { flex-direction: column; } .chain-cand-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 980px) { .chain-cand-grid { grid-template-columns: repeat(3, 1fr); } .synth-section { max-width: 100%; } }
+@media (max-width: 640px) { .chain-cand-grid { grid-template-columns: repeat(2, 1fr); } .synth-filter-row { flex-direction: column; align-items: flex-start; } .synth-lucky-btn { align-self: flex-end; } }
 </style>

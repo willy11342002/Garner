@@ -15,8 +15,8 @@
     </header>
 
     <NuxtPage />
-    <LayoutAppFooter class="explore-layout__footer" />
   </div>
+  <LayoutAppFooter />
 </template>
 
 <script setup lang="ts">
@@ -36,8 +36,8 @@ onMounted(async () => {
 </script>
 
 <style>
-.explore-layout { display: flex; flex-direction: column; min-height: calc(100vh - 52px); align-items: stretch; }
-.explore-layout__footer { margin-top: auto; }
+.explore-layout { display: flex; flex-direction: column; min-height: calc(100vh - 52px - 110.78px); align-items: stretch; }
+
 .ex-head { padding: 24px 32px 20px; border-bottom: 1px solid var(--border); width: 70vw; margin: 0 auto; box-sizing: border-box; }
 .ex-head__top { display: flex; align-items: flex-end; gap: 24px; }
 .ex-head__stats { margin-left: auto; display: flex; gap: 18px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }

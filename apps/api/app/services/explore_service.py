@@ -554,6 +554,65 @@ async def analyze_full_chain(
     return ChainFullAnalysis(analysis=text)
 
 
+async def get_random_items(
+    db: AsyncSession, user_id: UUID, count: int = 5
+) -> list[ChainItem]:
+    items = await crud_items.get_random_with_embedding(db, user_id, limit=count)
+    return [_to_chain_item(ui) for ui in items]
+
+
+async def synthesize_with_items(
+    db: AsyncSession,
+    user_id: UUID,
+    item_ids: list[UUID],
+    prompt: str,
+) -> "SynthesizeResult":
+    from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
+    from app.schemas.explore import FocusSource, SynthesizeResult
+
+    if not item_ids:
+        raise ValueError("item_ids cannot be empty")
+
+    result = await db.execute(
+        select(UserItem)
+        .options(joinedload(UserItem.content))
+        .where(
+            UserItem.id.in_(item_ids),
+            UserItem.user_id == user_id,
+            UserItem.deleted_at.is_(None),
+        )
+    )
+    items = list(result.scalars().all())
+
+    if not items:
+        raise ValueError("no valid items found")
+
+    items_payload = [
+        {"title": ui.content.title, "summary": ui.content.summary}
+        for ui in items
+    ]
+    content = await ai_service.synthesize_custom(prompt, items_payload)
+
+    import json as _json
+    content_tiptap = _json.dumps(
+        ai_service.md_to_tiptap(content), ensure_ascii=False
+    )
+
+    sources = [
+        FocusSource(
+            id=ui.id,
+            url=ui.content.url,
+            title=ui.content.title,
+            thumbnail_url=ui.content.thumbnail_url,
+            source_type=ui.content.source_type.value if ui.content.source_type else None,
+            saved_at=ui.saved_at,
+        )
+        for ui in items
+    ]
+    return SynthesizeResult(content=content, content_tiptap=content_tiptap, sources=sources)
+
+
 async def get_surprise(db: AsyncSession, user_id: UUID) -> SurpriseResult:
     # async session 不支援並發，循序執行
     connection = await _unexpected_connection(db, user_id)

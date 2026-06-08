@@ -3,24 +3,11 @@
     <nav class="nav">
       <NuxtLink to="/app" class="nav__logo">Garner</NuxtLink>
       <div class="nav__tabs">
-        <div class="nav__tab-group">
-          <span
-            class="nav__tab"
-            :class="{ 'nav__tab--active': route.path.startsWith('/app/explore') }"
-          >{{ t('nav.explore') }}</span>
-          <div class="nav__explore-menu">
-            <div class="nav__explore-menu-inner">
-              <NuxtLink to="/app/explore/surprise" class="nav__explore-item" active-class="nav__explore-item--active">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                {{ t('explore.tab_surprise') }}
-              </NuxtLink>
-              <NuxtLink to="/app/explore/browse" class="nav__explore-item" active-class="nav__explore-item--active">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                {{ t('explore.tab_browse') }}
-              </NuxtLink>
-            </div>
-          </div>
-        </div>
+        <NuxtLink
+          to="/app/explore/surprise"
+          class="nav__tab"
+          :class="{ 'nav__tab--active': route.path.startsWith('/app/explore') }"
+        >{{ t('nav.explore') }}</NuxtLink>
         <NuxtLink
           to="/app/chat"
           class="nav__tab"

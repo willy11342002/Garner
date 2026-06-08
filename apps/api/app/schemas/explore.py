@@ -108,3 +108,16 @@ class ChainFullRequest(BaseModel):
 
 class ChainFullAnalysis(BaseModel):
     analysis: str
+
+
+# Custom synthesis
+
+class SynthesizeRequest(BaseModel):
+    item_ids: list[UUID]
+    prompt: str
+
+
+class SynthesizeResult(BaseModel):
+    content: str          # raw markdown，modal 預覽用
+    content_tiptap: str   # JSON string of Tiptap doc，write 頁面用
+    sources: list[FocusSource]
