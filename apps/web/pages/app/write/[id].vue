@@ -1205,7 +1205,8 @@ async function handleDeleteCover(e: Event) {
 
 /* ─── Content ─── */
 .write-content {
-  margin: 0px 360px 0px 300px;
+  margin: 0px auto;
+  min-width: 70vw;
   padding: 48px;
 }
 
