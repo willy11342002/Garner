@@ -36,22 +36,21 @@ const editor = useEditor({
     Markdown.configure({ html: false }),
   ],
   editable: !props.readonly,
-  content: props.modelValue ?? '',
+  content: '',
   onUpdate({ editor }) {
     if (!props.readonly) {
-      emit('update:modelValue', editor.storage.markdown.getMarkdown())
+      emit('update:modelValue', (editor as any).getMarkdown())
     }
   },
 })
 
-watch(() => props.modelValue, (val) => {
+function setMarkdown(val: string | null | undefined) {
   if (!editor.value) return
-  const current = editor.value.storage.markdown.getMarkdown()
-  const next = val ?? ''
-  if (current !== next) {
-    editor.value.commands.setContent(next, false)
-  }
-})
+  const parsed = (editor.value as any).markdown.parse(val ?? '')
+  editor.value.commands.setContent(parsed, false)
+}
+
+watch(() => props.modelValue, setMarkdown)
 
 watch(() => props.readonly, (val) => {
   editor.value?.setEditable(!val)
@@ -183,6 +182,7 @@ const wrapRef = ref<HTMLElement | null>(null)
 onMounted(() => {
   document.addEventListener('click', onDocClick, true)
   document.addEventListener('mousemove', onDocMouseMove)
+  setMarkdown(props.modelValue)
 })
 
 onBeforeUnmount(() => {

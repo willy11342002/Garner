@@ -235,7 +235,7 @@ async function confirmArchive() {
                   class="tag-chip tag-chip--pending id-tag"
                   :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
                 >
-                  {{ localize(tag.name_i18n, tag.name) }}
+                  {{ tag.name }}
                   <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
                   <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
                 </span>
@@ -246,7 +246,7 @@ async function confirmArchive() {
                 :class="`tag-chip tag-chip--${tagColor(i)} id-tag`"
                 :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
               >
-                {{ localize(tag.name_i18n, tag.name) }}
+                {{ tag.name }}
                 <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
               </span>
               <template v-if="addingTag">
@@ -336,7 +336,7 @@ async function confirmArchive() {
                   class="tag-chip tag-chip--pending id-tag"
                   :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
                 >
-                  {{ localize(tag.name_i18n, tag.name) }}
+                  {{ tag.name }}
                   <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
                   <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
                 </span>
@@ -347,7 +347,7 @@ async function confirmArchive() {
                 :class="`tag-chip tag-chip--${tagColor(i)} id-tag`"
                 :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
               >
-                {{ localize(tag.name_i18n, tag.name) }}
+                {{ tag.name }}
                 <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
               </span>
               <template v-if="addingTag">
