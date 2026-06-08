@@ -364,16 +364,6 @@ async function handleDeleteCover(e: Event) {
       </div>
 
       <div class="write-bar__actions">
-        <!-- Public toggle pill -->
-        <button
-          class="write-bar__pill"
-          :class="{ 'write-bar__pill--on': isPublic }"
-          @click="togglePublic"
-        >
-          <span class="write-bar__pill-knob"></span>
-          <span class="write-bar__pill-label">{{ isPublic ? '公開' : '私有' }}</span>
-        </button>
-
         <!-- Archive button -->
         <button
           class="write-bar__archive"
@@ -1038,39 +1028,6 @@ async function handleDeleteCover(e: Event) {
   gap: 10px;
   flex-shrink: 0;
 }
-
-/* Public toggle pill */
-.write-bar__pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 20px;
-  padding: 3px 10px 3px 4px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.write-bar__pill--on {
-  background: var(--accent-dim);
-  border-color: var(--accent-bdr);
-}
-.write-bar__pill-knob {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-.write-bar__pill--on .write-bar__pill-knob { background: var(--accent); }
-.write-bar__pill-label {
-  font-size: 12px;
-  color: var(--text-mid);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-}
-.write-bar__pill--on .write-bar__pill-label { color: var(--accent); }
 
 /* Archive button */
 .write-bar__archive {
