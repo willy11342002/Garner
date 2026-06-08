@@ -300,9 +300,9 @@ async function confirmArchive() {
                 class="btn btn--accent"
                 @click="doClose"
               >
-                ✏️ 編輯筆記
+                編輯筆記
               </NuxtLink>
-              <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文 →</a>
+              <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文</a>
               <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
                   <template v-if="(item as Item).status === 'archived'">
@@ -402,9 +402,9 @@ async function confirmArchive() {
                 :to="`/app/write/${item.id}`"
                 class="btn btn--accent"
               >
-                ✏️ 編輯筆記
+                編輯筆記
               </NuxtLink>
-              <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文 →</a>
+              <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文</a>
               <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
                   <template v-if="(item as Item).status === 'archived'">
