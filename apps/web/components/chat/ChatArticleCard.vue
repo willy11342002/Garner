@@ -29,7 +29,7 @@ defineEmits<{ preview: [id: string] }>()
 const router = useRouter()
 
 function openInEditor() {
-  router.push(`/app/write/${props.draft.id}`)
+  router.push(`/app/write/${props.draft.id}?from=/app/chat`)
 }
 </script>
 

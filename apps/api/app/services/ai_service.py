@@ -198,6 +198,19 @@ def md_to_tiptap(md: str) -> dict:
     return {"type": "doc", "content": nodes}
 
 
+async def suggest_tags(content: str, candidate_tags: list[str] | None = None) -> dict:
+    """Returns {"zh-TW": [...], "en": [...]}"""
+    truncated = content[:32000]
+    if candidate_tags:
+        candidates_str = "、".join(candidate_tags)
+        prompt = _TAGS_WITH_CANDIDATES_PROMPT.format(candidates=candidates_str) + truncated
+    else:
+        prompt = _TAGS_PROMPT + truncated
+    raw = await _llm_call(prompt)
+    data = _parse_json(raw)
+    return data.get("tags", {"zh-TW": [], "en": []})
+
+
 async def analyze_content(content: str, candidate_tags: list[str] | None = None) -> dict:
     """Returns {summary: {zh-TW: <tiptap_doc>}, summary_md: {zh-TW: <markdown>}, embed_text: str, tags: {zh-TW, en}}."""
     import asyncio
@@ -444,19 +457,24 @@ _PLAN_SYSTEM = """\
    參數：{{"name": "structured_filter", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "..."}}
 
 3. create_article
-   根據對話脈絡或知識庫內容，建立一篇 AI 草稿文章。
-   僅在用戶明確要求「寫文章」「整理成文章」「產生文章草稿」「幫我寫一篇...」時呼叫。
+   根據對話脈絡或知識庫內容，建立一篇 AI 草稿文章、規劃、指南或清單。
+   觸發時機：用戶明確要求「產出內容」，包含但不限於：
+   「寫文章」「整理成文章」「幫我寫一篇」「生成...規劃/計畫/攻略/指南/清單/總結/摘要」
+   「幫我規劃」「做一份」「產生草稿」「整理一下」「寫一個行程」等。
+   關鍵判斷：用戶想要 AI **產出一份結構化內容**，而不只是回答問題。
    可以和 semantic_search / structured_filter 搭配（先查知識庫，再撰寫文章）。
    title：文章標題（繁體中文，簡潔有力）
-   content：完整文章內容，使用 markdown 格式（標題用 ##/###、列表用 -、重點用 **粗體**）
-   summary：50 字以內的文章摘要
+   content：完整內容，使用 markdown 格式（標題用 ##/###、列表用 -、重點用 **粗體**）
+   summary：50 字以內的內容摘要
    參數：{{"name": "create_article", "title": "文章標題", "content": "完整 markdown 內容", "summary": "摘要"}}
 
 規則：
 - semantic_search 與 structured_filter 可同時呼叫，結果自動合併去重
 - structured_filter 省略的參數代表不篩選該維度
-- create_article 僅在用戶有明確撰文需求時才呼叫，不要主動建立
-- 若同時查詢知識庫又要寫文章，三個工具可以一起呼叫
+- create_article 僅在用戶有明確產出需求時才呼叫，不要主動建立
+- 若同時查詢知識庫又要產出內容，三個工具可以一起呼叫
+- semantic_search 的 query 要精煉成 2-6 字的主題關鍵字，不要直接複製用戶的問句
+- 若用戶問的是對話歷史、上一句話、閒聊、打招呼、或可直接從脈絡回答的問題，tools 回傳空陣列 []，不需要呼叫任何工具
 - 只輸出 JSON，不要 markdown fences
 
 今天日期：{today}
@@ -506,6 +524,7 @@ _CHAT_SYSTEM = """\
 你的工作是根據用戶的問題，從他們存過的內容中找到相關資訊，給出具體有洞察力的回答。
 用繁體中文回答。回答自然、簡潔，不要過度列舉。
 如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造。
+只輸出你自己的回覆內容，不要模擬或捏造用戶的後續回應。
 """
 
 _CHAT_CONTEXT_TEMPLATE = """\
@@ -518,7 +537,10 @@ _CHAT_CONTEXT_TEMPLATE = """\
 【對話歷史】
 {history}
 
-用戶：{query}
+【用戶最新問題】
+{query}
+
+請直接回答用戶的問題，不要在回覆中加入「用戶：」的模擬對話。
 """
 
 _COMPRESS_SYSTEM = """\

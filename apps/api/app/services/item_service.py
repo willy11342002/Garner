@@ -310,11 +310,20 @@ async def translate_item_notes(
     return _item_to_read(user_item, user_id)
 
 
-async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> None:
+async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID, *, hard: bool = False) -> None:
+    from sqlalchemy import delete as sa_delete
+    from app.models.item_tag import ItemTag
+    from app.models.notification import Notification
+
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    await crud_items.soft_delete(db, user_item)
+    await db.execute(sa_delete(ItemTag).where(ItemTag.user_item_id == user_item.id))
+    await db.execute(sa_delete(Notification).where(Notification.item_id == user_item.id))
+    if hard:
+        await db.delete(user_item)
+    else:
+        await crud_items.soft_delete(db, user_item)
     await db.commit()
 
 
@@ -447,28 +456,68 @@ async def create_article_draft(
 ) -> dict:
     """
     Chat tool 專用：由 AI 生成一篇草稿文章並存入 DB。
+
+    欄位說明：
+    - summary_i18n: {"zh-TW": <tiptap_doc>}  → ItemDetailModal 渲染文章內容
+    - summary:      純文字摘要（zh-TW）        → 卡片預覽、搜尋
+    - content_md:   JSON.stringify(tiptap_doc)  → write editor 讀取（JSON.parse 用）
+
     回傳 { id, title, summary, content_tiptap } 供前端渲染草稿卡片。
     """
     import json as _json
-    from app.services.ai_service import md_to_tiptap
+    import sqlalchemy as _sa
+    from app.services.ai_service import md_to_tiptap, suggest_tags
+    from app.crud import tags as crud_tags
     from app.models.user_item import UserItem as UserItemModel
+    from app.models.item_tag import TagSource
 
+    # ── 建立 item ────────────────────────────────────────────────────────────
     result = await prepare_item_create(db, user_id, ItemCreate(url=None, title=title))
     item_id = result.item.id
 
-    content_tiptap = _json.dumps(md_to_tiptap(content_markdown), ensure_ascii=False)
-    auto_summary = (summary or content_markdown[:200]).strip()
+    # ── 1. summary_i18n：文章內容轉 Tiptap doc，存為 i18n dict ──────────────
+    tiptap_doc = md_to_tiptap(content_markdown)
+    summary_i18n = {"zh-TW": tiptap_doc}
+
+    # ── 2. summary：AI 傳入的純文字摘要（zh-TW）────────────────────────────
+    clean_summary = (summary or content_markdown[:200]).strip()
+
+    # ── 3. content_md：Tiptap JSON string，供 write editor JSON.parse 使用 ──
+    content_md = _json.dumps(tiptap_doc, ensure_ascii=False)
 
     await db.execute(
-        __import__("sqlalchemy").update(UserItemModel)
+        _sa.update(UserItemModel)
         .where(UserItemModel.id == item_id)
-        .values(content_md=content_tiptap, summary=auto_summary)
+        .values(
+            summary_i18n=summary_i18n,
+            summary=clean_summary,
+            content_md=content_md,
+        )
     )
+
+    # ── 4. 生成 tags ─────────────────────────────────────────────────────────
+    try:
+        candidate_tags = await crud_tags.get_top_tags(db, user_id, limit=50)
+        tags_i18n = await suggest_tags(
+            content_markdown,
+            candidate_tags=[t.name for t in candidate_tags],
+        )
+        zh_tags = tags_i18n.get("zh-TW", [])
+        en_tags = tags_i18n.get("en", [])
+        for zh_name, en_name in zip(zh_tags, en_tags):
+            tag = await crud_tags.get_or_create(
+                db, user_id, name=zh_name,
+                name_i18n={"zh-TW": zh_name, "en": en_name},
+            )
+            await crud_tags.attach_tag(db, item_id, tag.id, source=TagSource.ai)
+    except Exception:
+        pass  # tag 生成失敗不影響文章建立
+
     await db.commit()
 
     return {
         "id": str(item_id),
         "title": title,
-        "summary": auto_summary,
-        "content_tiptap": content_tiptap,
+        "summary": clean_summary,
+        "content_tiptap": content_md,
     }

@@ -27,6 +27,7 @@ export default defineNuxtConfig({
     '~/assets/css/item-detail.css',
     '~/assets/css/tag.css',
     '~/assets/css/collection-view.css',
+    '~/assets/css/chat.css',
   ],
 
   modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n'],

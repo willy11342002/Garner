@@ -14,7 +14,10 @@ const FROM_LABELS: Record<string, string> = {
   '/app/archive': '封存庫',
 }
 const backPath = computed(() => (route.query.from as string) || '/app')
-const backLabel = computed(() => FROM_LABELS[backPath.value] ?? '首頁')
+const backLabel = computed(() => {
+  if (backPath.value.startsWith('/app/chat')) return '對話'
+  return FROM_LABELS[backPath.value] ?? '首頁'
+})
 
 
 const { updateArticle, publishArticle, uploadCover, deleteCover } = useArticles()

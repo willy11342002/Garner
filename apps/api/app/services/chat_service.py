@@ -132,8 +132,7 @@ async def stream_reply(
     yield _sse("thinking", {"text": reasoning})
 
     # ── Step 2：執行各 tool ──────────────────────────────────────────────────
-    if not tools:
-        tools = [{"name": "semantic_search", "query": user_content}]
+    # 不強制補 semantic_search：若 AI 判斷不需要工具（閒聊、對話脈絡問題），直接跳過
 
     all_items: list[ItemWithDist] = []
     seen_ids: set[UUID] = set()
