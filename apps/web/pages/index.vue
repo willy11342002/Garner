@@ -6,7 +6,6 @@
       <p class="landing__sub">{{ t('landing.sub') }}</p>
       <div class="landing__cta">
         <NuxtLink to="/app" class="btn btn--accent btn--lg">{{ t('landing.cta_start') }}</NuxtLink>
-        <NuxtLink to="/app/explore" class="btn btn--lg">{{ t('landing.cta_explore') }}</NuxtLink>
       </div>
     </section>
 
