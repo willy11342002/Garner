@@ -20,8 +20,8 @@ async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
             UserItem.status == UserItemStatus.active,
         )
         .options(
-            # snapshot 欄位都在 UserItem，content_md 是重欄位才 defer
-            defer(UserItem.content_md),
+            # notes_md 是重欄位，list 查詢時 defer
+            defer(UserItem.notes_md),
             # embedding 放 ContentObject，list 不需要，joinedload 僅作關聯用
             joinedload(UserItem.content).options(defer(ContentObject.embedding)),
             # filter confirmed-only at DB level to avoid loading + Python-filtering all tags
@@ -172,7 +172,7 @@ async def get_page(
         select(UserItem)
         .where(UserItem.id.in_(ids))
         .options(
-            defer(UserItem.content_md),
+            defer(UserItem.notes_md),
             joinedload(UserItem.content).options(defer(ContentObject.embedding)),
             selectinload(
                 UserItem.item_tags.and_(ItemTag.confirmed == True)  # noqa: E712

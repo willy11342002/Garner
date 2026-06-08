@@ -13,7 +13,7 @@ from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.models.content_object import ContentObject, SourceType, detect_source_type
 from app.quota_depends import get_video_max_sec
-from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemSummaryUpdate, ItemUpdate
+from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemUpdate
 from app.providers.instagram import normalize_instagram_url
 from app.providers.youtube import normalize_youtube_url
 from app.workers.process_item import process_item
@@ -33,7 +33,7 @@ def _item_to_read(
     user_item,
     current_user_id: UUID | None = None,
     tags=None,
-    include_content_md: bool = True,
+    include_notes_md: bool = True,
 ) -> ItemRead:
     """UserItem snapshot 欄位直讀，不再需要 JOIN ContentObject 取 display 資料。
     content 只用於取 content_id（AI 層 FK）。
@@ -41,7 +41,7 @@ def _item_to_read(
     from app.schemas.tag import TagRead as _TagRead
     resolved_tags = [_TagRead.model_validate(t) for t in (tags or [])]
 
-    content = user_item.content  # 可能為 None（未來 nullable 時）
+    content = user_item.content
     content_id = content.id if content is not None else None
 
     return ItemRead(
@@ -49,15 +49,13 @@ def _item_to_read(
         content_id=content_id,
         url=user_item.url or (content.url if content else ""),
         title=user_item.title,
-        summary=user_item.summary,
-        summary_i18n=user_item.summary_i18n,
+        notes_md=user_item.notes_md if include_notes_md else None,
         thumbnail_url=user_item.thumbnail_url,
         saved_at=user_item.saved_at,
         deleted_at=user_item.deleted_at,
         parsed_at=user_item.parsed_at,
         status=user_item.status,
         source_type=user_item.source_type,
-        content_md=user_item.content_md if include_content_md else None,
         tags=resolved_tags,
     )
 
@@ -194,7 +192,7 @@ async def create_item(
 async def list_items(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
     user_items = await crud_items.get_all(db, user_id)
     return [
-        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_content_md=False)
+        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_notes_md=False)
         for ui in user_items
     ]
 
@@ -222,7 +220,7 @@ async def list_items_page(
         limit=page_size,
     )
     items = [
-        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_content_md=False)
+        _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_notes_md=False)
         for ui in user_items
     ]
     return _ItemPage(items=items, total=total, page=page, page_size=page_size)
@@ -250,50 +248,9 @@ async def update_item(
     return _item_to_read(user_item, user_id)
 
 
-async def update_item_summary(
-    db: AsyncSession, user_id: UUID, item_id: UUID, data: ItemSummaryUpdate
-) -> ItemRead:
-    user_item = await crud_items.get_one(db, user_id, item_id)
-    if user_item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-
-    user_item.summary_i18n = data.summary_i18n
-    await db.commit()
-    await db.refresh(user_item)
-    return _item_to_read(user_item, user_id)
-
-
 async def list_archived_items(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
     user_items = await crud_items.get_archived(db, user_id)
     return [_item_to_read(ui, user_id) for ui in user_items]
-
-
-async def translate_item_notes(
-    db: AsyncSession, user_id: UUID, item_id: UUID, locale: str
-) -> ItemRead:
-    from app.services import ai_service
-
-    user_item = await crud_items.get_one(db, user_id, item_id)
-    if user_item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-
-    summary_i18n: dict = dict(user_item.summary_i18n or {})
-    if summary_i18n.get(locale):
-        return _item_to_read(user_item, user_id)
-
-    zh_md = user_item.summary
-    if not zh_md:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No source notes to translate",
-        )
-
-    translated_md = await ai_service.translate_notes(zh_md)
-    summary_i18n[locale] = ai_service.md_to_tiptap(translated_md)
-    user_item.summary_i18n = summary_i18n
-    await db.commit()
-    await db.refresh(user_item)
-    return _item_to_read(user_item, user_id)
 
 
 async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID, *, hard: bool = False) -> None:
@@ -336,8 +293,8 @@ async def update_article(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     if data.title is not None:
         user_item.title = data.title
-    if data.content_md is not None:
-        user_item.content_md = data.content_md
+    if data.notes_md is not None:
+        user_item.notes_md = data.notes_md
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
@@ -350,8 +307,6 @@ async def reanalyze_item(
     background_tasks: BackgroundTasks,
 ) -> ItemRead:
     """完整重新 AI 分析（計入 saves_monthly quota）。
-    - note 類型：以 content_md 為輸入重分析
-    - 外部 item：re-fetch 原始 URL + content_md 合併分析
     前端應先顯示確認 dialog 再呼叫此 endpoint。
     """
     user_item = await crud_items.get_one(db, user_id, item_id)
@@ -432,19 +387,11 @@ async def create_article_draft(
     content_markdown: str,
     summary: str | None = None,
 ) -> dict:
+    """Chat tool 專用：由 AI 生成一篇草稿文章並存入 DB。
+    回傳 { id, title, notes_md } 供前端渲染草稿卡片。
     """
-    Chat tool 專用：由 AI 生成一篇草稿文章並存入 DB。
-
-    欄位說明：
-    - summary_i18n: {"zh-TW": <tiptap_doc>}  → ItemDetailModal 渲染文章內容
-    - summary:      純文字摘要（zh-TW）        → 卡片預覽、搜尋
-    - content_md:   JSON.stringify(tiptap_doc)  → write editor 讀取（JSON.parse 用）
-
-    回傳 { id, title, summary, content_tiptap } 供前端渲染草稿卡片。
-    """
-    import json as _json
     import sqlalchemy as _sa
-    from app.services.ai_service import md_to_tiptap, suggest_tags
+    from app.services.ai_service import suggest_tags
     from app.crud import tags as crud_tags
     from app.models.user_item import UserItem as UserItemModel
     from app.models.item_tag import TagSource
@@ -453,27 +400,13 @@ async def create_article_draft(
     result = await prepare_item_create(db, user_id, ItemCreate(url=None, title=title))
     item_id = result.item.id
 
-    # ── 1. summary_i18n：文章內容轉 Tiptap doc，存為 i18n dict ──────────────
-    tiptap_doc = md_to_tiptap(content_markdown)
-    summary_i18n = {"zh-TW": tiptap_doc}
-
-    # ── 2. summary：AI 傳入的純文字摘要（zh-TW）────────────────────────────
-    clean_summary = (summary or content_markdown[:200]).strip()
-
-    # ── 3. content_md：Tiptap JSON string，供 write editor JSON.parse 使用 ──
-    content_md = _json.dumps(tiptap_doc, ensure_ascii=False)
-
     await db.execute(
         _sa.update(UserItemModel)
         .where(UserItemModel.id == item_id)
-        .values(
-            summary_i18n=summary_i18n,
-            summary=clean_summary,
-            content_md=content_md,
-        )
+        .values(notes_md=content_markdown)
     )
 
-    # ── 4. 生成 tags ─────────────────────────────────────────────────────────
+    # ── 生成 tags ─────────────────────────────────────────────────────────────
     try:
         candidate_tags = await crud_tags.get_top_tags(db, user_id, limit=50)
         tags_i18n = await suggest_tags(
@@ -496,6 +429,5 @@ async def create_article_draft(
     return {
         "id": str(item_id),
         "title": title,
-        "summary": clean_summary,
-        "content_tiptap": content_md,
+        "notes_md": content_markdown,
     }

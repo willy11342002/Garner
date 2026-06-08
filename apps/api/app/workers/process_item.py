@@ -40,8 +40,7 @@ async def process_item(
         info = await provider.fetch_info(
             url,
             str(content_id),
-            # 文章（note）的 raw content 來自 UserItem.content_md
-            content_md=user_item.content_md,
+            content_md=user_item.notes_md,
         )
     except Exception:
         logger.exception("fetch_info failed for url=%s", url)
@@ -190,26 +189,22 @@ async def _save_analysis(
 ) -> None:
     """commit #2: AI 結果、embedding、chunks、tags、parsed_at。
     ContentObject 存 embedding（向量搜尋用）；
-    UserItem 存 summary / summary_i18n / title（顯示用 snapshot）。
+    UserItem 存 notes_md / title（顯示用 snapshot）。
     """
-    summary_i18n = analysis.get("summary", {})
-    summary_md = analysis.get("summary_md", {})
+    notes_md = analysis.get("summary_md", {}).get("zh-TW", "")
     tags_i18n = analysis.get("tags", {})
     now = datetime.now(timezone.utc)
 
-    # ── ContentObject：embedding + display 雙寫（CollectionItem 需要 display）─
+    # ── ContentObject：embedding ──────────────────────────────────────────────
     content.embedding = summary_embedding
     content.parsed_at = now
     if not content.title:
         content.title = title
-    content.summary = summary_md.get("zh-TW", "")
-    content.summary_i18n = summary_i18n
 
-    # ── UserItem snapshot：同步顯示欄位（讀取不需 JOIN）────────────────────
+    # ── UserItem snapshot ─────────────────────────────────────────────────────
     if not user_item.title:
         user_item.title = title
-    user_item.summary = summary_md.get("zh-TW", "")
-    user_item.summary_i18n = summary_i18n
+    user_item.notes_md = notes_md
     user_item.parsed_at = now
 
     await crud_chunks.replace_chunks(db, content_id, chunk_records)

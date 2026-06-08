@@ -225,7 +225,7 @@ async def stream_reply(
         ]
     else:
         llm_items = [
-            {"title": ui.title, "summary": ui.summary}
+            {"title": ui.title, "summary": (ui.notes_md or "")[:500]}
             for ui, _ in all_items
         ]
 

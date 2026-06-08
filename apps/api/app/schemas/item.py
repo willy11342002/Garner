@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, HttpUrl, model_validator
@@ -29,15 +29,13 @@ class ItemRead(BaseModel):
     content_id: UUID | None = None
     url: str
     title: str | None
-    summary: str | None
-    summary_i18n: dict[str, Any] | None = None
+    notes_md: str | None = None
     thumbnail_url: str | None
     saved_at: datetime
     deleted_at: datetime | None = None
     parsed_at: datetime | None = None
     status: str | None = None
     source_type: str | None = None
-    content_md: str | None = None
     tags: list[TagRead] = []
 
     model_config = {"from_attributes": True}
@@ -50,11 +48,7 @@ class ItemUpdate(BaseModel):
 
 class ArticleUpdate(BaseModel):
     title: str | None = None
-    content_md: str | None = None
-
-
-class ItemSummaryUpdate(BaseModel):
-    summary_i18n: dict[str, Any]   # full Tiptap JSON doc per locale, e.g. {"zh-TW": {...}}
+    notes_md: str | None = None
 
 
 class PaginatedResult(BaseModel, Generic[T]):

@@ -12,7 +12,7 @@ from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
 from app.quota_depends import SaveQuota
-from app.schemas.item import ItemCreate, ItemPage, ItemPendingReviewRead, ItemRead, ItemSummaryUpdate, ItemUpdate
+from app.schemas.item import ItemCreate, ItemPage, ItemPendingReviewRead, ItemRead, ItemUpdate
 from app.schemas.tag import TagBulkConfirm, TagCreate, TagRead, TagSingleConfirm
 from app.services import item_service
 
@@ -148,10 +148,6 @@ async def get_item(item_id: UUID, current_user: CurrentUser, db: DbSession):
 async def update_item(item_id: UUID, data: ItemUpdate, current_user: CurrentUser, db: DbSession):
     return await item_service.update_item(db, UUID(current_user["sub"]), item_id, data)
 
-
-@router.patch("/{item_id}/summary", response_model=ItemRead)
-async def update_item_summary(item_id: UUID, data: ItemSummaryUpdate, current_user: CurrentUser, db: DbSession):
-    return await item_service.update_item_summary(db, UUID(current_user["sub"]), item_id, data)
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

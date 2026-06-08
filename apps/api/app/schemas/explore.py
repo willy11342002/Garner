@@ -118,6 +118,5 @@ class SynthesizeRequest(BaseModel):
 
 
 class SynthesizeResult(BaseModel):
-    content: str          # raw markdown，modal 預覽用
-    content_tiptap: str   # JSON string of Tiptap doc，write 頁面用
+    content: str          # Markdown
     sources: list[FocusSource]

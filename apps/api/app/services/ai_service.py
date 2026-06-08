@@ -152,52 +152,6 @@ def _parse_json(raw: str) -> dict:
     return json.loads(raw, strict=False)
 
 
-def md_to_tiptap(md: str) -> dict:
-    """Convert AI-generated Markdown to Tiptap JSON doc format."""
-    lines = md.splitlines()
-    nodes: list[dict] = []
-    current_list_items: list[dict] = []
-
-    def flush_list() -> None:
-        if current_list_items:
-            nodes.append({"type": "bulletList", "content": list(current_list_items)})
-            current_list_items.clear()
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            flush_list()
-            continue
-        if stripped.startswith("## "):
-            flush_list()
-            nodes.append({
-                "type": "heading",
-                "attrs": {"level": 2},
-                "content": [{"type": "text", "text": stripped[3:].strip()}],
-            })
-        elif stripped.startswith("### "):
-            flush_list()
-            nodes.append({
-                "type": "heading",
-                "attrs": {"level": 3},
-                "content": [{"type": "text", "text": stripped[4:].strip()}],
-            })
-        elif stripped.startswith("- ") or stripped.startswith("* "):
-            current_list_items.append({
-                "type": "listItem",
-                "content": [{"type": "paragraph", "content": [{"type": "text", "text": stripped[2:].strip()}]}],
-            })
-        else:
-            flush_list()
-            nodes.append({
-                "type": "paragraph",
-                "content": [{"type": "text", "text": stripped}],
-            })
-
-    flush_list()
-    return {"type": "doc", "content": nodes}
-
-
 async def suggest_tags(content: str, candidate_tags: list[str] | None = None) -> dict:
     """Returns {"zh-TW": [...], "en": [...]}"""
     truncated = content[:32000]
@@ -212,7 +166,7 @@ async def suggest_tags(content: str, candidate_tags: list[str] | None = None) ->
 
 
 async def analyze_content(content: str, candidate_tags: list[str] | None = None) -> dict:
-    """Returns {summary: {zh-TW: <tiptap_doc>}, summary_md: {zh-TW: <markdown>}, embed_text: str, tags: {zh-TW, en}}."""
+    """Returns {summary_md: {zh-TW: <markdown>}, embed_text: str, tags: {zh-TW, en}}."""
     import asyncio
 
     truncated = content[:32000]
@@ -231,32 +185,9 @@ async def analyze_content(content: str, candidate_tags: list[str] | None = None)
 
     return {
         "summary_md": {"zh-TW": zh_md},
-        "summary": {"zh-TW": md_to_tiptap(zh_md)},
         "embed_text": tags_data.get("embed_text", ""),
         "tags": tags_data.get("tags", {"zh-TW": [], "en": []}),
     }
-
-
-_TRANSLATE_NOTES_PROMPT = """\
-Translate the following Traditional Chinese structured Markdown notes into English.
-
-Rules:
-- Keep the EXACT same Markdown structure (same ## and ### headers, same bullet format)
-- Translate section headers into natural English equivalents:
-  - ## 核心主題 → ## Core Topic
-  - ## 重點整理 → ## Key Points
-  - ## 內容詳解 → ## Detailed Notes
-  - ## 關鍵洞察 → ## Key Insights
-  - Translate any ### subsection titles naturally
-- Translate all content faithfully — do not summarize or add new content
-- Return ONLY the translated Markdown, no extra commentary
-
-Notes to translate:
-"""
-
-
-async def translate_notes(zh_md: str) -> str:
-    return await _llm_call(_TRANSLATE_NOTES_PROMPT + zh_md)
 
 
 _FOCUS_SYSTEM = """\

@@ -25,7 +25,7 @@ def _to_item_read(ui: UserItem) -> ItemRead:
         content_id=content.id if content else None,
         url=ui.url or (content.url if content else ""),
         title=ui.title,
-        summary=ui.summary,
+        notes_md=None,
         thumbnail_url=ui.thumbnail_url,
         saved_at=ui.saved_at,
         deleted_at=ui.deleted_at,
@@ -50,7 +50,7 @@ async def _text_search_raw(db: AsyncSession, user_id: UUID, query: str) -> list[
             *_ACTIVE_FILTERS,
             or_(
                 UserItem.title.ilike(pattern),       # snapshot 欄位
-                UserItem.summary.ilike(pattern),     # snapshot 欄位
+                UserItem.notes_md.ilike(pattern),
                 UserItem.item_tags.any(
                     ItemTag.tag.has(Tag.name.ilike(pattern))
                 ),

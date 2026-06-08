@@ -86,7 +86,7 @@ async def rag_synthesize(
 ) -> str:
     """將搜尋結果傳給 LLM 合成回答。輸入格式與 explore/chat 無關。"""
     items_payload = [
-        {"title": ui.title, "summary": ui.summary}
+        {"title": ui.title, "summary": (ui.notes_md or "")[:500]}
         for ui, _ in hits
     ]
     return await ai_service.synthesize_focus(query, items_payload)
@@ -425,14 +425,14 @@ async def _fetch_content_for_chain(
     )
     ui = r.scalar_one_or_none()
     if ui:
-        return ui.title, ui.summary, ui.content.embedding
+        return ui.title, (ui.notes_md or "")[:500], ui.content.embedding
 
     r2 = await db.execute(
         select(ContentObject).where(ContentObject.id == item_id)
     )
     co = r2.scalar_one_or_none()
     if co:
-        return co.title, co.summary, co.embedding
+        return co.title, None, co.embedding
 
     return None, None, None
 
@@ -589,15 +589,10 @@ async def synthesize_with_items(
         raise ValueError("no valid items found")
 
     items_payload = [
-        {"title": ui.title, "summary": ui.summary}
+        {"title": ui.title, "summary": (ui.notes_md or "")[:500]}
         for ui in items
     ]
     content = await ai_service.synthesize_custom(prompt, items_payload)
-
-    import json as _json
-    content_tiptap = _json.dumps(
-        ai_service.md_to_tiptap(content), ensure_ascii=False
-    )
 
     sources = [
         FocusSource(
@@ -610,7 +605,7 @@ async def synthesize_with_items(
         )
         for ui in items
     ]
-    return SynthesizeResult(content=content, content_tiptap=content_tiptap, sources=sources)
+    return SynthesizeResult(content=content, sources=sources)
 
 
 async def get_surprise(db: AsyncSession, user_id: UUID) -> SurpriseResult:
