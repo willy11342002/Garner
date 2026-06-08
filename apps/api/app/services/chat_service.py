@@ -81,9 +81,9 @@ _TOOL_HANDLERS = {
 def _to_chat_source(ui: UserItem, distance: float | None = None) -> ChatSource:
     return ChatSource(
         id=ui.id,
-        url=ui.content.url,
-        title=ui.content.title,
-        thumbnail_url=ui.content.thumbnail_url,
+        url=ui.url or ui.content.url,
+        title=ui.title,
+        thumbnail_url=ui.thumbnail_url,
         source_type=ui.content.source_type.value if ui.content.source_type else None,
         distance=round(distance, 4) if distance is not None else None,
     )
@@ -159,7 +159,7 @@ async def stream_reply(
         tool_result = {
             "tool": name,
             "count": len(new_hits),
-            "titles": [ui.content.title or ui.content.url for ui, _ in new_hits[:3]],
+            "titles": [ui.title or ui.url or ui.content.url for ui, _ in new_hits[:3]],
         }
         process_steps.append({"toolCall": tool_payload, "toolResult": tool_result})
         yield _sse("tool_result", tool_result)
@@ -180,7 +180,7 @@ async def stream_reply(
     chunk_hits = await crud_chunks.semantic_search(db, user_id, query_embedding, limit=12)
 
     # 建立 content_id → title 的 mapping
-    content_titles = {ui.content.id: ui.content.title for ui, _ in all_items}
+    content_titles = {ui.content.id: ui.title for ui, _ in all_items}
 
     if chunk_hits:
         llm_items = [
@@ -192,7 +192,7 @@ async def stream_reply(
         ]
     else:
         llm_items = [
-            {"title": ui.content.title, "summary": ui.content.summary}
+            {"title": ui.title, "summary": ui.summary}
             for ui, _ in all_items
         ]
 

@@ -35,30 +35,34 @@ def _item_to_read(
     tags=None,
     include_content_md: bool = True,
 ) -> ItemRead:
-    content = user_item.content
-    is_owner = (
-        current_user_id is not None
-        and content.created_by_user_id is not None
-        and content.created_by_user_id == current_user_id
-    )
+    """UserItem snapshot 欄位直讀，不再需要 JOIN ContentObject 取 display 資料。
+    content 只用於取 content_id（AI 層 FK）。
+    """
     from app.schemas.tag import TagRead as _TagRead
     resolved_tags = [_TagRead.model_validate(t) for t in (tags or [])]
+
+    # is_owner: 由 source_type 判斷，note 代表使用者手寫
+    is_owner = user_item.source_type == SourceType.note.value
+
+    content = user_item.content  # 可能為 None（未來 nullable 時）
+    content_id = content.id if content is not None else None
+
     return ItemRead(
         id=user_item.id,
-        content_id=content.id,
-        url=content.url,
-        title=content.title,
-        summary=content.summary,
-        summary_i18n=content.summary_i18n,
-        thumbnail_url=content.thumbnail_url,
+        content_id=content_id,
+        url=user_item.url or (content.url if content else ""),
+        title=user_item.title,
+        summary=user_item.summary,
+        summary_i18n=user_item.summary_i18n,
+        thumbnail_url=user_item.thumbnail_url,
         saved_at=user_item.saved_at,
         deleted_at=user_item.deleted_at,
-        parsed_at=content.parsed_at,
+        parsed_at=user_item.parsed_at,
         status=user_item.status,
-        source_type=content.source_type,
-        transcription_source=content.transcription_source,
+        source_type=user_item.source_type,
+        transcription_source=user_item.transcription_source,
         is_owner=is_owner,
-        content_md=content.content_md if include_content_md else None,
+        content_md=user_item.content_md if include_content_md else None,
         is_draft=user_item.is_draft,
         is_public=user_item.is_public,
         tags=resolved_tags,
@@ -87,25 +91,37 @@ async def prepare_item_create(
 ) -> _ItemCreateResult:
     """Create or restore DB records. Returns item data plus processing params when AI processing is needed."""
     if data.url is None:
+        # ── 使用者手寫文章：直接建立 UserItem，snapshot 欄位直接填入 ──────────
         item_id = uuid4()
         article_url = f"/app/item/{item_id}"
+
+        # ContentObject 仍然建立，作為 AI 處理（embedding/chunks）的錨點
         content = ContentObject(
             url=article_url,
-            source_type=SourceType.article,
-            title=data.title or "未命名文章",
-            created_by_user_id=user_id,
+            source_type=SourceType.note,
         )
         db.add(content)
         await db.flush()
+
         from app.models.user_item import UserItem as UserItemModel
-        user_item = UserItemModel(id=item_id, user_id=user_id, content_id=content.id, is_draft=True)
+        init_title = data.title or "未命名文章"
+        user_item = UserItemModel(
+            id=item_id,
+            user_id=user_id,
+            content_id=content.id,
+            is_draft=True,
+            # snapshot 欄位
+            url=article_url,
+            title=init_title,
+            source_type=SourceType.note.value,
+        )
         db.add(user_item)
         await db.flush()
         await db.commit()
         await db.refresh(user_item)
-        await db.refresh(user_item.content)
         return _ItemCreateResult(item=_item_to_read(user_item, user_id), needs_processing=False)
 
+    # ── 外部 URL ──────────────────────────────────────────────────────────────
     url = normalize_youtube_url(normalize_instagram_url(data.url))
     max_video_sec = await get_video_max_sec(db, user_id)
 
@@ -117,7 +133,6 @@ async def prepare_item_create(
         content = ContentObject(
             url=url,
             source_type=detect_source_type(url),
-            title=data.title,
         )
         db.add(content)
         await db.flush()
@@ -130,7 +145,6 @@ async def prepare_item_create(
             existing.status = "active"
             await db.commit()
             await db.refresh(existing)
-            await db.refresh(existing.content)
         needs = content.parsed_at is None
         return _ItemCreateResult(
             item=_item_to_read(existing, user_id),
@@ -141,10 +155,19 @@ async def prepare_item_create(
             max_video_sec=max_video_sec,
         )
 
-    user_item = await crud_items.create(db, user_id, content)
+    src_type = detect_source_type(url)
+    from app.models.user_item import UserItem as UserItemModel
+    user_item = UserItemModel(
+        user_id=user_id,
+        content_id=content.id,
+        # snapshot 欄位（title/summary 等 AI 處理後由 process_item 寫入）
+        url=url,
+        source_type=src_type.value,
+        title=data.title,
+    )
+    db.add(user_item)
     await db.commit()
     await db.refresh(user_item)
-    await db.refresh(user_item.content)
 
     needs = is_new_content or content.parsed_at is None
     return _ItemCreateResult(
@@ -179,8 +202,6 @@ async def create_item(
 async def list_items(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
     user_items = await crud_items.get_all(db, user_id)
     return [
-        # get_all() already filters confirmed-only tags via selectinload().and_()
-        # and defers embedding + content_md, so pass include_content_md=False
         _item_to_read(ui, user_id, tags=[it.tag for it in ui.item_tags], include_content_md=False)
         for ui in user_items
     ]
@@ -229,7 +250,7 @@ async def update_item(
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     if data.title is not None:
-        user_item.content.title = data.title
+        user_item.title = data.title          # snapshot 欄位
     if data.status is not None:
         user_item.status = data.status
     await db.commit()
@@ -244,11 +265,13 @@ async def update_item_summary(
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    content = user_item.content
-    if not content.url.startswith("/") or content.created_by_user_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit summary of external content")
+    if user_item.source_type != SourceType.note.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot edit summary of external content",
+        )
 
-    content.summary_i18n = data.summary_i18n
+    user_item.summary_i18n = data.summary_i18n
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
@@ -268,19 +291,20 @@ async def translate_item_notes(
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    content = user_item.content
-    summary_i18n: dict = dict(content.summary_i18n or {})
-
+    summary_i18n: dict = dict(user_item.summary_i18n or {})
     if summary_i18n.get(locale):
         return _item_to_read(user_item, user_id)
 
-    zh_md = content.summary
+    zh_md = user_item.summary
     if not zh_md:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No source notes to translate")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No source notes to translate",
+        )
 
     translated_md = await ai_service.translate_notes(zh_md)
     summary_i18n[locale] = ai_service.md_to_tiptap(translated_md)
-    content.summary_i18n = summary_i18n
+    user_item.summary_i18n = summary_i18n
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
@@ -295,19 +319,17 @@ async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> None:
 
 
 async def list_articles(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
-    from sqlalchemy.orm import joinedload
     from app.models.user_item import UserItem as UserItemModel
     result = await db.execute(
         select(UserItemModel)
-        .join(UserItemModel.content)
         .where(
             UserItemModel.user_id == user_id,
             UserItemModel.deleted_at.is_(None),
-            ContentObject.created_by_user_id == user_id,
+            UserItemModel.source_type == SourceType.note.value,
         )
-        .options(joinedload(UserItemModel.content))
         .order_by(UserItemModel.saved_at.desc())
     )
+    # 不需要 JOIN ContentObject：snapshot 欄位直接在 UserItem 上
     return [_item_to_read(ui, user_id) for ui in result.scalars().all()]
 
 
@@ -317,13 +339,12 @@ async def update_article(
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    content = user_item.content
-    if not content.url.startswith("/app/item/") or content.created_by_user_id != user_id:
+    if user_item.source_type != SourceType.note.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
     if data.title is not None:
-        content.title = data.title
+        user_item.title = data.title
     if data.content_md is not None:
-        content.content_md = data.content_md
+        user_item.content_md = data.content_md
     if data.is_draft is not None:
         user_item.is_draft = data.is_draft
     if data.is_public is not None:
@@ -342,14 +363,16 @@ async def publish_article(
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    content = user_item.content
-    if not content.url.startswith("/app/item/") or content.created_by_user_id != user_id:
+    if user_item.source_type != SourceType.note.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
     user_item.is_draft = False
     await db.commit()
     await db.refresh(user_item)
-    # user-written articles always re-run AI (content changes every save)
-    background_tasks.add_task(_run_process_item, content.id, user_id, user_item.id, content.url)
+    # 每次保存都重新 AI 分析（文章內容會變動）
+    content = user_item.content
+    background_tasks.add_task(
+        _run_process_item, content.id, user_id, user_item.id, user_item.url or content.url
+    )
     return _item_to_read(user_item, user_id)
 
 
@@ -363,14 +386,15 @@ async def upload_article_cover(
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    content = user_item.content
-    if content.created_by_user_id != user_id:
+    if user_item.source_type != SourceType.note.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
+
     from app.core.supabase import get_supabase
     from app.core.config import settings
     supabase = await get_supabase()
     ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
-    path = f"thumbnails/{content.id}.{ext}"
+    # 用 user_item.id 當 storage path（原為 content.id，語意相同，因為 note 是 1:1）
+    path = f"thumbnails/{user_item.id}.{ext}"
     try:
         await supabase.storage.from_(settings.storage_bucket).upload(
             path, image_bytes, {"content-type": content_type, "upsert": "true"}
@@ -381,7 +405,7 @@ async def upload_article_cover(
             detail=f"Storage upload failed: {e}",
         )
     thumbnail_url = await supabase.storage.from_(settings.storage_bucket).get_public_url(path)
-    content.thumbnail_url = thumbnail_url
+    user_item.thumbnail_url = thumbnail_url
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
@@ -395,20 +419,20 @@ async def delete_article_cover(
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    content = user_item.content
-    if content.created_by_user_id != user_id:
+    if user_item.source_type != SourceType.note.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an owned article")
-    if content.thumbnail_url:
+
+    if user_item.thumbnail_url:
         from app.core.supabase import get_supabase
         from app.core.config import settings
         supabase = await get_supabase()
         for ext in ("jpg", "png", "webp"):
-            path = f"thumbnails/{content.id}.{ext}"
+            path = f"thumbnails/{user_item.id}.{ext}"
             try:
                 await supabase.storage.from_(settings.storage_bucket).remove([path])
             except Exception:
                 pass
-        content.thumbnail_url = None
+        user_item.thumbnail_url = None
         await db.commit()
         await db.refresh(user_item)
     return _item_to_read(user_item, user_id)

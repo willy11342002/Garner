@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.content_object import ContentObject
 from app.models.item_tag import ItemTag
@@ -18,15 +18,23 @@ _ACTIVE_FILTERS = (
 
 
 def _to_item_read(ui: UserItem) -> ItemRead:
+    """snapshot 欄位直讀 UserItem，不再需要 ui.content 做 display。"""
+    content = ui.content  # 仍需 content_id
     return ItemRead(
         id=ui.id,
-        content_id=ui.content.id,
-        url=ui.content.url,
-        title=ui.content.title,
-        summary=ui.content.summary,
-        thumbnail_url=ui.content.thumbnail_url,
+        content_id=content.id if content else None,
+        url=ui.url or (content.url if content else ""),
+        title=ui.title,
+        summary=ui.summary,
+        thumbnail_url=ui.thumbnail_url,
         saved_at=ui.saved_at,
         deleted_at=ui.deleted_at,
+        source_type=ui.source_type,
+        parsed_at=ui.parsed_at,
+        status=ui.status,
+        is_owner=ui.source_type == "note",
+        is_draft=ui.is_draft,
+        is_public=ui.is_public,
     )
 
 
@@ -39,14 +47,13 @@ async def _text_search_raw(db: AsyncSession, user_id: UUID, query: str) -> list[
     pattern = f"%{query}%"
     result = await db.execute(
         select(UserItem)
-        .options(selectinload(UserItem.content))
-        .join(UserItem.content)
+        .options(joinedload(UserItem.content))
         .where(
             UserItem.user_id == user_id,
             *_ACTIVE_FILTERS,
             or_(
-                ContentObject.title.ilike(pattern),
-                ContentObject.summary.ilike(pattern),
+                UserItem.title.ilike(pattern),       # snapshot 欄位
+                UserItem.summary.ilike(pattern),     # snapshot 欄位
                 UserItem.item_tags.any(
                     ItemTag.tag.has(Tag.name.ilike(pattern))
                 ),
@@ -65,9 +72,10 @@ async def semantic_search(
 ) -> PaginatedResult[ItemRead]:
     query_embedding = await ai_service.embed(query)
     offset = (page - 1) * _SEMANTIC_PAGE_SIZE
+    # embedding 仍在 ContentObject，JOIN 必要
     result = await db.execute(
         select(UserItem)
-        .options(selectinload(UserItem.content))
+        .options(joinedload(UserItem.content))
         .join(UserItem.content)
         .where(
             UserItem.user_id == user_id,

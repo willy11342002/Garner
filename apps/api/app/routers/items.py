@@ -124,9 +124,9 @@ async def list_pending_review(current_user: CurrentUser, db: DbSession):
     return [
         ItemPendingReviewRead(
             id=ui.id,
-            url=ui.content.url,
-            title=ui.content.title,
-            thumbnail_url=ui.content.thumbnail_url,
+            url=ui.url or ui.content.url,
+            title=ui.title,
+            thumbnail_url=ui.thumbnail_url,
             saved_at=ui.saved_at,
             pending_tags=[TagRead.model_validate(t) for t in tags],
         )
@@ -166,7 +166,7 @@ async def stream_item_status(item_id: UUID, current_user: CurrentUser, db: DbSes
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     async def generator():
-        if user_item.content.parsed_at is not None:
+        if user_item.parsed_at is not None:
             item_data = item_service._item_to_read(user_item)
             yield f"data: {json.dumps({'status': 'done', 'item': json.loads(item_data.model_dump_json())})}\n\n"
             return

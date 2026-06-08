@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Enum, Integer, String, Text, func
+from sqlalchemy import DateTime, Enum, Integer, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +16,7 @@ class SourceType(str, enum.Enum):
     youtube = "youtube"
     article = "article"
     ig = "ig"
+    note = "note"          # 使用者手寫筆記
 
 
 class TranscriptionSource(str, enum.Enum):
@@ -33,6 +34,12 @@ def detect_source_type(url: str) -> "SourceType":
 
 
 class ContentObject(Base):
+    """共享內容層：URL 去重、embedding、chunks、raw data。
+    display 欄位（title/summary/thumbnail_url）同時保留於此，供 CollectionItem 使用；
+    UserItem 則透過 snapshot 欄位直接讀取，不再需要 JOIN。
+    content_md 已移至 UserItem（使用者私有，非共享）。
+    created_by_user_id 已移除，改由 UserItem.source_type='note' 識別。
+    """
     __tablename__ = "content_objects"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -40,19 +47,19 @@ class ContentObject(Base):
     source_type: Mapped[SourceType] = mapped_column(
         Enum(SourceType, name="source_type_enum"), nullable=False
     )
+    # display 欄位：雙寫（UserItem snapshot 同步）
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
-    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_i18n: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # AI 處理層欄位
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     transcription_source: Mapped[TranscriptionSource | None] = mapped_column(
         Enum(TranscriptionSource, name="transcription_source_enum"), nullable=True
     )
-    content_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_by_user_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
 
     user_items: Mapped[list["UserItem"]] = relationship(back_populates="content")
     collection_items: Mapped[list["CollectionItem"]] = relationship(back_populates="content")

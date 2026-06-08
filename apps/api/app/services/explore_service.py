@@ -86,7 +86,7 @@ async def rag_synthesize(
 ) -> str:
     """將搜尋結果傳給 LLM 合成回答。輸入格式與 explore/chat 無關。"""
     items_payload = [
-        {"title": ui.content.title, "summary": ui.content.summary}
+        {"title": ui.title, "summary": ui.summary}
         for ui, _ in hits
     ]
     return await ai_service.synthesize_focus(query, items_payload)
@@ -108,7 +108,7 @@ async def browse_public_collections(
     results = []
     for collection, item_count in rows:
         thumbnails = [
-            ci.content.thumbnail_url
+            ci.user_items[0].thumbnail_url if ci.user_items else None
             for ci in sorted(collection.collection_items, key=lambda x: x.sort_order)[:3]
         ]
         results.append(
@@ -157,10 +157,10 @@ async def focus_query(db: AsyncSession, user_id: UUID, query: str) -> FocusResul
     sources = [
         FocusSource(
             id=ui.id,
-            url=ui.content.url,
-            title=ui.content.title,
-            thumbnail_url=ui.content.thumbnail_url,
-            source_type=ui.content.source_type.value if ui.content.source_type else None,
+            url=ui.url or ui.content.url,
+            title=ui.title,
+            thumbnail_url=ui.thumbnail_url,
+            source_type=ui.source_type,
             saved_at=ui.saved_at,
         )
         for ui, _ in hits
@@ -176,10 +176,10 @@ async def focus_query(db: AsyncSession, user_id: UUID, query: str) -> FocusResul
 def _item_chip(ui: UserItem) -> InsightItem:
     return InsightItem(
         id=ui.id,
-        url=ui.content.url,
-        title=ui.content.title,
-        thumbnail_url=ui.content.thumbnail_url,
-        source_type=ui.content.source_type.value if ui.content.source_type else None,
+        url=ui.url or ui.content.url,
+        title=ui.title,
+        thumbnail_url=ui.thumbnail_url,
+        source_type=ui.source_type,
     )
 
 
@@ -247,8 +247,8 @@ async def _unexpected_connection(
         badge="↗ 意外連結",
         title="這兩件事竟然有關聯",
         body=(
-            f"你 {_time_ago(old_item.saved_at)}存的「{old_item.content.title or '(無標題)'}」"
-            f"和最近存的「{recent_item.content.title or '(無標題)'}」"
+            f"你 {_time_ago(old_item.saved_at)}存的「{old_item.title or '(無標題)'}」"
+            f"和最近存的「{recent_item.title or '(無標題)'}」"
             f"在語意上高度相似——它們可能在討論同一個核心觀點。"
         ),
         when="剛剛產生",
@@ -266,7 +266,7 @@ async def _forgotten_item(db: AsyncSession, user_id: UUID) -> Insight | None:
         badge="◌ 遺忘中",
         title="你可能已經忘記這個了",
         body=(
-            f"{_time_ago(ui.saved_at)}你存了「{ui.content.title or '(無標題)'}」，"
+            f"{_time_ago(ui.saved_at)}你存了「{ui.title or '(無標題)'}」，"
             f"但幾乎沒有再打開過。要不要重新複習一次？"
         ),
         when=_time_ago(ui.saved_at),
@@ -311,10 +311,10 @@ async def _topic_trend(db: AsyncSession, user_id: UUID) -> Insight | None:
 def _to_chain_item(ui: "UserItem") -> ChainItem:
     return ChainItem(
         id=ui.id,
-        url=ui.content.url,
-        title=ui.content.title,
-        thumbnail_url=ui.content.thumbnail_url,
-        source_type=ui.content.source_type.value if ui.content.source_type else None,
+        url=ui.url or ui.content.url,
+        title=ui.title,
+        thumbnail_url=ui.thumbnail_url,
+        source_type=ui.source_type,
         saved_at=ui.saved_at,
     )
 
@@ -425,7 +425,7 @@ async def _fetch_content_for_chain(
     )
     ui = r.scalar_one_or_none()
     if ui:
-        return ui.content.title, ui.content.summary, ui.content.embedding
+        return ui.title, ui.summary, ui.content.embedding
 
     r2 = await db.execute(
         select(ContentObject).where(ContentObject.id == item_id)
@@ -589,7 +589,7 @@ async def synthesize_with_items(
         raise ValueError("no valid items found")
 
     items_payload = [
-        {"title": ui.content.title, "summary": ui.content.summary}
+        {"title": ui.title, "summary": ui.summary}
         for ui in items
     ]
     content = await ai_service.synthesize_custom(prompt, items_payload)
@@ -602,10 +602,10 @@ async def synthesize_with_items(
     sources = [
         FocusSource(
             id=ui.id,
-            url=ui.content.url,
-            title=ui.content.title,
-            thumbnail_url=ui.content.thumbnail_url,
-            source_type=ui.content.source_type.value if ui.content.source_type else None,
+            url=ui.url or ui.content.url,
+            title=ui.title,
+            thumbnail_url=ui.thumbnail_url,
+            source_type=ui.source_type,
             saved_at=ui.saved_at,
         )
         for ui in items

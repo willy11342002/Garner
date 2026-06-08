@@ -20,11 +20,10 @@ async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
             UserItem.status == UserItemStatus.active,
         )
         .options(
-            # defer heavy columns not needed for list rendering
-            joinedload(UserItem.content).options(
-                defer(ContentObject.embedding),   # 1536-dim vector, ~6 KB per row
-                defer(ContentObject.content_md),  # full article markdown
-            ),
+            # snapshot 欄位都在 UserItem，content_md 是重欄位才 defer
+            defer(UserItem.content_md),
+            # embedding 放 ContentObject，list 不需要，joinedload 僅作關聯用
+            joinedload(UserItem.content).options(defer(ContentObject.embedding)),
             # filter confirmed-only at DB level to avoid loading + Python-filtering all tags
             selectinload(
                 UserItem.item_tags.and_(ItemTag.confirmed == True)  # noqa: E712
@@ -156,10 +155,8 @@ async def get_page(
         select(UserItem)
         .where(UserItem.id.in_(ids))
         .options(
-            joinedload(UserItem.content).options(
-                defer(ContentObject.embedding),
-                defer(ContentObject.content_md),
-            ),
+            defer(UserItem.content_md),
+            joinedload(UserItem.content).options(defer(ContentObject.embedding)),
             selectinload(
                 UserItem.item_tags.and_(ItemTag.confirmed == True)  # noqa: E712
             ).joinedload(ItemTag.tag),
@@ -310,8 +307,6 @@ async def structured_filter(
     limit: int = 8,
 ) -> list[UserItem]:
     """結構化篩選：tag / source_type / 日期範圍，可自由組合。"""
-    from app.models.content_object import SourceType
-
     filters = [
         UserItem.user_id == user_id,
         *_NON_DELETED,
@@ -321,10 +316,8 @@ async def structured_filter(
     if saved_before:
         filters.append(UserItem.saved_at < saved_before)
     if source_type:
-        try:
-            filters.append(ContentObject.source_type == SourceType(source_type))
-        except ValueError:
-            pass
+        # source_type 已 snapshot 到 UserItem，不需要 JOIN ContentObject
+        filters.append(UserItem.source_type == source_type)
 
     q = (
         select(UserItem)
