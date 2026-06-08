@@ -21,18 +21,13 @@ export interface Item {
   parsed_at: string | null
   status: string | null
   source_type: string | null
-  is_owner: boolean
   content_md: string | null
-  is_draft: boolean
-  is_public: boolean
   tags: Tag[]
 }
 
 export interface ArticleUpdate {
   title?: string
   content_md?: string
-  is_draft?: boolean
-  is_public?: boolean
 }
 
 export interface ItemCreate {

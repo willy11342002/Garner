@@ -34,7 +34,6 @@ class UserItem(Base):
     saved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    is_draft: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     is_public: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     last_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -51,10 +50,6 @@ class UserItem(Base):
     )
     content_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    transcription_source: Mapped[str | None] = mapped_column(
-        Enum("transcript", "whisper", "none", name="transcription_source_enum", create_constraint=False),
-        nullable=True,
-    )
 
     user: Mapped["User"] = relationship(back_populates="user_items")
     content: Mapped["ContentObject"] = relationship(back_populates="user_items")

@@ -15,8 +15,8 @@ export function useArticles() {
     return apiFetch(`/articles/${id}`, { method: 'PATCH', body: data })
   }
 
-  function publishArticle(id: string): Promise<Item> {
-    return apiFetch(`/articles/${id}/publish`, { method: 'POST' })
+  function reanalyzeArticle(id: string): Promise<Item> {
+    return apiFetch(`/articles/${id}/reanalyze`, { method: 'POST' })
   }
 
   async function uploadCover(id: string, file: File): Promise<Item> {
@@ -30,7 +30,7 @@ export function useArticles() {
     return apiFetch(`/articles/${id}/cover`, { method: 'DELETE' })
   }
 
-  return { listArticles, createArticle, updateArticle, publishArticle, uploadCover, deleteCover }
+  return { listArticles, createArticle, updateArticle, reanalyzeArticle, uploadCover, deleteCover }
 }
 
 async function compressImage(file: File): Promise<Blob> {

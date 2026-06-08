@@ -57,9 +57,7 @@ def _item_to_read(
         parsed_at=user_item.parsed_at,
         status=user_item.status,
         source_type=user_item.source_type,
-        transcription_source=user_item.transcription_source,
         content_md=user_item.content_md if include_content_md else None,
-        is_draft=user_item.is_draft,
         tags=resolved_tags,
     )
 
@@ -104,7 +102,6 @@ async def prepare_item_create(
             id=item_id,
             user_id=user_id,
             content_id=content.id,
-            is_draft=True,
             # snapshot 欄位
             url=article_url,
             title=init_title,
@@ -341,8 +338,6 @@ async def update_article(
         user_item.title = data.title
     if data.content_md is not None:
         user_item.content_md = data.content_md
-    if data.is_draft is not None:
-        user_item.is_draft = data.is_draft
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)

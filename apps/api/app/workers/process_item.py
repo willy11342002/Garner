@@ -212,10 +212,6 @@ async def _save_analysis(
     user_item.summary_i18n = summary_i18n
     user_item.parsed_at = now
 
-    # transcription_source snapshot（如果 content 有的話）
-    if content.transcription_source is not None:
-        user_item.transcription_source = content.transcription_source.value
-
     await crud_chunks.replace_chunks(db, content_id, chunk_records)
 
     zh_tags = tags_i18n.get("zh-TW", [])

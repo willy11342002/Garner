@@ -2,7 +2,7 @@
 definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 我的文章' })
 
-const { listArticles, publishArticle } = useArticles()
+const { listArticles, reanalyzeArticle } = useArticles()
 const apiFetch = useApiFetch()
 const router = useRouter()
 
@@ -55,7 +55,7 @@ async function batchAnalyze() {
   if (analyzing.value) return
   analyzing.value = true
   try {
-    await Promise.allSettled([...selected.value].map(id => publishArticle(id)))
+    await Promise.allSettled([...selected.value].map(id => reanalyzeArticle(id)))
     articles.value = await listArticles()
     exitSelectMode()
   } finally {
@@ -132,9 +132,6 @@ async function batchArchive() {
           <div v-else class="placeholder placeholder--b"><div class="placeholder__stripes"></div></div>
         </div>
         <div class="article-card__body">
-          <span class="article-card__status" :class="article.is_draft ? 'article-card__status--draft' : 'article-card__status--pub'">
-            {{ article.is_draft ? '草稿' : '已發布' }}
-          </span>
           <h3 class="article-card__title">{{ article.title || '未命名文章' }}</h3>
           <span class="article-card__date mono">{{ formatDate(article.saved_at) }}</span>
         </div>

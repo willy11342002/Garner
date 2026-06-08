@@ -37,9 +37,7 @@ class ItemRead(BaseModel):
     parsed_at: datetime | None = None
     status: str | None = None
     source_type: str | None = None
-    transcription_source: str | None = None
     content_md: str | None = None
-    is_draft: bool = True
     tags: list[TagRead] = []
 
     model_config = {"from_attributes": True}
@@ -53,7 +51,6 @@ class ItemUpdate(BaseModel):
 class ArticleUpdate(BaseModel):
     title: str | None = None
     content_md: str | None = None
-    is_draft: bool | None = None
 
 
 class ItemSummaryUpdate(BaseModel):

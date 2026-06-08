@@ -19,12 +19,6 @@ class SourceType(str, enum.Enum):
     note = "note"          # 使用者手寫筆記
 
 
-class TranscriptionSource(str, enum.Enum):
-    transcript = "transcript"
-    whisper = "whisper"
-    none = "none"
-
-
 def detect_source_type(url: str) -> "SourceType":
     if "youtube.com" in url or "youtu.be" in url:
         return SourceType.youtube
@@ -55,9 +49,6 @@ class ContentObject(Base):
     # AI 處理層欄位
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    transcription_source: Mapped[TranscriptionSource | None] = mapped_column(
-        Enum(TranscriptionSource, name="transcription_source_enum"), nullable=True
-    )
     raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

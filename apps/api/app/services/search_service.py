@@ -32,9 +32,6 @@ def _to_item_read(ui: UserItem) -> ItemRead:
         source_type=ui.source_type,
         parsed_at=ui.parsed_at,
         status=ui.status,
-        is_owner=ui.source_type == "note",
-        is_draft=ui.is_draft,
-        is_public=ui.is_public,
     )
 
 

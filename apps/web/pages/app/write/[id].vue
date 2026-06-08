@@ -20,7 +20,7 @@ const backLabel = computed(() => {
 })
 
 
-const { updateArticle, publishArticle, uploadCover, deleteCover } = useArticles()
+const { updateArticle, reanalyzeArticle, uploadCover, deleteCover } = useArticles()
 const { attachTag, detachTag, confirmItemTag, getPendingItemTags, getItemTags, deleteItem } = useItems()
 const apiFetch = useApiFetch()
 
@@ -33,9 +33,6 @@ useHead(computed(() => ({
   title: title.value ? `Garner — ${title.value}` : 'Garner — 文章編輯',
 })))
 const editorContent = ref<Record<string, unknown>>({ type: 'doc', content: [] })
-const isPublic = ref(false)
-const isDraft = ref(true)
-
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const analyzing = ref(false)
 const analysisStage = ref<string>('')
@@ -185,8 +182,6 @@ onMounted(async () => {
     article.value = data
     title.value = data.title ?? ''
     originalTitle.value = data.title ?? ''
-    isPublic.value = data.is_public
-    isDraft.value = data.is_draft
     if (data.content_md) {
       try { editorContent.value = JSON.parse(data.content_md) } catch { /* ignore */ }
     }
@@ -230,11 +225,6 @@ async function handleArchive() {
   }
 }
 
-async function togglePublic() {
-  isPublic.value = !isPublic.value
-  await updateArticle(id, { is_public: isPublic.value })
-}
-
 async function handleAnalyze() {
   if (analyzing.value) return
   analyzing.value = true
@@ -242,13 +232,11 @@ async function handleAnalyze() {
     await updateArticle(id, {
       title: title.value || '未命名文章',
       content_md: JSON.stringify(editorContent.value),
-      is_public: isPublic.value,
     })
     originalTitle.value = title.value || '未命名文章'
     originalContent.value = JSON.stringify(editorContent.value)
     isDirty.value = false
-    const updated = await publishArticle(id)
-    isDraft.value = updated.is_draft
+    const updated = await reanalyzeArticle(id)
     article.value = updated
     drawerHasResult.value = true
     drawerOpen.value = true
@@ -300,7 +288,6 @@ async function waitForAnalysis(itemId: string) {
             analysisStage.value = msg.stage
           } else if (msg.status === 'done' && msg.item) {
             article.value = msg.item
-            isDraft.value = msg.item.is_draft
             await fetchTags()
             return
           } else if (msg.status === 'failed' || msg.status === 'timeout') {
@@ -356,8 +343,6 @@ async function handleDeleteCover(e: Event) {
       </button>
 
       <div class="write-bar__meta">
-        <span class="write-bar__dot" :class="isDraft ? 'write-bar__dot--draft' : 'write-bar__dot--pub'"></span>
-        <span class="write-bar__label">{{ isDraft ? '草稿' : '已發布' }}</span>
         <span v-if="saveStatus === 'saving'" class="write-bar__save">儲存中…</span>
         <span v-else-if="saveStatus === 'saved'" class="write-bar__save write-bar__save--ok">已儲存</span>
         <span v-else-if="saveStatus === 'error'" class="write-bar__save write-bar__save--err">儲存失敗</span>
