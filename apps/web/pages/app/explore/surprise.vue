@@ -86,6 +86,13 @@
         點選標籤篩選知識節點，或按 <strong>好手氣</strong> 隨機探索
       </div>
 
+      <!-- Pagination (only for tag/all mode, not lucky) -->
+      <div v-if="synthMode === 'tag' && candTotalPages > 1" class="pagination" style="margin-top:16px;">
+        <button class="pagination__btn" :disabled="candPage === 1" @click="goCandPage(candPage - 1)">←</button>
+        <span class="pagination__info mono">{{ candPage }} / {{ candTotalPages }}</span>
+        <button class="pagination__btn" :disabled="candPage === candTotalPages" @click="goCandPage(candPage + 1)">→</button>
+      </div>
+
       <!-- Selected chain -->
       <div v-if="synthSelectedItems.length" class="synth-chain fadeup">
         <div class="synth-chain__head">
@@ -201,6 +208,10 @@ const synthMode = ref<SynthMode>('idle')
 const synthTagIds = ref<string[]>([])
 const synthCandidates = ref<Item[]>([])
 const synthCandLoading = ref(false)
+const candPage = ref(1)
+const candTotal = ref(0)
+const CAND_PAGE_SIZE = 20
+const candTotalPages = computed(() => Math.max(1, Math.ceil(candTotal.value / CAND_PAGE_SIZE)))
 const synthSelectedItems = ref<Item[]>([])
 const synthPrompt = ref('')
 const synthLoading = ref(false)
@@ -233,10 +244,30 @@ function toggleSynthTag(id: string) {
   synthMode.value = synthTagIds.value.length ? 'tag' : 'idle'
 }
 
+async function loadAllItems(page = 1) {
+  synthCandLoading.value = true
+  synthMode.value = 'tag'
+  candPage.value = page
+  try {
+    const res = await listItemsPage({ page, page_size: CAND_PAGE_SIZE })
+    synthCandidates.value = res.items
+    candTotal.value = res.total
+  } catch {
+    synthCandidates.value = []
+    candTotal.value = 0
+  } finally {
+    synthCandLoading.value = false
+  }
+}
+
 function clearSynthTags() {
   synthTagIds.value = []
-  synthMode.value = 'idle'
-  synthCandidates.value = []
+  loadAllItems(1)
+}
+
+function goCandPage(page: number) {
+  if (synthTagIds.value.length) loadTaggedItems(page)
+  else loadAllItems(page)
 }
 
 async function loadRandomItems() {
@@ -251,12 +282,14 @@ async function loadRandomItems() {
   }
 }
 
-async function loadTaggedItems() {
-  if (!synthTagIds.value.length) { synthCandidates.value = []; return }
+async function loadTaggedItems(page = 1) {
+  if (!synthTagIds.value.length) { return loadAllItems(page) }
   synthCandLoading.value = true
+  candPage.value = page
   try {
-    const res = await listItemsPage({ tag_ids: synthTagIds.value, page_size: 20 })
+    const res = await listItemsPage({ tag_ids: synthTagIds.value, page, page_size: CAND_PAGE_SIZE })
     synthCandidates.value = res.items
+    candTotal.value = res.total
   } catch {
     synthCandidates.value = []
   } finally {
@@ -264,8 +297,8 @@ async function loadTaggedItems() {
   }
 }
 
-watch(synthTagIds, () => { if (synthMode.value === 'tag') loadTaggedItems() }, { deep: true })
-watch(synthMode, (val) => { if (val === 'tag') loadTaggedItems() })
+watch(synthTagIds, () => { if (synthMode.value === 'tag') loadTaggedItems(1) }, { deep: true })
+watch(synthMode, (val) => { if (val === 'tag') loadTaggedItems(1) })
 
 async function doSynthesize() {
   if (!synthPrompt.value.trim() || !synthSelectedItems.value.length) return
@@ -288,7 +321,7 @@ async function doSynthesize() {
   }
 }
 
-onMounted(() => Promise.all([loadQuota(), loadTags()]))
+onMounted(() => Promise.all([loadQuota(), loadTags(), loadAllItems()]))
 
 function timeAgo(isoDate: string) {
   const days = Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000)
