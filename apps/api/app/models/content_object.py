@@ -29,10 +29,8 @@ def detect_source_type(url: str) -> "SourceType":
 
 class ContentObject(Base):
     """共享內容層：URL 去重、embedding、chunks、raw data。
-    display 欄位（title/summary/thumbnail_url）同時保留於此，供 CollectionItem 使用；
-    UserItem 則透過 snapshot 欄位直接讀取，不再需要 JOIN。
-    content_md 已移至 UserItem（使用者私有，非共享）。
-    created_by_user_id 已移除，改由 UserItem.source_type='note' 識別。
+    title/thumbnail_url 保留供 CollectionItem 使用；
+    notes_md 已移至 UserItem（使用者私有）。
     """
     __tablename__ = "content_objects"
 
@@ -43,8 +41,6 @@ class ContentObject(Base):
     )
     # display 欄位：雙寫（UserItem snapshot 同步）
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
-    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    summary_i18n: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # AI 處理層欄位
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
