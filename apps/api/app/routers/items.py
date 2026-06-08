@@ -155,8 +155,8 @@ async def update_item_summary(item_id: UUID, data: ItemSummaryUpdate, current_us
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_item(item_id: UUID, current_user: CurrentUser, db: DbSession):
-    await item_service.delete_item(db, UUID(current_user["sub"]), item_id)
+async def delete_item(item_id: UUID, current_user: CurrentUser, db: DbSession, hard: bool = False):
+    await item_service.delete_item(db, UUID(current_user["sub"]), item_id, hard=hard)
 
 
 @router.get("/{item_id}/stream")

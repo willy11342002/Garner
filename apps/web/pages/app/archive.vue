@@ -74,7 +74,7 @@
         <span class="aitem__when">封存於 {{ timeAgo(item.saved_at) }}</span>
         <div class="aitem__actions">
           <button class="btn" style="height:30px;padding:0 12px;font-size:12px;" @click.stop="restoreItem(item.id)">復原</button>
-          <button class="btn btn--danger" style="height:30px;padding:0 12px;font-size:12px;" @click.stop="permanentDeleteItem(item.id)">刪除</button>
+          <button class="btn btn--danger" style="height:30px;padding:0 12px;font-size:12px;" @click.stop="confirmDeleteItem(item.id)">刪除</button>
         </div>
       </div>
     </div>
@@ -108,18 +108,23 @@
   </main>
 
   <!-- Confirm modal -->
-  <div v-if="showConfirm" class="modal-mask" @click.self="showConfirm = false">
+  <div v-if="showConfirm" class="modal-mask" @click.self="() => { showConfirm = false; pendingDeleteId = null }">
     <div class="modal">
       <h2>確認永久刪除</h2>
       <p>這個動作<b style="color:var(--danger)">無法復原</b>。以下內容將從你的知識庫中完全移除，包含摘要與關聯資料。</p>
       <div class="modal__list">
-        <div v-for="item in selectedItems" :key="item.id" class="modal__list-item">{{ item.title }}</div>
+        <template v-if="pendingDeleteId">
+          <div class="modal__list-item">{{ items.find(i => i.id === pendingDeleteId)?.title }}</div>
+        </template>
+        <template v-else>
+          <div v-for="item in selectedItems" :key="item.id" class="modal__list-item">{{ item.title }}</div>
+        </template>
       </div>
       <div class="modal__actions">
         <button class="btn btn--danger" style="flex:1;" :disabled="deleting" @click="permanentDeleteSelected">
-          {{ deleting ? '刪除中…' : `永久刪除（${selectedIds.size} 筆）` }}
+          {{ deleting ? '刪除中…' : pendingDeleteId ? '永久刪除（1 筆）' : `永久刪除（${selectedIds.size} 筆）` }}
         </button>
-        <button class="btn" :disabled="deleting" @click="showConfirm = false">取消</button>
+        <button class="btn" :disabled="deleting" @click="() => { showConfirm = false; pendingDeleteId = null }">取消</button>
       </div>
     </div>
   </div>
@@ -129,10 +134,12 @@
 import type { Item } from '~/types/api'
 useHead({ title: 'Garner — 封存' })
 
-const { listArchivedItems, updateItem, deleteItem } = useItems()
+const { listArchivedItems, updateItem } = useItems()
+const apiFetch = useApiFetch()
 
 const sortBy = ref('date')
 const showConfirm = ref(false)
+const pendingDeleteId = ref<string | null>(null)
 const selectedIds = reactive(new Set<string>())
 const loading = ref(true)
 const items = ref<Item[]>([])
@@ -211,8 +218,13 @@ async function restoreSelected() {
   }
 }
 
+function confirmDeleteItem(id: string) {
+  pendingDeleteId.value = id
+  showConfirm.value = true
+}
+
 async function permanentDeleteItem(id: string) {
-  await deleteItem(id)
+  await apiFetch(`/items/${id}?hard=true`, { method: 'DELETE' })
   items.value = items.value.filter(i => i.id !== id)
   selectedIds.delete(id)
 }
@@ -220,7 +232,12 @@ async function permanentDeleteItem(id: string) {
 async function permanentDeleteSelected() {
   deleting.value = true
   try {
-    for (const id of [...selectedIds]) await permanentDeleteItem(id)
+    if (pendingDeleteId.value) {
+      await permanentDeleteItem(pendingDeleteId.value)
+      pendingDeleteId.value = null
+    } else {
+      for (const id of [...selectedIds]) await permanentDeleteItem(id)
+    }
     showConfirm.value = false
   } finally {
     deleting.value = false
