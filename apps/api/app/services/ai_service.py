@@ -427,7 +427,7 @@ async def analyze_full_chain(items: list[dict]) -> str:
 
 
 _PLAN_SYSTEM = """\
-你是 Garner 知識助理的規劃引擎。分析用戶問題，決定要呼叫哪些工具來查詢個人知識庫。
+你是 Garner 知識助理的規劃引擎。分析用戶問題，決定要呼叫哪些工具來查詢個人知識庫或產生文章。
 
 可用工具：
 
@@ -443,10 +443,20 @@ _PLAN_SYSTEM = """\
    - end_date（str）：儲存日期上限，格式 YYYY-MM-DD
    參數：{{"name": "structured_filter", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "..."}}
 
+3. create_article
+   根據對話脈絡或知識庫內容，建立一篇 AI 草稿文章。
+   僅在用戶明確要求「寫文章」「整理成文章」「產生文章草稿」「幫我寫一篇...」時呼叫。
+   可以和 semantic_search / structured_filter 搭配（先查知識庫，再撰寫文章）。
+   title：文章標題（繁體中文，簡潔有力）
+   content：完整文章內容，使用 markdown 格式（標題用 ##/###、列表用 -、重點用 **粗體**）
+   summary：50 字以內的文章摘要
+   參數：{{"name": "create_article", "title": "文章標題", "content": "完整 markdown 內容", "summary": "摘要"}}
+
 規則：
-- 兩個工具可以同時呼叫，結果自動合併去重
-- structured_filter 省略的參數代表不篩選該維度，不需要全填
-- 如果問題同時有語意需求又有篩選條件，兩個工具一起用效果最好
+- semantic_search 與 structured_filter 可同時呼叫，結果自動合併去重
+- structured_filter 省略的參數代表不篩選該維度
+- create_article 僅在用戶有明確撰文需求時才呼叫，不要主動建立
+- 若同時查詢知識庫又要寫文章，三個工具可以一起呼叫
 - 只輸出 JSON，不要 markdown fences
 
 今天日期：{today}
@@ -522,6 +532,7 @@ async def chat_stream(
     history: list[dict],
     retrieved_items: list[dict],
     memory_summary: str | None,
+    created_article_title: str | None = None,
 ):
     """Yield text chunks from OpenRouter streaming response."""
     items_text = "\n".join(
@@ -533,6 +544,9 @@ async def chat_stream(
         f"{'用戶' if m['role'] == 'user' else '助理'}：{m['content']}"
         for m in history[-8:]
     ) if history else "（無）"
+
+    if created_article_title:
+        items_text = f"[系統] 已為用戶建立文章草稿：《{created_article_title}》\n" + items_text
 
     user_content = _CHAT_CONTEXT_TEMPLATE.format(
         memory=memory_summary or "（無）",

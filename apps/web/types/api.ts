@@ -265,6 +265,13 @@ export interface QuotaItem {
   limit: number | null  // null = unlimited
 }
 
+export interface ArticleDraft {
+  id: string
+  title: string
+  summary: string
+  content_tiptap: string
+}
+
 export interface PaginatedResult<T> {
   items: T[]
   page: number

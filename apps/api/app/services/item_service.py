@@ -436,3 +436,39 @@ async def delete_article_cover(
         await db.commit()
         await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
+
+
+async def create_article_draft(
+    db: AsyncSession,
+    user_id: UUID,
+    title: str,
+    content_markdown: str,
+    summary: str | None = None,
+) -> dict:
+    """
+    Chat tool 專用：由 AI 生成一篇草稿文章並存入 DB。
+    回傳 { id, title, summary, content_tiptap } 供前端渲染草稿卡片。
+    """
+    import json as _json
+    from app.services.ai_service import md_to_tiptap
+    from app.models.user_item import UserItem as UserItemModel
+
+    result = await prepare_item_create(db, user_id, ItemCreate(url=None, title=title))
+    item_id = result.item.id
+
+    content_tiptap = _json.dumps(md_to_tiptap(content_markdown), ensure_ascii=False)
+    auto_summary = (summary or content_markdown[:200]).strip()
+
+    await db.execute(
+        __import__("sqlalchemy").update(UserItemModel)
+        .where(UserItemModel.id == item_id)
+        .values(content_md=content_tiptap, summary=auto_summary)
+    )
+    await db.commit()
+
+    return {
+        "id": str(item_id),
+        "title": title,
+        "summary": auto_summary,
+        "content_tiptap": content_tiptap,
+    }

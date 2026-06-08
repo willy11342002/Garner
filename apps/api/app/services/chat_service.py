@@ -21,6 +21,7 @@ from app.models.user_item import UserItem
 from app.schemas.chat import ChatSource
 from app.services import ai_service
 from app.services.explore_service import rag_retrieve
+from app.services.item_service import create_article_draft
 
 
 # ---------------------------------------------------------------------------
@@ -136,15 +137,36 @@ async def stream_reply(
     all_items: list[ItemWithDist] = []
     seen_ids: set[UUID] = set()
     process_steps: list[dict] = []
+    created_article: dict | None = None  # 本輪建立的文章草稿
 
     for tool in tools:
         name = tool.get("name", "")
+        tool_payload = {k: v for k, v in tool.items()}
+        yield _sse("tool_call", tool_payload)
+
+        # ── create_article 特殊處理 ──────────────────────────────────────────
+        if name == "create_article":
+            try:
+                draft = await create_article_draft(
+                    db, user_id,
+                    title=tool.get("title", "未命名文章"),
+                    content_markdown=tool.get("content", ""),
+                    summary=tool.get("summary"),
+                )
+                created_article = draft
+                yield _sse("article_draft", draft)
+                tool_result = {"tool": name, "created": True, "article_id": draft["id"], "title": draft["title"]}
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result, "articleDraft": draft})
+            except Exception:
+                tool_result = {"tool": name, "created": False}
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result})
+            yield _sse("tool_result", tool_result)
+            continue
+
+        # ── 一般 search 工具 ─────────────────────────────────────────────────
         handler = _TOOL_HANDLERS.get(name)
         if not handler:
             continue
-
-        tool_payload = {k: v for k, v in tool.items()}
-        yield _sse("tool_call", tool_payload)
 
         try:
             hits = await handler(db, user_id, tool)
@@ -197,7 +219,10 @@ async def stream_reply(
         ]
 
     full_reply = []
-    async for chunk in ai_service.chat_stream(user_content, history, llm_items, memory_summary):
+    async for chunk in ai_service.chat_stream(
+        user_content, history, llm_items, memory_summary,
+        created_article_title=created_article["title"] if created_article else None,
+    ):
         full_reply.append(chunk)
         yield _sse("delta", {"text": chunk})
 

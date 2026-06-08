@@ -135,6 +135,12 @@
                   </NuxtLink>
                 </div>
               </Transition>
+              <!-- 文章草稿卡片 -->
+              <ChatArticleCard
+                v-if="msg.role === 'assistant' && draftMap[msg.id]"
+                :draft="draftMap[msg.id]"
+                @preview="previewDraft = draftMap[msg.id]; previewOpen = true"
+              />
             </div>
           </template>
 
@@ -213,6 +219,12 @@
                 </NuxtLink>
               </div>
             </Transition>
+            <!-- 進行中：文章草稿卡片 -->
+            <ChatArticleCard
+              v-if="liveDraft"
+              :draft="liveDraft"
+              @preview="previewDraft = liveDraft; previewOpen = true"
+            />
           </div>
         </div>
 
@@ -237,14 +249,38 @@
       </template>
     </div>
   </div>
+
+  <!-- 文章草稿預覽 Modal -->
+  <Teleport to="body">
+    <div v-if="previewOpen && previewDraft" class="id-overlay" @click.self="previewOpen = false">
+      <div class="synth-modal">
+        <button class="synth-modal__close" @click="previewOpen = false">×</button>
+        <div class="synth-modal__body">
+          <div class="synth-modal__content">
+            <TiptapEditor
+              v-if="parseTiptap(previewDraft.content_tiptap)"
+              :model-value="parseTiptap(previewDraft.content_tiptap)"
+              :readonly="true"
+            />
+          </div>
+        </div>
+        <div class="synth-modal__foot">
+          <button class="btn btn--accent" @click="openDraftInEditor(previewDraft.id)">
+            在編輯器開啟 →
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import type { ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
+import type { ArticleDraft, ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — AI Chat' })
 
 const { t } = useI18n()
 const apiFetch = useApiFetch()
+const router = useRouter()
 const config = useRuntimeConfig()
 const session = useSupabaseSession()
 
@@ -275,6 +311,12 @@ const liveProcess = ref<ProcessLog & { sources: ChatSource[] }>({ thinking: '', 
 
 // 每則 assistant 訊息永久保存的 process log
 const processMap = ref<Record<string, ProcessLog>>({})
+
+// 文章草稿（keyed by assistantId）
+const draftMap = ref<Record<string, ArticleDraft>>({})
+const liveDraft = ref<ArticleDraft | null>(null)
+const previewDraft = ref<ArticleDraft | null>(null)
+const previewOpen = ref(false)
 
 const messagesEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -329,12 +371,15 @@ async function openSession(id: string) {
     openSources.value = lastWithSources ? new Set([lastWithSources.id]) : new Set()
     resetProcess()
 
-    // 從訊息的 process_log 重建 processMap
+    // 從訊息的 process_log 重建 processMap 和 draftMap
+    draftMap.value = {}
     for (const msg of detail.messages) {
       if (msg.role === 'assistant' && msg.process_log) {
         processMap.value[msg.id] = msg.process_log as ProcessLog
-        // 預設展開最新一則，其餘收合
         openThinking.value.delete(msg.id)
+        // 還原文章草稿
+        const draftStep = (msg.process_log.steps as any[])?.find((s: any) => s.articleDraft)
+        if (draftStep?.articleDraft) draftMap.value[msg.id] = draftStep.articleDraft
       }
     }
     // 最新一則 assistant 訊息預設展開
@@ -388,6 +433,7 @@ async function deleteSession(id: string) {
 function resetProcess() {
   liveProcess.value = { thinking: '', steps: [], sources: [] }
   streamingText.value = ''
+  liveDraft.value = null
   openThinking.value = new Set(['live'])
   openSources.value.delete('live')
 }
@@ -473,6 +519,10 @@ async function send() {
           if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
           await nextTick(); scrollBottom()
 
+        } else if (event === 'article_draft') {
+          liveDraft.value = data as ArticleDraft
+          await nextTick(); scrollBottom()
+
         } else if (event === 'sources') {
           pendingSources = data as ChatSource[]
           liveProcess.value.sources = pendingSources
@@ -486,6 +536,11 @@ async function send() {
           processMap.value[assistantId] = {
             thinking: liveProcess.value.thinking,
             steps: liveProcess.value.steps,
+          }
+          // 把文章草稿移至 draftMap
+          if (liveDraft.value) {
+            draftMap.value[assistantId] = liveDraft.value
+            liveDraft.value = null
           }
           // thinking 預設收合（已完成），保留展開狀態
           openThinking.value.delete('live')
@@ -533,6 +588,15 @@ async function send() {
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function scrollBottom() {
   if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
+}
+
+function parseTiptap(json: string): Record<string, unknown> | null {
+  try { return JSON.parse(json) } catch { return null }
+}
+
+function openDraftInEditor(articleId: string) {
+  previewOpen.value = false
+  router.push(`/app/write/${articleId}`)
 }
 
 function autoResize() {
