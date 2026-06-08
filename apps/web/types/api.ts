@@ -13,21 +13,19 @@ export interface Item {
   content_id: string | null
   url: string
   title: string | null
-  summary: string | null
-  summary_i18n: Record<string, unknown> | null
+  notes_md: string | null
   thumbnail_url: string | null
   saved_at: string
   deleted_at: string | null
   parsed_at: string | null
   status: string | null
   source_type: string | null
-  content_md: string | null
   tags: Tag[]
 }
 
 export interface ArticleUpdate {
   title?: string
-  content_md?: string
+  notes_md?: string
 }
 
 export interface ItemCreate {
@@ -110,7 +108,6 @@ export interface CollectionShareItem {
   id: string
   url: string
   title: string | null
-  summary: string | null
   thumbnail_url: string | null
   source_type: string | null
 }
@@ -161,8 +158,7 @@ export interface FocusResult {
 
 // Custom synthesis
 export interface SynthesizeResult {
-  content: string         // raw markdown，modal 預覽用
-  content_tiptap: string  // JSON string of Tiptap doc，write 頁面用
+  content: string   // Markdown
   sources: FocusSource[]
 }
 
@@ -263,8 +259,7 @@ export interface QuotaItem {
 export interface ArticleDraft {
   id: string
   title: string
-  summary: string
-  content_tiptap: string
+  notes_md: string
 }
 
 export interface PaginatedResult<T> {

@@ -7,18 +7,19 @@ import { createLowlight, common } from 'lowlight'
 import Underline from '@tiptap/extension-underline'
 import { TextStyle, Color } from '@tiptap/extension-text-style'
 import Link from '@tiptap/extension-link'
+import { Markdown } from '@tiptap/markdown'
 import CodeBlockView from './CodeBlockView.vue'
 import BubbleMenuBar from './BubbleMenuBar.vue'
 
 const lowlight = createLowlight(common)
 
 const props = defineProps<{
-  modelValue: Record<string, unknown> | null | undefined
+  modelValue: string | null | undefined
   readonly?: boolean
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: Record<string, unknown>]
+  'update:modelValue': [value: string]
 }>()
 
 const editor = useEditor({
@@ -32,22 +33,23 @@ const editor = useEditor({
     Color,
     Link.configure({ openOnClick: false }),
     GlobalDragHandle.configure({ dragHandleWidth: 24 }),
+    Markdown.configure({ html: false }),
   ],
   editable: !props.readonly,
-  content: props.modelValue ?? { type: 'doc', content: [] },
+  content: props.modelValue ?? '',
   onUpdate({ editor }) {
     if (!props.readonly) {
-      emit('update:modelValue', editor.getJSON() as Record<string, unknown>)
+      emit('update:modelValue', editor.storage.markdown.getMarkdown())
     }
   },
 })
 
 watch(() => props.modelValue, (val) => {
   if (!editor.value) return
-  const current = JSON.stringify(editor.value.getJSON())
-  const next = JSON.stringify(val ?? { type: 'doc', content: [] })
+  const current = editor.value.storage.markdown.getMarkdown()
+  const next = val ?? ''
   if (current !== next) {
-    editor.value.commands.setContent(val ?? { type: 'doc', content: [] }, false)
+    editor.value.commands.setContent(next, false)
   }
 })
 

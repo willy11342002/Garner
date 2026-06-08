@@ -177,8 +177,8 @@ function cardTitle(url: string, title: string | null) {
           </div>
           <div class="semantic-card__body">
             <p class="semantic-card__title">{{ cardTitle(item.url, item.title) }}</p>
-            <p v-if="excerpt(item.summary)" class="semantic-card__excerpt">
-              {{ excerpt(item.summary) }}
+            <p v-if="excerpt(item.notes_md)" class="semantic-card__excerpt">
+              {{ excerpt(item.notes_md) }}
             </p>
             <div class="semantic-card__meta">
               <span class="source-badge source-badge--sm">{{ sourceLabel(item.url) }}</span>

@@ -76,14 +76,9 @@ export function useItems() {
     return apiFetch(`/items/${itemId}/tags/confirm/bulk`, { method: 'POST', body: { tag_ids: tagIds } })
   }
 
-  function updateItemSummary(id: string, summaryI18n: Record<string, unknown>): Promise<Item> {
-    return apiFetch(`/items/${id}/summary`, { method: 'PATCH', body: { summary_i18n: summaryI18n } })
-  }
-
   return {
     listItems, listItemsPage, createItem, getItem, updateItem, deleteItem,
     getItemTags, getPendingItemTags, attachTag, detachTag,
     listArchivedItems, getPendingReview, confirmItemTag, confirmItemTagsBulk,
-    updateItemSummary,
   }
 }

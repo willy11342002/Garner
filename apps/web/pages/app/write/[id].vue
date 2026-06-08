@@ -32,7 +32,7 @@ const title = ref('')
 useHead(computed(() => ({
   title: title.value ? `Garner — ${title.value}` : 'Garner — 文章編輯',
 })))
-const editorContent = ref<Record<string, unknown>>({ type: 'doc', content: [] })
+const editorContent = ref('')
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const analyzing = ref(false)
 const analysisStage = ref<string>('')
@@ -59,19 +59,12 @@ const outlineOpen = ref(window.innerWidth > 768)
 const editorBodyRef = ref<HTMLElement | null>(null)
 
 const outline = computed<OutlineItem[]>(() => {
-  const content = (editorContent.value?.content as any[]) ?? []
   const items: OutlineItem[] = []
   let idx = 0
-  for (const node of content) {
-    if (node.type === 'heading') {
-      const level: number = node.attrs?.level ?? 1
-      if (level >= 1 && level <= 4) {
-        const text = ((node.content ?? []) as any[])
-          .filter((c: any) => c.type === 'text')
-          .map((c: any) => c.text as string)
-          .join('')
-        items.push({ level, text, index: idx })
-      }
+  for (const line of editorContent.value.split('\n')) {
+    const m = line.match(/^(#{1,4})\s+(.+)/)
+    if (m) {
+      items.push({ level: m[1].length, text: m[2].trim(), index: idx })
       idx++
     }
   }
@@ -94,17 +87,6 @@ const drawerOpen = ref(window.innerWidth > 768)
 const drawerHasResult = ref(false)
 const confirmedTags = ref<Tag[]>([])
 const pendingTags = ref<Tag[]>([])
-
-const { locale } = useI18nContent()
-const localizedTiptap = computed(() => {
-  const i18n = article.value?.summary_i18n
-  if (i18n && typeof i18n === 'object') {
-    const doc = (i18n as Record<string, unknown>)[locale.value]
-      ?? (i18n as Record<string, unknown>)['zh-TW']
-    if (doc && typeof doc === 'object') return doc as Record<string, unknown>
-  }
-  return null
-})
 
 // ── 標籤操作 ──────────────────────────────────────────────────────────────────
 const tagRemoving = ref<Record<string, boolean>>({})
@@ -182,10 +164,8 @@ onMounted(async () => {
     article.value = data
     title.value = data.title ?? ''
     originalTitle.value = data.title ?? ''
-    if (data.content_md) {
-      try { editorContent.value = JSON.parse(data.content_md) } catch { /* ignore */ }
-    }
-    originalContent.value = data.content_md ?? ''
+    editorContent.value = data.notes_md ?? ''
+    originalContent.value = data.notes_md ?? ''
     if (data.parsed_at) {
       drawerHasResult.value = true
       await fetchTags()
@@ -197,8 +177,8 @@ onMounted(async () => {
   }
 })
 
-watch(title, (val) => { isDirty.value = val !== originalTitle.value || JSON.stringify(editorContent.value) !== originalContent.value })
-watch(editorContent, (val) => { isDirty.value = title.value !== originalTitle.value || JSON.stringify(val) !== originalContent.value }, { deep: true })
+watch(title, (val) => { isDirty.value = val !== originalTitle.value || editorContent.value !== originalContent.value })
+watch(editorContent, (val) => { isDirty.value = title.value !== originalTitle.value || val !== originalContent.value })
 
 function handleBeforeUnload(e: BeforeUnloadEvent) {
   if (!isDirty.value) return
@@ -231,10 +211,10 @@ async function handleAnalyze() {
   try {
     await updateArticle(id, {
       title: title.value || '未命名文章',
-      content_md: JSON.stringify(editorContent.value),
+      notes_md: editorContent.value,
     })
     originalTitle.value = title.value || '未命名文章'
-    originalContent.value = JSON.stringify(editorContent.value)
+    originalContent.value = editorContent.value
     isDirty.value = false
     const updated = await reanalyzeArticle(id)
     article.value = updated
@@ -534,15 +514,6 @@ async function handleDeleteCover(e: Event) {
               <p v-if="!pendingTags.length && !confirmedTags.length && !addingTag" class="write-drawer__empty-sm">分析中，請稍候…</p>
             </section>
 
-            <!-- 摘要 -->
-            <section class="write-drawer__section">
-              <div class="write-drawer__section-label">摘要</div>
-              <template v-if="localizedTiptap">
-                <TiptapEditor :model-value="localizedTiptap" :readonly="true" class="write-drawer__tiptap" />
-              </template>
-              <p v-else-if="article?.summary" class="write-drawer__summary">{{ article.summary }}</p>
-              <p v-else class="write-drawer__empty-sm">分析中，請稍候…</p>
-            </section>
           </template>
         </div>
       </aside>

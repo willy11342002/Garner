@@ -16,18 +16,6 @@ const isOpen = computed(() => !!(props.itemId || props.item))
 const readonly = computed(() => !props.itemId)
 
 const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, confirmItemTagsBulk } = useItems()
-const { localize, locale } = useI18nContent()
-
-const localizedTiptap = computed(() => {
-  const i = item.value
-  if (!i) return null
-  const i18n = (i as Item).summary_i18n
-  if (i18n && typeof i18n === 'object') {
-    const doc = (i18n as Record<string, unknown>)[locale.value] ?? (i18n as Record<string, unknown>)['zh-TW']
-    if (doc && typeof doc === 'object') return doc as Record<string, unknown>
-  }
-  return null
-})
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
@@ -277,9 +265,9 @@ async function confirmArchive() {
               </button>
             </div>
 
-            <div v-if="item.summary || (item as Item).summary_i18n" class="id-body__summary">
-              <div class="id-body__summary-label mono">SUMMARY</div>
-              <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
+            <div v-if="(item as Item).notes_md" class="id-body__summary">
+              <div class="id-body__summary-label mono">NOTES</div>
+              <TiptapEditor :model-value="(item as Item).notes_md" :readonly="true" />
             </div>
             <div v-else-if="!readonly && !(item as Item).parsed_at">
               <span class="processing-badge">AI 處理中...</span>
@@ -378,10 +366,10 @@ async function confirmArchive() {
               </button>
             </div>
 
-            <!-- Summary -->
-            <div v-if="item.summary || (item as Item).summary_i18n" class="id-body__summary">
-              <div class="id-body__summary-label mono">SUMMARY</div>
-              <TiptapEditor v-if="localizedTiptap" :model-value="localizedTiptap" :readonly="true" />
+            <!-- Notes -->
+            <div v-if="(item as Item).notes_md" class="id-body__summary">
+              <div class="id-body__summary-label mono">NOTES</div>
+              <TiptapEditor :model-value="(item as Item).notes_md" :readonly="true" />
             </div>
             <div v-else-if="!readonly && !(item as Item).parsed_at">
               <span class="processing-badge">AI 處理中...</span>

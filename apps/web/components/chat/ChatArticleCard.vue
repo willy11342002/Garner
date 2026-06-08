@@ -11,7 +11,7 @@
     <div class="chat-article-card__body">
       <span class="chat-article-card__eyebrow">草稿文章</span>
       <span class="chat-article-card__title">{{ draft.title }}</span>
-      <p class="chat-article-card__summary">{{ draft.summary }}</p>
+      <p class="chat-article-card__summary">{{ draft.notes_md?.slice(0, 120) }}</p>
     </div>
     <div class="chat-article-card__actions">
       <button class="btn chat-article-card__btn" @click="$emit('preview', draft.id)">預覽</button>
