@@ -134,6 +134,7 @@ async def get_items_with_pending_tags(
         .where(
             UserItem.user_id == user_id,
             ItemTag.confirmed == False,  # noqa: E712
+            UserItem.status != "archived",
         )
         .options(joinedload(UserItem.content))
         .distinct()
