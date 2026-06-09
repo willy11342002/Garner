@@ -465,13 +465,10 @@ _CHAT_SYSTEM = """\
 """
 
 _CHAT_CONTEXT_TEMPLATE = """\
-【用戶長期記憶】
-{memory}
-
-【相關知識庫內容】
+{context_summary_block}【相關知識庫內容】
 {items}
 
-【對話歷史】
+【近期對話】
 {history}
 
 【用戶最新問題】
@@ -481,8 +478,8 @@ _CHAT_CONTEXT_TEMPLATE = """\
 """
 
 _COMPRESS_SYSTEM = """\
-將以下對話摘要成 3-5 句話的長期記憶，記住用戶感興趣的主題、關心的問題和思考模式。
-只保留對未來對話有用的資訊，用繁體中文輸出。
+將以下對話摘要成 3-5 句話，保留這段對話中討論的主題、用戶的關鍵問題與結論。
+只保留對繼續這段對話有用的脈絡，用繁體中文輸出。
 """
 
 
@@ -490,7 +487,7 @@ async def chat_stream(
     query: str,
     history: list[dict],
     retrieved_items: list[dict],
-    memory_summary: str | None,
+    context_summary: str | None,
     created_article_title: str | None = None,
 ):
     """Yield text chunks from OpenRouter streaming response."""
@@ -507,8 +504,10 @@ async def chat_stream(
     if created_article_title:
         items_text = f"[系統] 已為用戶建立文章草稿：《{created_article_title}》\n" + items_text
 
+    context_summary_block = f"【對話摘要（早期）】\n{context_summary}\n\n" if context_summary else ""
+
     user_content = _CHAT_CONTEXT_TEMPLATE.format(
-        memory=memory_summary or "（無）",
+        context_summary_block=context_summary_block,
         items=items_text,
         history=history_text,
         query=query,

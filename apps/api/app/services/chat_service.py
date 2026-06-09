@@ -3,7 +3,7 @@ chat_service：AI Chat 對話式 RAG 服務。
 
 流程：
   用戶訊息 → plan_tools → 執行各 tool → merge 結果 → streaming 回覆 → 儲存訊息
-  每 10 則訊息 → background task 壓縮 memory_summary
+  每 8 則訊息 → background task 壓縮 session context_summary
 """
 
 import json
@@ -117,7 +117,7 @@ async def stream_reply(
         await crud_chat.update_session(db, session_id, user_id, title=title)
 
     history = [{"role": m.role.value, "content": m.content} for m in session.messages]
-    memory_summary = await crud_chat.get_memory_summary(db, user_id)
+    context_summary = session.context_summary
     today = datetime.now(timezone.utc).date().isoformat()
 
     # ── Step 1：規劃工具 ──────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ async def stream_reply(
 
     full_reply = []
     async for chunk in ai_service.chat_stream(
-        user_content, history, llm_items, memory_summary,
+        user_content, history, llm_items, context_summary,
         created_article_title=created_article["title"] if created_article else None,
     ):
         full_reply.append(chunk)
@@ -247,12 +247,11 @@ async def stream_reply(
     await crud_chat.touch_session(db, session_id)
 
     msg_count = await crud_chat.count_messages(db, session_id)
-    if msg_count % 10 == 0:
-        recent = history[-10:] + [
-            {"role": "user", "content": user_content},
-            {"role": "assistant", "content": reply_text},
-        ]
-        background_tasks.add_task(_compress_memory, user_id, memory_summary, recent)
+    if msg_count % 8 == 0:
+        # 壓縮對象：8 則以前的所有歷史（不含最新這輪）
+        to_compress = history[:-8] if len(history) > 8 else history
+        if to_compress:
+            background_tasks.add_task(_compress_context, session_id, context_summary, to_compress)
 
     yield _sse("done", {})
 
@@ -261,15 +260,15 @@ def _sse(event: str, data) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _compress_memory(
-    user_id: UUID,
+async def _compress_context(
+    session_id: UUID,
     current_summary: str | None,
-    recent_messages: list[dict],
+    old_messages: list[dict],
 ) -> None:
     from app.core.database import AsyncSessionLocal
     try:
-        new_summary = await ai_service.compress_memory(current_summary, recent_messages)
+        new_summary = await ai_service.compress_memory(current_summary, old_messages)
         async with AsyncSessionLocal() as db:
-            await crud_chat.set_memory_summary(db, user_id, new_summary)
+            await crud_chat.set_context_summary(db, session_id, new_summary)
     except Exception:
         pass

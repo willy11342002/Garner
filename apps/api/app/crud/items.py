@@ -124,7 +124,12 @@ async def get_page(
     if saved_after:
         base_filters.append(UserItem.saved_at >= saved_after)
 
-    order_col = UserItem.saved_at.desc() if sort == "saved_desc" else UserItem.saved_at.asc()
+    if sort == "random":
+        order_col = func.random()
+    elif sort == "saved_asc":
+        order_col = UserItem.saved_at.asc()
+    else:
+        order_col = UserItem.saved_at.desc()
 
     if tag_ids:
         if tag_logic == "and":

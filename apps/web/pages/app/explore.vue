@@ -327,7 +327,8 @@ async function loadRandomItems() {
   synthCandLoading.value = true
   synthMode.value = 'lucky'
   try {
-    synthCandidates.value = await apiFetch<Item[]>('/explore/random-items?count=5')
+    const res = await apiFetch<{ items: Item[] }>('/items/?sort=random&page_size=5')
+    synthCandidates.value = res.items
   } catch {
     synthCandidates.value = []
   } finally {

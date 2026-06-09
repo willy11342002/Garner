@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
-from app.models.user import User
 
 
 # ── Folders ───────────────────────────────────────────────────────────────────
@@ -157,15 +156,15 @@ async def count_messages(db: AsyncSession, session_id: UUID) -> int:
     return result.scalar_one()
 
 
-# ── Memory ────────────────────────────────────────────────────────────────────
+# ── Context Summary ───────────────────────────────────────────────────────────
 
-async def get_memory_summary(db: AsyncSession, user_id: UUID) -> str | None:
-    result = await db.execute(select(User.memory_summary).where(User.id == user_id))
+async def get_context_summary(db: AsyncSession, session_id: UUID) -> str | None:
+    result = await db.execute(select(ChatSession.context_summary).where(ChatSession.id == session_id))
     return result.scalar_one_or_none()
 
 
-async def set_memory_summary(db: AsyncSession, user_id: UUID, summary: str) -> None:
+async def set_context_summary(db: AsyncSession, session_id: UUID, summary: str) -> None:
     await db.execute(
-        update(User).where(User.id == user_id).values(memory_summary=summary)
+        update(ChatSession).where(ChatSession.id == session_id).values(context_summary=summary)
     )
     await db.commit()
