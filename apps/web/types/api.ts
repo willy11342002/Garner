@@ -37,6 +37,7 @@ export interface ItemCreate {
 export interface ItemUpdate {
   title?: string
   status?: 'active' | 'archived' | 'deleted'
+  notes_md?: string
 }
 
 export type CollectionVisibility = 'private' | 'link' | 'public'

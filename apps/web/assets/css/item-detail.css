@@ -5,8 +5,7 @@
   inset: 0;
   z-index: 200;
   background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  
   display: flex;
   align-items: center;
   justify-content: center;
@@ -31,8 +30,8 @@
 .id-panel {
   position: relative;
   cursor: default;
-  width: 100%;
-  max-width: 920px;
+  width: 70vw;
+  max-width: 70vw;
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(300px, 1fr);
   background: var(--surface);
@@ -124,6 +123,10 @@
   line-height: 1.3;
   letter-spacing: -0.015em;
   margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Tags */
@@ -373,11 +376,13 @@
 
 /* ---------- Modal Responsive ---------- */
 @media (max-width: 720px) {
-  .id-overlay { padding: 8vh 0 0; align-items: flex-start; }
+  .id-overlay { padding: 0; align-items: center; justify-content: center; }
   .id-panel {
     grid-template-columns: 1fr;
     border-radius: 20px;
-    max-height: 92vh;
+    width: 95vw;
+    max-width: 95vw;
+    max-height: 95vh;
     animation: id-slide-up .3s cubic-bezier(0.32, 0.72, 0, 1) both;
   }
 

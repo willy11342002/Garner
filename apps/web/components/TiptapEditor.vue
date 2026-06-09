@@ -57,24 +57,19 @@ watch(() => props.readonly, (val) => {
 })
 
 // ── Insert button ──
-const insertVisible = ref(false)
+const insertVisible = computed(() => !props.readonly)
 const insertX = ref(0)
 const insertY = ref(0)
 let dragHandleEl: HTMLElement | null = null
 
-// Document-level mousemove fires AFTER the ProseMirror extension has processed the
-// event (set style.left/top and called showDragHandle), so we read the final state here.
+// Update insert button position to track the drag handle
 function onDocMouseMove() {
   if (props.readonly) return
   if (!dragHandleEl) dragHandleEl = document.querySelector('.drag-handle')
-  if (!dragHandleEl || dragHandleEl.classList.contains('hide') || !dragHandleEl.style.left) {
-    insertVisible.value = false
-    return
-  }
+  if (!dragHandleEl || dragHandleEl.classList.contains('hide') || !dragHandleEl.style.left) return
   const left = parseInt(dragHandleEl.style.left, 10)
   const top  = parseInt(dragHandleEl.style.top,  10)
-  if (isNaN(left) || isNaN(top)) { insertVisible.value = false; return }
-  insertVisible.value = true
+  if (isNaN(left) || isNaN(top)) return
   insertX.value = left - 28
   insertY.value = top
 }
@@ -163,7 +158,6 @@ function onInsertClick() {
     .setTextSelection(insertAt + 1)
     .run()
 
-  insertVisible.value = false
 }
 
 function onDocClick(e: MouseEvent) {
@@ -178,16 +172,55 @@ function onDocClick(e: MouseEvent) {
 }
 
 const wrapRef = ref<HTMLElement | null>(null)
+let dragHandleObserver: MutationObserver | null = null
+let originalElementsFromPoint: typeof document.elementsFromPoint | null = null
+
+function patchElementsFromPoint() {
+  originalElementsFromPoint = document.elementsFromPoint.bind(document)
+  document.elementsFromPoint = (x: number, y: number) => {
+    const results = originalElementsFromPoint!(x, y)
+    const editorEl = wrapRef.value?.querySelector('.ProseMirror')
+    if (!editorEl) return results
+    return results.filter(el => editorEl.contains(el) || el.contains(editorEl))
+  }
+}
+
+function unpatchElementsFromPoint() {
+  if (originalElementsFromPoint) {
+    document.elementsFromPoint = originalElementsFromPoint
+    originalElementsFromPoint = null
+  }
+}
+
+function moveDragHandleToBody() {
+  if (!wrapRef.value) return
+  const handle = wrapRef.value.querySelector('.drag-handle') as HTMLElement | null
+  if (handle && handle.parentElement !== document.body) {
+    document.body.appendChild(handle)
+    dragHandleEl = handle
+  }
+}
 
 onMounted(() => {
   document.addEventListener('click', onDocClick, true)
   document.addEventListener('mousemove', onDocMouseMove)
   setMarkdown(props.modelValue)
+  patchElementsFromPoint()
+
+  // Move drag handle to body so backdrop-filter on modal doesn't affect position:fixed
+  dragHandleObserver = new MutationObserver(moveDragHandleToBody)
+  if (wrapRef.value) {
+    dragHandleObserver.observe(wrapRef.value, { childList: true, subtree: true })
+  }
+  moveDragHandleToBody()
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick, true)
   document.removeEventListener('mousemove', onDocMouseMove)
+  dragHandleObserver?.disconnect()
+  dragHandleEl?.remove()
+  unpatchElementsFromPoint()
   editor.value?.destroy()
 })
 
@@ -352,15 +385,8 @@ defineExpose({ editor })
 }
 
 .tiptap-wrap--edit :deep(.ProseMirror) {
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
+  padding-left: 40px;
   min-height: 200px;
-  transition: border-color 0.15s;
-}
-
-.tiptap-wrap--edit :deep(.ProseMirror:focus) {
-  border-color: var(--accent-bdr);
 }
 
 /* ── Code block hljs token colours (structure/bg handled by CodeBlockView.vue) ── */
@@ -391,39 +417,6 @@ defineExpose({ editor })
 .tiptap-wrap :deep(.hljs-operator)    { color: #89dceb; }
 .tiptap-wrap :deep(.hljs-meta)        { color: #f9e2af; }
 
-/* Drag handle – 讓 extension JS 控制 opacity */
-.tiptap-wrap :deep(.drag-handle) {
-  position: fixed;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  cursor: grab;
-  transition: background 0.12s;
-}
-
-.tiptap-wrap :deep(.drag-handle:hover) {
-  background: var(--surface3);
-}
-
-.tiptap-wrap :deep(.drag-handle:active) {
-  cursor: grabbing;
-  background: var(--surface3);
-}
-
-.tiptap-wrap :deep(.drag-handle::after) {
-  content: '⠿';
-  font-size: 15px;
-  color: var(--text-mid);
-  line-height: 1;
-  display: block;
-  pointer-events: none;
-}
-</style>
-
-<style>
 /* Insert button（global，Teleport 到 body）*/
 .tiptap-insert-btn {
   position: fixed;

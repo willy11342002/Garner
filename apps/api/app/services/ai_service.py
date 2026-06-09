@@ -667,16 +667,34 @@ _VISION_PROMPT = """\
 
 
 _TITLE_PROMPT = """\
-根據以下內容摘要，產生一個簡潔的繁體中文標題（不超過 20 字）。
-只輸出標題本身，不要加引號、標點或任何額外說明。
+你的任務是產生或清理一個繁體中文標題（不超過 20 字）。
+
+規則：
+- 只輸出標題本身，不要加引號、標點或任何額外說明
+- 若提供了「原始標題」，優先以它為基礎，移除所有 hashtag（如 #Shorts、#viral 等尾部標籤），保留核心語意；若清理後仍完整，直接回傳，不必重寫
+- 若原始標題清理後過短（少於 3 字）或不存在，則根據下方摘要重新產生標題
+"""
+
+_TITLE_WITH_RAW_TEMPLATE = """\
+原始標題：{raw_title}
 
 摘要：
+{summary}
+"""
+
+_TITLE_FROM_SUMMARY_TEMPLATE = """\
+摘要：
+{summary}
 """
 
 
-async def generate_title(summary_md: str) -> str:
-    """Derive a concise zh-TW title from a Markdown summary."""
-    return await _llm_call(_TITLE_PROMPT + summary_md[:2000])
+async def generate_title(summary_md: str, raw_title: str | None = None) -> str:
+    """Derive a concise zh-TW title from a Markdown summary, optionally cleaning an existing raw title."""
+    if raw_title:
+        body = _TITLE_WITH_RAW_TEMPLATE.format(raw_title=raw_title, summary=summary_md[:2000])
+    else:
+        body = _TITLE_FROM_SUMMARY_TEMPLATE.format(summary=summary_md[:2000])
+    return await _llm_call(_TITLE_PROMPT + "\n" + body)
 
 
 async def describe_images(images: list[bytes]) -> str:

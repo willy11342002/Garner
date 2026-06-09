@@ -35,6 +35,28 @@ const tagInputRef = ref<HTMLInputElement | null>(null)
 const tagConfirming = ref<Record<string, boolean>>({})
 const confirmingAll = ref(false)
 
+// Inline note editing
+const isEditingNotes = ref(false)
+const editingNotesMd = ref('')
+const savingNotes = ref(false)
+
+function startEditNotes() {
+  editingNotesMd.value = (item.value as Item)?.notes_md ?? ''
+  isEditingNotes.value = true
+}
+
+async function saveNotes() {
+  if (!item.value) return
+  savingNotes.value = true
+  try {
+    await updateItem(item.value.id, { notes_md: editingNotesMd.value })
+    if (fetchedItem.value) fetchedItem.value = { ...fetchedItem.value, notes_md: editingNotesMd.value }
+    isEditingNotes.value = false
+  } finally {
+    savingNotes.value = false
+  }
+}
+
 // Archive
 const archiving = ref(false)
 const showArchiveConfirm = ref(false)
@@ -106,6 +128,8 @@ onUnmounted(() => {
 
 function doClose() {
   showArchiveConfirm.value = false
+  isEditingNotes.value = false
+  editingNotesMd.value = ''
   emit('close')
 }
 
@@ -265,11 +289,20 @@ async function confirmArchive() {
               </button>
             </div>
 
-            <div v-if="(item as Item).notes_md" class="id-body__summary">
-              <div class="id-body__summary-label mono">NOTES</div>
-              <TiptapEditor :model-value="(item as Item).notes_md" :readonly="true" />
+            <div class="id-body__summary">
+              <TiptapEditor
+                v-if="isEditingNotes"
+                v-model="editingNotesMd"
+                :readonly="false"
+              />
+              <TiptapEditor
+                v-else-if="(item as Item).notes_md"
+                :model-value="(item as Item).notes_md"
+                :readonly="true"
+              />
+              <p v-else class="id-body__summary-empty">尚無筆記</p>
             </div>
-            <div v-else-if="!readonly && !(item as Item).parsed_at">
+            <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
               <span class="processing-badge">AI 處理中...</span>
             </div>
 
@@ -282,14 +315,14 @@ async function confirmArchive() {
               >
                 {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
               </button>
-              <NuxtLink
+              <button
                 v-if="!readonly"
-                :to="`/app/write/${item.id}`"
                 class="btn btn--accent"
-                @click="doClose"
+                :disabled="savingNotes"
+                @click="isEditingNotes ? saveNotes() : startEditNotes()"
               >
-                編輯筆記
-              </NuxtLink>
+                {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
+              </button>
               <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文</a>
               <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
@@ -367,11 +400,20 @@ async function confirmArchive() {
             </div>
 
             <!-- Notes -->
-            <div v-if="(item as Item).notes_md" class="id-body__summary">
-              <div class="id-body__summary-label mono">NOTES</div>
-              <TiptapEditor :model-value="(item as Item).notes_md" :readonly="true" />
+            <div class="id-body__summary">
+              <TiptapEditor
+                v-if="isEditingNotes"
+                v-model="editingNotesMd"
+                :readonly="false"
+              />
+              <TiptapEditor
+                v-else-if="(item as Item).notes_md"
+                :model-value="(item as Item).notes_md"
+                :readonly="true"
+              />
+              <p v-else class="id-body__summary-empty">尚無筆記</p>
             </div>
-            <div v-else-if="!readonly && !(item as Item).parsed_at">
+            <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
               <span class="processing-badge">AI 處理中...</span>
             </div>
 
@@ -385,13 +427,14 @@ async function confirmArchive() {
               >
                 {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
               </button>
-              <NuxtLink
+              <button
                 v-if="!readonly"
-                :to="`/app/write/${item.id}`"
                 class="btn btn--accent"
+                :disabled="savingNotes"
+                @click="isEditingNotes ? saveNotes() : startEditNotes()"
               >
-                編輯筆記
-              </NuxtLink>
+                {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
+              </button>
               <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文</a>
               <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">

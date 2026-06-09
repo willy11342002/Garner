@@ -84,10 +84,9 @@ async def process_item(
         await _fail(db, user_id, user_item_id, user_item, url)
         return
 
-    # 若 provider 沒有提供 title，由 AI 生成
-    title = user_item.title or info.title
-    if not title:
-        title = await ai_service.generate_title(summary_md)
+    # 清理 provider 提供的 title（移除 hashtag），或由 AI 從摘要生成
+    raw_title = user_item.title or info.title
+    title = await ai_service.generate_title(summary_md, raw_title=raw_title or None)
 
     # ── Stage: embedding ─────────────────────────────────────────────────────
     events.emit(str(user_item_id), "embedding")
@@ -198,12 +197,10 @@ async def _save_analysis(
     # ── ContentObject：embedding ──────────────────────────────────────────────
     content.embedding = summary_embedding
     content.parsed_at = now
-    if not content.title:
-        content.title = title
+    content.title = title
 
     # ── UserItem snapshot ─────────────────────────────────────────────────────
-    if not user_item.title:
-        user_item.title = title
+    user_item.title = title
     user_item.notes_md = notes_md
     user_item.parsed_at = now
 

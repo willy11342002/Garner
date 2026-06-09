@@ -656,3 +656,27 @@ input, textarea { font-family: inherit; color: inherit; }
 .spacer { flex: 1; }
 .fadeup { animation: fadeup .35s ease both; }
 @keyframes fadeup { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ---------- TiptapEditor — Drag Handle (teleported to body) ---------- */
+.drag-handle {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: grab;
+  transition: background 0.12s;
+  z-index: 9997;
+}
+.drag-handle:hover { background: var(--surface3); }
+.drag-handle:active { cursor: grabbing; background: var(--surface3); }
+.drag-handle::after {
+  content: '⠿';
+  font-size: 15px;
+  color: var(--text-mid);
+  line-height: 1;
+  display: block;
+  pointer-events: none;
+}
