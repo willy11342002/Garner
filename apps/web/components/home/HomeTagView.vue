@@ -121,6 +121,13 @@ function clearFilters() {
   timeFilter.value = 'all'
 }
 
+// Mobile tag select — pick one to add, then reset
+function onMobileTagSelect(e: Event) {
+  const id = (e.target as HTMLSelectElement).value
+  if (id) toggleTag(id);
+  (e.target as HTMLSelectElement).value = ''
+}
+
 const hasActiveFilters = computed(() =>
   selectedTagIds.value.size > 0 || timeFilter.value !== 'all'
 )
@@ -230,7 +237,38 @@ onMounted(async () => {
         </button>
       </div>
 
-      <button v-if="hasActiveFilters" class="filter-clear-btn" @click="clearFilters">
+      <!-- Mobile: single select + clear on same row -->
+      <div class="filter-mobile-row">
+        <select class="filter-tags-select" @change="onMobileTagSelect">
+          <option value="">{{ t('home.filter_label') }}</option>
+          <option
+            v-for="group in allTagGroups"
+            :key="group.tag.id"
+            :value="group.tag.id"
+          >{{ localize(group.tag.name_i18n, group.tag.name) }} ({{ group.count }})</option>
+        </select>
+        <button v-if="hasActiveFilters" class="filter-clear-btn" @click="clearFilters">
+          {{ t('home.filter_clear') }}
+        </button>
+      </div>
+      <!-- Mobile: selected tag chips -->
+      <div v-if="selectedTagIds.size > 0" class="filter-mobile-chips">
+        <button
+          v-for="id in selectedTagIds"
+          :key="id"
+          class="tag-filter-chip tag-filter-chip--active"
+          @click="removeTag(id)"
+        >
+          <span
+            class="tag-filter-chip__dot"
+            :style="`background:var(--tag-${tagColor(tagColorIndex.get(id) ?? 0)})`"
+          ></span>
+          {{ localize(allTagGroups.find(g => g.tag.id === id)?.tag.name_i18n ?? {}, allTagGroups.find(g => g.tag.id === id)?.tag.name ?? '') }}
+          <span class="tag-filter-chip__remove">×</span>
+        </button>
+      </div>
+
+      <button v-if="hasActiveFilters" class="filter-clear-btn filter-clear-btn--desktop" @click="clearFilters">
         {{ t('home.filter_clear') }}
       </button>
       <div class="filter-row__divider"></div>
@@ -253,7 +291,6 @@ onMounted(async () => {
     <div class="results-row">
       <p class="results-row__summary">
         {{ t('home.results', { n: itemStore.total }) }}
-        <span v-if="filterSummary" class="results-row__filter-desc">{{ filterSummary }}</span>
       </p>
       <div class="results-row__controls">
         <div class="filter-dropdown">

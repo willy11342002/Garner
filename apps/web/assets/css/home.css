@@ -391,6 +391,10 @@
   letter-spacing: .03em;
 }
 
+/* Mobile tag select (hidden on desktop) */
+.filter-mobile-row { display: none; }
+.filter-mobile-chips { display: none; }
+
 /* Scrollable chip area */
 .filter-chips {
   display: flex;
@@ -526,10 +530,7 @@
   color: var(--text);
   margin: 0;
 }
-.results-row__filter-desc {
-  font-weight: 400;
-  color: var(--text-dim);
-}
+
 .results-row__controls {
   display: flex;
   gap: 8px;
@@ -958,6 +959,35 @@
     flex-wrap: wrap;
     gap: 8px;
     padding: 10px 0;
+  }
+  .filter-chips { display: none; }
+  .filter-mobile-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .filter-tags-select {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    padding: 6px 8px;
+    appearance: auto;
+  }
+  .filter-mobile-row .filter-clear-btn { flex-shrink: 0; }
+  .filter-clear-btn--desktop { display: none; }
+  .filter-mobile-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1 0 100%;
   }
   .filter-row__divider { display: none; }
   .filter-andor {

@@ -79,14 +79,30 @@
           {{ tags.find(t => t.id === id)?.name }}
           <span class="synth-selected-tag-chip__x">×</span>
         </button>
-        <button class="tag-filter-chip tag-filter-chip--clear" @click="clearSynthTags">清除全部</button>
+      </div>
+
+      <!-- AND / OR toggle + 清除全部 -->
+      <div v-if="synthTagIds.length" class="filter-andor synth-filter-actions">
+        <template v-if="synthTagIds.length > 1">
+          <span class="filter-andor__label">{{ t('home.filter_match') }}</span>
+          <button
+            class="filter-andor__opt"
+            :class="{ 'filter-andor__opt--active': synthFilterLogic === 'and' }"
+            @click="synthFilterLogic = 'and'"
+          >{{ t('home.filter_all') }}</button>
+          <button
+            class="filter-andor__opt"
+            :class="{ 'filter-andor__opt--active': synthFilterLogic === 'or' }"
+            @click="synthFilterLogic = 'or'"
+          >{{ t('home.filter_any') }}</button>
+        </template>
+        <button class="filter-clear-btn synth-clear-btn" @click="clearSynthTags">清除全部</button>
       </div>
 
       <!-- Results row -->
       <div class="results-row" style="margin-top:10px; margin-bottom:12px;">
         <p class="results-row__summary">
           {{ synthMode === 'lucky' ? `${synthCandidates.length} 筆隨機推薦` : `${candTotal} 筆結果` }}
-          <span v-if="synthMode !== 'lucky' && activeFilterSummary" class="results-row__filter-desc">· {{ activeFilterSummary }}</span>
         </p>
         <div class="results-row__controls">
           <div class="filter-dropdown">
@@ -285,6 +301,7 @@ type SynthMode = 'idle' | 'tag' | 'lucky'
 
 const synthMode = ref<SynthMode>('idle')
 const synthTagIds = ref<string[]>([])
+const synthFilterLogic = ref<'and' | 'or'>('and')
 const synthCandidates = ref<Item[]>([])
 const synthCandLoading = ref(false)
 const candPage = ref(1)
@@ -391,7 +408,7 @@ async function loadTaggedItems(page = 1) {
   synthCandLoading.value = true
   candPage.value = page
   try {
-    const res = await listItemsPage({ tag_ids: synthTagIds.value, page, page_size: CAND_PAGE_SIZE, saved_after: getExploreTimeParam(), sort: exploreSortOrder.value })
+    const res = await listItemsPage({ tag_ids: synthTagIds.value, tag_logic: synthFilterLogic.value, page, page_size: CAND_PAGE_SIZE, saved_after: getExploreTimeParam(), sort: exploreSortOrder.value })
     synthCandidates.value = res.items
     candTotal.value = res.total
   } catch {
@@ -402,6 +419,7 @@ async function loadTaggedItems(page = 1) {
 }
 
 watch(synthTagIds, () => { if (synthMode.value === 'tag') loadTaggedItems(1) }, { deep: true })
+watch(synthFilterLogic, () => { if (synthMode.value === 'tag') loadTaggedItems(1) })
 watch(synthMode, (val) => { if (val === 'tag') loadTaggedItems(1) })
 watch([exploreTimeFilter, exploreSortOrder], () => {
   if (synthMode.value === 'lucky') return
@@ -527,6 +545,8 @@ function sourceLabel(type: string | null) {
 .tag-dropdown-item .tag-filter-chip__count { margin-left: auto; }
 
 .synth-selected-tags { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 8px; }
+.synth-filter-actions { padding: 4px 0 8px; }
+.synth-clear-btn { margin-left: auto; }
 .synth-selected-tag-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 10px; background: color-mix(in oklab, var(--accent) 12%, var(--surface2)); border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent); border-radius: 20px; font-size: 12px; color: var(--text); cursor: pointer; transition: background .12s; }
 .synth-selected-tag-chip:hover { background: color-mix(in oklab, var(--tag-e) 12%, var(--surface2)); border-color: color-mix(in oklab, var(--tag-e) 30%, transparent); }
 .synth-selected-tag-chip__x { font-size: 14px; line-height: 1; color: var(--text-dim); }
