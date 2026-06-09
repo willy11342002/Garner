@@ -170,6 +170,44 @@
       "deleting": "Deleting..."
     }
   },
+  "connected": {
+    "title": "Set Up Quick Save",
+    "page_title": "Garner — Set Up Quick Save",
+    "desktop": {
+      "detecting": "Detecting Extension…",
+      "desc": "Install the Garner Extension to save any page with one click.",
+      "install_btn": "Install Chrome Extension →",
+      "install_hint": "After installing, refresh this page to authorise.",
+      "authorising": "Authorising Extension…",
+      "status_done": "Extension connected",
+      "hint_done": "You can now save any page with one click.",
+      "key_or": "or",
+      "key_close": "Close this tab",
+      "error": "Authorisation failed. Please refresh and try again."
+    },
+    "ios": {
+      "desc": "Install the Garner Shortcut on your iPhone to save from any app with one tap.",
+      "step1": "Download and install the Garner Shortcut",
+      "step2": "Tap below to get your personal Token",
+      "step3": "Paste the Token into the Shortcut settings",
+      "download_btn": "Download Garner Shortcut",
+      "skip": "Already installed — get Token →",
+      "get_token": "Get Token",
+      "generating": "Generating…",
+      "token_label": "Copy and paste into Shortcut settings",
+      "copied": "Copied!",
+      "token_hint": "Token is shown only once — copy it now",
+      "back": "← Back to download"
+    },
+    "android": {
+      "desc": "On Android, copy the URL and paste it into Garner to save quickly.",
+      "step1": "Open the page you want to save in Chrome",
+      "step2": "Tap the address bar → long-press to copy",
+      "step3": "Go back to Garner and paste the URL to save",
+      "back_btn": "Go to home to save",
+      "hint": "We're building native Android support — stay tuned."
+    }
+  },
   "landing": {
     "title": "Your Passively-Built Second Brain",
     "sub": "Save YouTube videos and articles in one click. AI generates summaries, tags, and semantic connections automatically. Your knowledge base grows on its own.",

@@ -1,6 +1,8 @@
 <template>
   <footer class="app-footer">
     <div class="app-footer__links">
+      <NuxtLink v-if="showPricing" to="/pricing" class="app-footer__link">{{ t('landing.pricing_link') }}</NuxtLink>
+      <span v-if="showPricing" class="app-footer__sep">·</span>
       <NuxtLink to="/privacy" class="app-footer__link">{{ t('landing.privacy_link') }}</NuxtLink>
       <span class="app-footer__sep">·</span>
       <NuxtLink to="/terms" class="app-footer__link">{{ t('landing.terms_link') }}</NuxtLink>
@@ -11,6 +13,8 @@
         rel="noopener"
         class="app-footer__link"
       >{{ t('landing.contact_link') }}</a>
+      <span class="app-footer__sep">·</span>
+      <NuxtLink to="/app/connected" class="app-footer__link">{{ t('connected.title') }}</NuxtLink>
     </div>
     <p class="app-footer__copy">© {{ year }} Garner</p>
   </footer>
@@ -19,6 +23,8 @@
 <script setup lang="ts">
 const { t } = useI18n()
 const year = new Date().getFullYear()
+
+defineProps<{ showPricing?: boolean }>()
 </script>
 
 <style scoped>

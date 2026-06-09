@@ -32,18 +32,7 @@
       </div>
     </section>
 
-    <footer class="landing__bottom">
-      <div class="landing__footer-links">
-        <NuxtLink to="/pricing" class="mono footer-link">{{ t('landing.pricing_link') }}</NuxtLink>
-        <span class="footer-sep">·</span>
-        <NuxtLink to="/privacy" class="mono footer-link">{{ t('landing.privacy_link') }}</NuxtLink>
-        <span class="footer-sep">·</span>
-        <NuxtLink to="/terms" class="mono footer-link">{{ t('landing.terms_link') }}</NuxtLink>
-        <span class="footer-sep">·</span>
-        <a href="https://docs.google.com/forms/d/e/1FAIpQLSdYlIIXPUfQ5DyL-ptIxCwx4G99D4mx9CiwJ9OVQYcGXUDzqw/viewform" target="_blank" rel="noopener" class="mono footer-link">{{ t('landing.contact_link') }}</a>
-      </div>
-      <p class="landing__copyright">© {{ year }} Garner</p>
-    </footer>
+    <LayoutAppFooter show-pricing />
   </main>
 </template>
 
@@ -51,8 +40,6 @@
 const { t } = useI18n()
 
 useHead({ title: t('landing.page_title') })
-
-const year = new Date().getFullYear()
 
 const user = useSupabaseUser()
 if (user.value) {
@@ -107,11 +94,6 @@ watch(user, (u) => {
 .feat-card h3 { font-family: var(--font-brand); font-weight: 600; font-size: 15px; margin: 0 0 8px; }
 .feat-card p { font-size: 13px; color: var(--text-mid); line-height: 1.6; margin: 0; }
 
-.landing__bottom { text-align: center; }
-.landing__footer-links { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; }
-.footer-link { color: var(--text-mid); font-size: 13px; }
-.footer-sep { color: var(--text-dim); font-size: 13px; margin: 0 10px; }
-.landing__copyright { color: var(--text-dim); font-size: 12px; margin-top: 10px; }
 
 @media (max-width: 640px) {
   .landing { padding: 48px 20px 64px; }

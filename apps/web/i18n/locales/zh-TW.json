@@ -170,6 +170,44 @@
       "deleting": "刪除中..."
     }
   },
+  "connected": {
+    "title": "設置極速存入",
+    "page_title": "Garner — 設置極速存入",
+    "desktop": {
+      "detecting": "偵測 Extension 中…",
+      "desc": "安裝 Garner Extension，在任何網頁上按一下即可存入。",
+      "install_btn": "前往安裝 Chrome Extension →",
+      "install_hint": "安裝完成後，重新整理此頁面即可授權。",
+      "authorising": "正在授權 Extension…",
+      "status_done": "Extension 已連結",
+      "hint_done": "可以開始在任何頁面一鍵存入了。",
+      "key_or": "或",
+      "key_close": "關閉此頁",
+      "error": "授權失敗，請重新整理後再試。"
+    },
+    "ios": {
+      "desc": "在 iPhone 上安裝 Garner 捷徑，即可從任何 App 一鍵存入內容。",
+      "step1": "下載並安裝 Garner 捷徑",
+      "step2": "點擊下方取得個人 Token",
+      "step3": "在捷徑設定中貼入 Token",
+      "download_btn": "下載 Garner 捷徑",
+      "skip": "已安裝，直接取得 Token →",
+      "get_token": "取得 Token",
+      "generating": "生成中…",
+      "token_label": "複製後貼入捷徑設定",
+      "copied": "已複製！",
+      "token_hint": "Token 只顯示一次，請立即複製",
+      "back": "← 返回下載捷徑"
+    },
+    "android": {
+      "desc": "在 Android 上，可以透過複製網址後回到 Garner 貼入快速存入。",
+      "step1": "在 Chrome 開啟想存入的頁面",
+      "step2": "點上方網址列 → 長按複製",
+      "step3": "回到 Garner 首頁貼入網址存入",
+      "back_btn": "回首頁存入",
+      "hint": "我們正在開發 Android 原生支援，敬請期待。"
+    }
+  },
   "landing": {
     "title": "被動建立的第二大腦",
     "sub": "一鍵收集 YouTube 影片與網頁文章，AI 自動產生摘要、標籤、語意關聯。讓知識庫隨時間自動成長。",

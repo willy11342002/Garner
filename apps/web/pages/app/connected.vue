@@ -2,68 +2,68 @@
   <main class="connected">
     <div class="connected__card">
       <div class="connected__icon">✦</div>
-      <h1 class="connected__title">設置極速存入</h1>
+      <h1 class="connected__title">{{ t('connected.title') }}</h1>
 
       <!-- Desktop: Chrome Extension -->
       <template v-if="device === 'desktop'">
         <!-- 偵測中 -->
         <template v-if="extInstalled === null">
-          <p class="connected__hint">偵測 Extension 中…</p>
+          <p class="connected__hint">{{ t('connected.desktop.detecting') }}</p>
         </template>
 
         <!-- 未安裝 Extension -->
         <template v-else-if="extInstalled === false">
-          <p class="connected__desc">安裝 Garner Extension，在任何網頁上按一下即可存入。</p>
+          <p class="connected__desc">{{ t('connected.desktop.desc') }}</p>
           <a
-            href="https://chrome.google.com/webstore"
+            href="https://chromewebstore.google.com/detail/nleemnjodbbknndffljjmcolkicmdghh"
             target="_blank"
             rel="noopener"
             class="connected__install-btn"
           >
-            前往安裝 Chrome Extension →
+            {{ t('connected.desktop.install_btn') }}
           </a>
-          <p class="connected__hint-sm">安裝完成後，重新整理此頁面即可授權。</p>
+          <p class="connected__hint-sm">{{ t('connected.desktop.install_hint') }}</p>
         </template>
 
         <!-- 已安裝：授權中 -->
         <template v-else-if="status === 'loading'">
-          <p class="connected__hint">正在授權 Extension…</p>
+          <p class="connected__hint">{{ t('connected.desktop.authorising') }}</p>
         </template>
 
         <!-- 已安裝：授權成功 -->
         <template v-else-if="status === 'done'">
           <div class="connected__success-icon">✓</div>
-          <p class="connected__status">Extension 已連結</p>
-          <p class="connected__hint">可以開始在任何頁面一鍵存入了。</p>
+          <p class="connected__status">{{ t('connected.desktop.status_done') }}</p>
+          <p class="connected__hint">{{ t('connected.desktop.hint_done') }}</p>
           <div class="connected__key">
             <kbd>Ctrl</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
-            <span class="connected__key-or">或</span>
+            <span class="connected__key-or">{{ t('connected.desktop.key_or') }}</span>
             <kbd>⌘</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
-            <span class="connected__key-or">關閉此頁</span>
+            <span class="connected__key-or">{{ t('connected.desktop.key_close') }}</span>
           </div>
         </template>
 
         <!-- 授權失敗 -->
         <template v-else>
-          <p class="connected__error">授權失敗，請重新整理後再試。</p>
+          <p class="connected__error">{{ t('connected.desktop.error') }}</p>
         </template>
       </template>
 
       <!-- iOS: Shortcut Token -->
       <template v-else-if="device === 'ios'">
-        <p class="connected__desc">在 iPhone 上安裝 Garner 捷徑，即可從任何 App 一鍵存入內容。</p>
+        <p class="connected__desc">{{ t('connected.ios.desc') }}</p>
         <div class="connected__steps">
           <div class="connected__step">
             <span class="connected__step-num">1</span>
-            <span>下載並安裝 Garner 捷徑</span>
+            <span>{{ t('connected.ios.step1') }}</span>
           </div>
           <div class="connected__step">
             <span class="connected__step-num">2</span>
-            <span>點擊下方取得個人 Token</span>
+            <span>{{ t('connected.ios.step2') }}</span>
           </div>
           <div class="connected__step">
             <span class="connected__step-num">3</span>
-            <span>在捷徑設定中貼入 Token</span>
+            <span>{{ t('connected.ios.step3') }}</span>
           </div>
         </div>
 
@@ -76,10 +76,10 @@
             class="connected__ios-btn"
             @click="iosStep = 'token'"
           >
-            下載 Garner 捷徑
+            {{ t('connected.ios.download_btn') }}
           </a>
           <button class="connected__skip-link" @click="iosStep = 'token'">
-            已安裝，直接取得 Token →
+            {{ t('connected.ios.skip') }}
           </button>
         </template>
 
@@ -87,41 +87,41 @@
         <template v-else>
           <template v-if="!iosToken">
             <button class="connected__ios-btn" :disabled="iosLoading" @click="generateIosToken">
-              {{ iosLoading ? '生成中…' : '取得 Token' }}
+              {{ iosLoading ? t('connected.ios.generating') : t('connected.ios.get_token') }}
             </button>
           </template>
           <template v-else>
-            <p class="connected__ios-label">複製後貼入捷徑設定</p>
+            <p class="connected__ios-label">{{ t('connected.ios.token_label') }}</p>
             <button class="connected__token-btn" :class="{ copied: iosCopied }" @click="copyIosToken">
-              <span class="connected__token-text">{{ iosCopied ? '已複製！' : iosToken }}</span>
+              <span class="connected__token-text">{{ iosCopied ? t('connected.ios.copied') : iosToken }}</span>
             </button>
-            <p class="connected__ios-hint">Token 只顯示一次，請立即複製</p>
+            <p class="connected__ios-hint">{{ t('connected.ios.token_hint') }}</p>
           </template>
           <button class="connected__skip-link" @click="iosStep = 'download'">
-            ← 返回下載捷徑
+            {{ t('connected.ios.back') }}
           </button>
         </template>
       </template>
 
       <!-- Android / other mobile -->
       <template v-else>
-        <p class="connected__desc">在 Android 上，可以透過複製網址後回到 Garner 貼入快速存入。</p>
+        <p class="connected__desc">{{ t('connected.android.desc') }}</p>
         <div class="connected__steps">
           <div class="connected__step">
             <span class="connected__step-num">1</span>
-            <span>在 Chrome 開啟想存入的頁面</span>
+            <span>{{ t('connected.android.step1') }}</span>
           </div>
           <div class="connected__step">
             <span class="connected__step-num">2</span>
-            <span>點上方網址列 → 長按複製</span>
+            <span>{{ t('connected.android.step2') }}</span>
           </div>
           <div class="connected__step">
             <span class="connected__step-num">3</span>
-            <span>回到 Garner 首頁貼入網址存入</span>
+            <span>{{ t('connected.android.step3') }}</span>
           </div>
         </div>
-        <NuxtLink to="/app" class="connected__back-btn btn btn--accent">回首頁存入</NuxtLink>
-        <p class="connected__android-hint">我們正在開發 Android 原生支援，敬請期待。</p>
+        <NuxtLink to="/app" class="connected__back-btn btn btn--accent">{{ t('connected.android.back_btn') }}</NuxtLink>
+        <p class="connected__android-hint">{{ t('connected.android.hint') }}</p>
       </template>
     </div>
   </main>
@@ -129,7 +129,8 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false })
-useHead({ title: 'Garner — 設置極速存入' })
+const { t } = useI18n()
+useHead({ title: t('connected.page_title') })
 
 const client = useSupabaseClient()
 const config = useRuntimeConfig()
