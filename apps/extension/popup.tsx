@@ -8,8 +8,10 @@ type Stage =
   | "idle"
   | "fetching_info"
   | "fetching_content"
+  | "understanding"
   | "analyzing"
   | "embedding"
+  | "validating"
   | "done"
   | "failed"
   | "auth_expired"
@@ -17,19 +19,23 @@ type Stage =
 const STAGE_LABEL: Record<string, string> = {
   fetching_info: "讀取頁面資訊…",
   fetching_content: "擷取內容…",
+  understanding: "解析內容…",
   analyzing: "AI 分析中…",
   embedding: "建立語意索引…",
+  validating: "驗證結果…",
 }
 
 const STAGE_PROGRESS: Record<string, number> = {
   fetching_info: 15,
-  fetching_content: 35,
-  analyzing: 60,
+  fetching_content: 30,
+  understanding: 50,
+  analyzing: 65,
   embedding: 85,
+  validating: 95,
   done: 100,
 }
 
-const PROGRESS_STAGES = new Set(["fetching_info", "fetching_content", "analyzing", "embedding"])
+const PROGRESS_STAGES = new Set(["fetching_info", "fetching_content", "understanding", "analyzing", "embedding", "validating"])
 
 function useTheme() {
   const [dark, setDark] = useState(() =>
