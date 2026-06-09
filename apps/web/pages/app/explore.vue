@@ -15,9 +15,10 @@
 
       <!-- Tag filter + 好手氣 -->
       <div class="filter-row synth-filter-row" style="margin-bottom:0; border-bottom:none; padding-bottom:8px;">
+        <!-- 桌機：橫向捲動 chip 條 -->
         <div
           ref="filterChipsRef"
-          class="filter-chips"
+          class="filter-chips synth-filter-chips--desktop"
           :class="{ 'filter-chips--dragging': isDragging }"
           @mousedown="onDragStart"
           @mousemove="onDragMove"
@@ -34,15 +35,51 @@
         </div>
         <button
           v-if="synthTagIds.length"
-          class="tag-filter-chip tag-filter-chip--clear"
+          class="tag-filter-chip tag-filter-chip--clear synth-filter-chips--desktop"
           @click="clearSynthTags"
         >{{ t('home.filter_clear') }}</button>
+
+        <!-- 手機：下拉選單 -->
+        <div ref="tagDropdownRef" class="tag-dropdown-wrap synth-filter-chips--mobile">
+          <button class="tag-dropdown-trigger" @click="tagDropdownOpen = !tagDropdownOpen">
+            <span>{{ synthTagIds.length ? `已選 ${synthTagIds.length} 個標籤` : '選擇標籤篩選' }}</span>
+            <span class="tag-dropdown-caret" :class="{ 'tag-dropdown-caret--open': tagDropdownOpen }">▾</span>
+          </button>
+          <div v-if="tagDropdownOpen" class="tag-dropdown-list">
+            <button
+              v-for="tag in tags"
+              :key="tag.id"
+              class="tag-dropdown-item"
+              :class="{ 'tag-dropdown-item--selected': synthTagIds.includes(tag.id) }"
+              @click="toggleSynthTag(tag.id)"
+            >
+              <span class="tag-dropdown-item__check">{{ synthTagIds.includes(tag.id) ? '✓' : '' }}</span>
+              <span>{{ tag.name }}</span>
+              <span class="tag-filter-chip__count">{{ tag.item_count }}</span>
+            </button>
+          </div>
+        </div>
+
         <button class="btn synth-lucky-btn" :disabled="synthCandLoading" @click="loadRandomItems">
           <span v-if="synthCandLoading" class="synth-pulse">
             <span></span><span></span><span></span>
           </span>
           <template v-else>◎ 好手氣</template>
         </button>
+      </div>
+
+      <!-- 手機：已選 tag chips -->
+      <div v-if="synthTagIds.length" class="synth-selected-tags synth-filter-chips--mobile">
+        <button
+          v-for="id in synthTagIds"
+          :key="id"
+          class="synth-selected-tag-chip"
+          @click="toggleSynthTag(id)"
+        >
+          {{ tags.find(t => t.id === id)?.name }}
+          <span class="synth-selected-tag-chip__x">×</span>
+        </button>
+        <button class="tag-filter-chip tag-filter-chip--clear" @click="clearSynthTags">清除全部</button>
       </div>
 
       <!-- Results row -->
@@ -211,6 +248,19 @@ const filterChipsRef = ref<HTMLElement | null>(null)
 const isDragging = ref(false)
 let dragStartX = 0
 let dragScrollLeft = 0
+
+// ── Mobile tag dropdown ───────────────────────────────────
+const tagDropdownOpen = ref(false)
+const tagDropdownRef = ref<HTMLElement | null>(null)
+
+function onDocClickForTagDropdown(e: MouseEvent) {
+  if (tagDropdownRef.value && !tagDropdownRef.value.contains(e.target as Node)) {
+    tagDropdownOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', onDocClickForTagDropdown, true))
+onUnmounted(() => document.removeEventListener('click', onDocClickForTagDropdown, true))
 
 function onDragStart(e: MouseEvent) {
   if (!filterChipsRef.value) return
@@ -395,8 +445,8 @@ function sourceLabel(type: string | null) {
 </script>
 
 <style>
-.ex-pane { width: 70vw; margin: 0 auto; padding: 28px 32px 80px; box-sizing: border-box; }
-@media (max-width: 980px) { .ex-pane { padding: 20px 16px 60px; } }
+.ex-pane { width: 70vw; margin: 0 auto; padding: 28px 32px; box-sizing: border-box; min-height: calc(100vh - 52px - 110.78px); }
+@media (max-width: 980px) { .ex-pane { padding: 20px 16px; width: 95vw; } }
 
 /* ── 知識合成 ── */
 .synth-section { max-width: 70vw; margin-bottom: 40px; }
@@ -461,5 +511,33 @@ function sourceLabel(type: string | null) {
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.5); opacity: 1; } }
 
 @media (max-width: 980px) { .chain-cand-grid { grid-template-columns: repeat(3, 1fr); } .synth-section { max-width: 100%; } }
-@media (max-width: 640px) { .chain-cand-grid { grid-template-columns: repeat(2, 1fr); } .synth-filter-row { flex-direction: column; align-items: flex-start; } .synth-lucky-btn { align-self: flex-end; } }
+/* ── Mobile tag dropdown ── */
+.synth-filter-chips--desktop { display: flex; }
+.synth-filter-chips--mobile { display: none; }
+
+.tag-dropdown-wrap { position: relative; flex: 1; min-width: 0; }
+.tag-dropdown-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 12px; height: 32px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px; cursor: pointer; font-size: 12.5px; color: var(--text-mid); gap: 8px; }
+.tag-dropdown-caret { font-size: 14px; transition: transform .15s; line-height: 1; }
+.tag-dropdown-caret--open { transform: rotate(180deg); }
+.tag-dropdown-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; max-height: 220px; overflow-y: auto; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.tag-dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; background: transparent; border: none; cursor: pointer; font-size: 13px; color: var(--text); text-align: left; transition: background .1s; }
+.tag-dropdown-item:hover { background: var(--surface2); }
+.tag-dropdown-item--selected { color: var(--accent); }
+.tag-dropdown-item__check { width: 14px; font-size: 11px; flex-shrink: 0; }
+.tag-dropdown-item .tag-filter-chip__count { margin-left: auto; }
+
+.synth-selected-tags { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 8px; }
+.synth-selected-tag-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 10px; background: color-mix(in oklab, var(--accent) 12%, var(--surface2)); border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent); border-radius: 20px; font-size: 12px; color: var(--text); cursor: pointer; transition: background .12s; }
+.synth-selected-tag-chip:hover { background: color-mix(in oklab, var(--tag-e) 12%, var(--surface2)); border-color: color-mix(in oklab, var(--tag-e) 30%, transparent); }
+.synth-selected-tag-chip__x { font-size: 14px; line-height: 1; color: var(--text-dim); }
+
+@media (max-width: 640px) {
+  .chain-cand-grid { grid-template-columns: repeat(2, 1fr); }
+  .synth-filter-row { flex-direction: row; align-items: center; gap: 8px; }
+  .synth-lucky-btn { flex-shrink: 0; }
+  .synth-filter-chips--desktop { display: none !important; }
+  .synth-filter-chips--mobile { display: flex; }
+  .tag-dropdown-wrap { display: block; }
+  .synth-selected-tags { display: flex; }
+}
 </style>

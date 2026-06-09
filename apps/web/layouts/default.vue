@@ -3,6 +3,7 @@
     <LayoutAppNav v-if="isLoggedIn" />
     <LayoutGuestNav v-else />
     <slot />
+    <LayoutAppFooter :show-pricing="!isLoggedIn" />
   </div>
 </template>
 

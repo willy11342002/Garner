@@ -124,7 +124,6 @@ onMounted(async () => {
     </template>
 
     <div class="shell__spacer"></div>
-    <LayoutAppFooter />
   </main>
 
   <ShareWizardModal

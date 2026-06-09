@@ -43,7 +43,6 @@
       </section>
     </article>
   </main>
-  <LayoutAppFooter />
 </template>
 
 <script setup lang="ts">

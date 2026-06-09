@@ -967,15 +967,6 @@
   }
 
   /* Results row */
-  .results-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-  .results-row__controls {
-    width: 100%;
-  }
 
   /* Card grid — 2 columns on small screens */
   .card-grid {

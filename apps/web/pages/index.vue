@@ -25,14 +25,8 @@
         <h3>{{ t('landing.feat_search_title') }}</h3>
         <p>{{ t('landing.feat_search_desc') }}</p>
       </div>
-      <div class="feat-card">
-        <span class="feat-card__icon">⑂</span>
-        <h3>{{ t('landing.feat_fork_title') }}</h3>
-        <p>{{ t('landing.feat_fork_desc') }}</p>
-      </div>
-    </section>
 
-    <LayoutAppFooter show-pricing />
+    </section>
   </main>
 </template>
 
@@ -79,7 +73,8 @@ watch(user, (u) => {
 
 .landing__features {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 240px));
+  justify-content: center;
   gap: 16px;
   text-align: left;
   margin-bottom: 48px;

@@ -392,7 +392,7 @@ async function newSession() {
 }
 
 async function openSession(id: string) {
-  if (activeSessionId.value === id) return
+  if (activeSessionId.value === id) { mobileView.value = 'chat'; return }
   try {
     const detail = await apiFetch<ChatSessionDetail>(`/chat/sessions/${id}`)
     activeSessionId.value = id
@@ -662,4 +662,9 @@ function resetInputHeight() {
 function sourceLabel(type: string | null) {
   return type ? (SOURCE_LABELS[type] ?? type) : 'Article'
 }
+
 </script>
+
+<style scoped>
+:deep(.app-footer) { display: none; }
+</style>
