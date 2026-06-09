@@ -243,7 +243,7 @@ async function confirmArchive() {
             <div v-else class="placeholder placeholder--b id-media__ph">
               <div class="placeholder__stripes"></div>
             </div>
-            <span class="source-badge id-media__badge">{{ sourceLabel(item.url) }}</span>
+            <a :href="item.url" target="_blank" rel="noopener" class="source-badge id-media__badge">{{ sourceLabel(item.url) }}</a>
           </div>
 
           <div class="id-body">
@@ -252,8 +252,7 @@ async function confirmArchive() {
 
             <div v-if="!readonly" class="id-body__tags">
               <template v-if="pendingTags.length">
-                <div class="id-body__tags-pending-label">AI 建議標籤</div>
-                <span
+<span
                   v-for="tag in pendingTags"
                   :key="tag.id"
                   class="tag-chip tag-chip--pending id-tag"
@@ -323,8 +322,7 @@ async function confirmArchive() {
               >
                 {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
               </button>
-              <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文</a>
-              <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
+<button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
                   <template v-if="(item as Item).status === 'archived'">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
@@ -362,8 +360,7 @@ async function confirmArchive() {
             <!-- Tags -->
             <div v-if="!readonly" class="id-body__tags">
               <template v-if="pendingTags.length">
-                <div class="id-body__tags-pending-label">AI 建議標籤</div>
-                <span
+<span
                   v-for="tag in pendingTags"
                   :key="tag.id"
                   class="tag-chip tag-chip--pending id-tag"
@@ -435,8 +432,7 @@ async function confirmArchive() {
               >
                 {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
               </button>
-              <a :href="item.url" target="_blank" rel="noopener" class="btn">開啟原文</a>
-              <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
+<button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
                   <template v-if="(item as Item).status === 'archived'">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
