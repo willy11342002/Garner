@@ -29,11 +29,15 @@
     ],
     "permissions": [
       "activeTab",
-      "storage"
+      "tabs",
+      "storage",
+      "sidePanel"
     ],
     "action": {
-      "default_title": "儲存到 Garner",
-      "default_popup": "popup.html"
+      "default_title": "儲存到 Garner"
+    },
+    "side_panel": {
+      "default_path": "sidepanel.html"
     }
   }
 }
