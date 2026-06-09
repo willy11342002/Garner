@@ -120,6 +120,7 @@
           placeholder="你想用這些知識做什麼？例如：寫一篇比較這些概念的文章、整理出我對這個主題的理解..."
           rows="3"
           :disabled="synthLoading"
+          @keydown="(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && synthPrompt.trim() && !synthLoading && !synthQuotaFull) { e.preventDefault(); doSynthesize() } }"
         />
         <div class="synth-prompt-actions">
           <span v-if="synthQuotaFull" class="synth-quota-warn">本月合成次數已用完</span>
