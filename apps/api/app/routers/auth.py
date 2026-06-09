@@ -1,8 +1,15 @@
-from fastapi import APIRouter, HTTPException
+import logging
 
+import httpx
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
+
+from app.core.config import settings
 from app.dependencies import CurrentUser, DbSession
 from app.crud import users as crud_users
 from app.schemas.user import UserRead, UserUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -28,6 +35,38 @@ def _pick_avatar(jwt_payload: dict) -> str | None:
         return user_metadata.get("avatar_url") or user_metadata.get("picture")
     else:
         return user_metadata.get("avatar_url") or user_metadata.get("picture")
+
+
+@router.get("/gumroad/callback")
+async def gumroad_oauth_callback(code: str):
+    """
+    一次性 OAuth callback — 用 code 換 access_token。
+    拿到 token 後貼到 .env GUMROAD_ACCESS_TOKEN 即可。
+    """
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.gumroad.com/oauth/token",
+            data={
+                "client_id": settings.gumroad_client_id,
+                "client_secret": settings.gumroad_client_secret,
+                "code": code,
+                "redirect_uri": settings.gumroad_redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        )
+
+    data = resp.json()
+    logger.info("Gumroad OAuth token response: %s", data)
+
+    if not data.get("access_token"):
+        raise HTTPException(status_code=400, detail=data)
+
+    return JSONResponse({
+        "access_token": data["access_token"],
+        "scope": data.get("scope"),
+        "token_type": data.get("token_type"),
+        "_raw": data,
+    })
 
 
 @router.get("/me", response_model=UserRead)

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import admin, articles, auth, chat, collections, explore, items, notifications, pat, quota, search, share, tags
+from app.routers import admin, articles, auth, billing, chat, collections, explore, items, notifications, pat, quota, search, share, tags
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +47,15 @@ async def lifespan(app: FastAPI):
                 logging.getLogger(__name__).error("daily maintenance failed: %s", e)
 
     task = asyncio.create_task(_daily_maintenance())
+
+    # 向 Gumroad 註冊 webhook（有設定 access token 才執行）
+    if settings.gumroad_access_token and settings.gumroad_webhook_url:
+        from app.services.gumroad_service import register_webhooks
+        try:
+            await register_webhooks(settings.gumroad_webhook_url)
+        except Exception as e:
+            logging.getLogger(__name__).warning("Gumroad webhook registration failed: %s", e)
+
     yield
     task.cancel()
 
@@ -74,6 +83,7 @@ app.include_router(share.router, prefix="/share", tags=["share"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(quota.router, prefix="/quota", tags=["quota"])
+app.include_router(billing.router, prefix="/billing", tags=["billing"])
 
 
 @app.exception_handler(Exception)

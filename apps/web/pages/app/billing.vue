@@ -2,9 +2,19 @@
 import type { UsageSummary } from '~/types/api'
 
 definePageMeta({ ssr: false })
-useHead({ title: 'Garner — 方案與帳單' })
+useHead({
+  title: 'Garner — 方案與帳單',
+  script: [{ src: 'https://gumroad.com/js/gumroad.js', defer: true }],
+})
 const { t } = useI18n()
 const apiFetch = useApiFetch()
+const supabaseUser = useSupabaseUser()
+
+const checkoutUrl = computed(() => {
+  const base = 'https://willy11342002.gumroad.com/l/garner?wanted=true'
+  const email = supabaseUser.value?.email
+  return email ? `${base}&email=${encodeURIComponent(email)}` : base
+})
 
 const quota = ref<UsageSummary | null>(null)
 const pending = ref(true)
@@ -25,25 +35,26 @@ const renewsOn = computed(() => {
   return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
 })
 
-const isRedirecting = ref(false)
-const portalError = ref(false)
+const cancelling = ref(false)
+const cancelError = ref(false)
+const cancelConfirm = ref(false)
 
-async function openBillingPortal() {
-  if (isRedirecting.value) return
-  isRedirecting.value = true
-  portalError.value = false
+async function cancelSubscription() {
+  if (cancelling.value) return
+  cancelling.value = true
+  cancelError.value = false
+  cancelConfirm.value = false
   try {
-    const { url } = await apiFetch<{ url: string }>('/billing/portal', { method: 'POST' })
-    window.location.href = url
+    await apiFetch('/billing/cancel', { method: 'POST' })
+    // 重新拉 quota，plan 會降回 free
+    quota.value = await apiFetch<UsageSummary>('/quota/me')
   } catch {
-    portalError.value = true
-    isRedirecting.value = false
+    cancelError.value = true
+  } finally {
+    cancelling.value = false
   }
 }
 
-async function handleUpgrade() {
-  // TODO: initiate Lemon Squeezy checkout
-}
 
 function pct(used: number, limit: number | null): number {
   if (limit === null || limit === 0) return 0
@@ -184,10 +195,25 @@ function pct(used: number, limit: number | null): number {
                 <!-- Manage billing -->
                 <h2 class="billing-section-title">{{ t('billing.manage_title') }}</h2>
                 <template v-if="isPro">
-                  <p v-if="portalError" class="billing-portal-error">{{ t('billing.portal_error') }}</p>
-                  <button class="btn-save" :disabled="isRedirecting" @click="openBillingPortal">
-                    {{ isRedirecting ? t('billing.managing') : t('billing.manage_btn') }}
-                  </button>
+                  <p class="billing-cancel-hint">{{ t('billing.cancel_hint') }}</p>
+                  <p v-if="cancelError" class="billing-portal-error">{{ t('billing.portal_error') }}</p>
+
+                  <template v-if="!cancelConfirm">
+                    <button class="btn-cancel" @click="cancelConfirm = true">
+                      {{ t('billing.cancel_btn') }}
+                    </button>
+                  </template>
+                  <template v-else>
+                    <p class="billing-cancel-confirm">{{ t('billing.cancel_confirm') }}</p>
+                    <div class="billing-cancel-actions">
+                      <button class="btn-cancel" :disabled="cancelling" @click="cancelSubscription">
+                        {{ cancelling ? t('billing.cancelling') : t('billing.cancel_confirm_yes') }}
+                      </button>
+                      <button class="btn-cancel-abort" :disabled="cancelling" @click="cancelConfirm = false">
+                        {{ t('billing.cancel_confirm_no') }}
+                      </button>
+                    </div>
+                  </template>
                 </template>
                 <template v-else>
                   <p class="billing-upgrade-hint">{{ t('billing.upgrade_hint') }}</p>
@@ -199,7 +225,7 @@ function pct(used: number, limit: number | null): number {
 
         <!-- Free: show upgrade plans -->
         <section v-if="!pending && !isPro" class="settings-section billing-plans-section">
-          <PricingPlans :current-plan="quota?.plan as 'free' | 'pro' | undefined" @upgrade="handleUpgrade" />
+          <PricingPlans :current-plan="quota?.plan as 'free' | 'pro' | undefined" :checkout-url="checkoutUrl" />
         </section>
 
       </div>
@@ -375,6 +401,61 @@ function pct(used: number, limit: number | null): number {
   font-size: 13px;
   color: var(--text-dim);
   margin: 0;
+}
+.billing-cancel-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+.btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--danger, #e55);
+  color: var(--danger, #e55);
+  transition: background 0.15s, opacity 0.15s;
+}
+.btn-cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #e55) 10%, transparent);
+}
+.btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.billing-cancel-confirm {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0 0 10px;
+}
+.billing-cancel-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn-cancel-abort {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  transition: background 0.15s;
+}
+.btn-cancel-abort:hover:not(:disabled) {
+  background: var(--surface2);
+}
+.btn-cancel-abort:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 

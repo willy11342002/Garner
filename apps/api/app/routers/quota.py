@@ -36,6 +36,7 @@ WITH effective_plan AS (
     JOIN plans p ON p.id = s.plan_id
     WHERE s.user_id = :user_id
       AND s.status IN ('active', 'trialing')
+      AND s.current_period_end > NOW()
     UNION ALL
     -- 無訂閱時 fallback 到 free plan
     SELECT p.id, p.name, NULL::timestamptz
@@ -45,6 +46,7 @@ WITH effective_plan AS (
           SELECT 1 FROM subscriptions s2
           WHERE s2.user_id = :user_id
             AND s2.status IN ('active', 'trialing')
+            AND s2.current_period_end > NOW()
       )
     LIMIT 1
 )

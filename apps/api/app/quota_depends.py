@@ -47,6 +47,7 @@ async def _get_plan(db: AsyncSession, user_id: UUID) -> tuple[UUID, str]:
         .where(
             Subscription.user_id == user_id,
             Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
+            Subscription.current_period_end > datetime.now(timezone.utc),
         )
     )
     row = result.one_or_none()
@@ -81,6 +82,7 @@ async def _get_plan_with_period(
         .where(
             Subscription.user_id == user_id,
             Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
+            Subscription.current_period_end > datetime.now(timezone.utc),
         )
     )
     row = result.one_or_none()

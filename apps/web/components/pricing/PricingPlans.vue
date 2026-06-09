@@ -1,10 +1,12 @@
 <script setup lang="ts">
 interface Props {
   currentPlan?: 'free' | 'pro'
+  checkoutUrl?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   currentPlan: undefined,
+  checkoutUrl: undefined,
 })
 
 const emit = defineEmits<{
@@ -58,7 +60,16 @@ const { t } = useI18n()
             <button class="btn btn--lg btn--disabled">{{ t('pricing.free.current_plan') }}</button>
           </template>
           <template v-else>
-            <button class="btn btn--accent btn--lg" @click="emit('upgrade')">{{ t('pricing.pro.upgrade') }}</button>
+            <a
+              v-if="checkoutUrl"
+              class="btn btn--accent btn--lg"
+              :href="checkoutUrl"
+            >{{ t('pricing.pro.upgrade') }}</a>
+            <button
+              v-else
+              class="btn btn--accent btn--lg"
+              @click="emit('upgrade')"
+            >{{ t('pricing.pro.upgrade') }}</button>
           </template>
         </div>
       </article>
