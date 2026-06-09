@@ -14,7 +14,7 @@
       </header>
 
       <!-- Tag filter + 好手氣 -->
-      <div class="filter-row synth-filter-row">
+      <div class="filter-row synth-filter-row" style="margin-bottom:0; border-bottom:none; padding-bottom:8px;">
         <div
           ref="filterChipsRef"
           class="filter-chips"
@@ -43,6 +43,34 @@
           </span>
           <template v-else>◎ 好手氣</template>
         </button>
+      </div>
+
+      <!-- Results row -->
+      <div class="results-row" style="margin-top:10px; margin-bottom:12px;">
+        <p class="results-row__summary">
+          {{ synthMode === 'lucky' ? `${synthCandidates.length} 筆隨機推薦` : `${candTotal} 筆結果` }}
+          <span v-if="synthMode !== 'lucky' && activeFilterSummary" class="results-row__filter-desc">· {{ activeFilterSummary }}</span>
+        </p>
+        <div class="results-row__controls">
+          <div class="filter-dropdown">
+            <span class="filter-dropdown__label">時間</span>
+            <span class="filter-dropdown__val">{{ timeLabelMap[exploreTimeFilter] }}</span>
+            <select v-model="exploreTimeFilter">
+              <option value="all">全部時間</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+              <option value="year">今年</option>
+            </select>
+          </div>
+          <div class="filter-dropdown">
+            <span class="filter-dropdown__label">排序</span>
+            <span class="filter-dropdown__val">{{ sortLabelMap[exploreSortOrder] }}</span>
+            <select v-model="exploreSortOrder">
+              <option value="saved_desc">最新加入</option>
+              <option value="saved_asc">最舊加入</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <!-- Candidate grid -->
@@ -87,7 +115,7 @@
       </div>
 
       <!-- Pagination (only for tag/all mode, not lucky) -->
-      <div v-if="synthMode === 'tag' && candTotalPages > 1" class="pagination" style="margin-top:16px;">
+      <div v-if="synthMode !== 'lucky' && candTotalPages > 1" class="pagination" style="margin-top:16px;">
         <button class="pagination__btn" :disabled="candPage === 1" @click="goCandPage(candPage - 1)">←</button>
         <span class="pagination__info mono">{{ candPage }} / {{ candTotalPages }}</span>
         <button class="pagination__btn" :disabled="candPage === candTotalPages" @click="goCandPage(candPage + 1)">→</button>
@@ -213,6 +241,30 @@ const candPage = ref(1)
 const candTotal = ref(0)
 const CAND_PAGE_SIZE = 20
 const candTotalPages = computed(() => Math.max(1, Math.ceil(candTotal.value / CAND_PAGE_SIZE)))
+
+const exploreTimeFilter = ref<'all' | '7d' | '30d' | 'year'>('all')
+const exploreSortOrder = ref<'saved_desc' | 'saved_asc'>('saved_desc')
+
+const timeLabelMap = { all: '全部時間', '7d': '近 7 天', '30d': '近 30 天', year: '今年' }
+const sortLabelMap = { saved_desc: '最新加入', saved_asc: '最舊加入' }
+
+function getExploreTimeParam(): string | undefined {
+  const now = new Date()
+  if (exploreTimeFilter.value === '7d') return new Date(now.getTime() - 7 * 86400000).toISOString()
+  if (exploreTimeFilter.value === '30d') return new Date(now.getTime() - 30 * 86400000).toISOString()
+  if (exploreTimeFilter.value === 'year') return new Date(now.getFullYear(), 0, 1).toISOString()
+  return undefined
+}
+
+const activeFilterSummary = computed(() => {
+  const parts: string[] = []
+  if (synthTagIds.value.length) {
+    const names = synthTagIds.value.map(id => tags.value.find(t => t.id === id)?.name).filter(Boolean)
+    if (names.length) parts.push(names.join(' + '))
+  }
+  if (exploreTimeFilter.value !== 'all') parts.push(timeLabelMap[exploreTimeFilter.value])
+  return parts.join(' · ')
+})
 const synthSelectedItems = ref<Item[]>([])
 const synthPrompt = ref('')
 const synthLoading = ref(false)
@@ -249,7 +301,7 @@ async function loadAllItems(page = 1) {
   synthCandLoading.value = true
   candPage.value = page
   try {
-    const res = await listItemsPage({ page, page_size: CAND_PAGE_SIZE })
+    const res = await listItemsPage({ page, page_size: CAND_PAGE_SIZE, saved_after: getExploreTimeParam(), sort: exploreSortOrder.value })
     synthCandidates.value = res.items
     candTotal.value = res.total
   } catch {
@@ -262,6 +314,7 @@ async function loadAllItems(page = 1) {
 
 function clearSynthTags() {
   synthTagIds.value = []
+  synthMode.value = 'idle'
   loadAllItems(1)
 }
 
@@ -287,7 +340,7 @@ async function loadTaggedItems(page = 1) {
   synthCandLoading.value = true
   candPage.value = page
   try {
-    const res = await listItemsPage({ tag_ids: synthTagIds.value, page, page_size: CAND_PAGE_SIZE })
+    const res = await listItemsPage({ tag_ids: synthTagIds.value, page, page_size: CAND_PAGE_SIZE, saved_after: getExploreTimeParam(), sort: exploreSortOrder.value })
     synthCandidates.value = res.items
     candTotal.value = res.total
   } catch {
@@ -299,6 +352,11 @@ async function loadTaggedItems(page = 1) {
 
 watch(synthTagIds, () => { if (synthMode.value === 'tag') loadTaggedItems(1) }, { deep: true })
 watch(synthMode, (val) => { if (val === 'tag') loadTaggedItems(1) })
+watch([exploreTimeFilter, exploreSortOrder], () => {
+  if (synthMode.value === 'lucky') return
+  if (synthTagIds.value.length) loadTaggedItems(1)
+  else loadAllItems(1)
+})
 
 async function doSynthesize() {
   if (!synthPrompt.value.trim() || !synthSelectedItems.value.length) return
