@@ -77,7 +77,6 @@ def make_user_read(**kwargs):
         email=TEST_USER_EMAIL,
         username="testuser",
         avatar_url="https://example.com/avatar.png",
-        allow_public_chain=True,
     )
     defaults.update(kwargs)
     return UserRead(**defaults)

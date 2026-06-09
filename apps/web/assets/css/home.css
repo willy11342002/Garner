@@ -448,6 +448,8 @@
   transition: color .12s ease;
 }
 .tag-filter-chip__remove:hover { color: var(--text); }
+.tag-filter-chip--clear { color: var(--text-dim); }
+.tag-filter-chip--clear:hover { color: var(--text); border-color: var(--border2); }
 
 /* Clear button */
 .filter-clear-btn {

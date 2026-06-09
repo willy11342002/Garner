@@ -151,12 +151,6 @@
       "system": "Use device theme",
       "language": "Interface language"
     },
-    "explore": {
-      "title": "Explore Settings",
-      "public_chain_label": "Draw from public collections",
-      "public_chain_desc": "When your library is sparse, supplement chain exploration with knowledge from public collections.",
-      "public_chain_badge": "Public knowledge"
-    },
     "danger": {
       "title": "Danger Zone",
       "delete_desc": "Permanently delete your account and all data. This action cannot be undone.",

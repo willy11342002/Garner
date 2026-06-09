@@ -23,19 +23,18 @@ async def test_get_me_creates_user_when_not_found(client):
 
 
 async def test_update_me(client):
-    mock_user = make_user_read(allow_public_chain=False)
+    mock_user = make_user_read()
     with (
         patch("app.crud.users.get_by_id", new=AsyncMock(return_value=mock_user)),
         patch("app.crud.users.update_user", new=AsyncMock(return_value=None)),
     ):
-        resp = await client.put("/auth/me", json={"allow_public_chain": False})
+        resp = await client.put("/auth/me", json={})
     assert resp.status_code == 200
-    assert resp.json()["allow_public_chain"] is False
 
 
 async def test_update_me_not_found(client):
     with patch("app.crud.users.get_by_id", new=AsyncMock(return_value=None)):
-        resp = await client.put("/auth/me", json={"allow_public_chain": True})
+        resp = await client.put("/auth/me", json={})
     assert resp.status_code == 404
 
 

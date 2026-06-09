@@ -319,91 +319,17 @@ def _to_chain_item(ui: "UserItem") -> ChainItem:
     )
 
 
-async def _get_public_chain_items(
-    db: AsyncSession,
-    embedding: list[float] | None,
-    limit: int,
-    user_id: UUID,
-    exclude_content_ids: list[UUID] | None = None,
-) -> list[ChainItem]:
-    """從所有 ContentObjects 做向量搜尋，排除該用戶 user_items 中已有的，視為公開知識。"""
-    from sqlalchemy import select
-    from app.models.content_object import ContentObject
-
-    owned_subq = select(UserItem.content_id).where(
-        UserItem.user_id == user_id,
-        UserItem.content_id.is_not(None),
-        UserItem.deleted_at.is_(None),
-    ).scalar_subquery()
-
-    filters = [
-        ContentObject.embedding.is_not(None),
-        ContentObject.id.not_in(owned_subq),
-    ]
-    if exclude_content_ids:
-        filters.append(ContentObject.id.not_in(exclude_content_ids))
-
-    if embedding is not None:
-        distance_col = ContentObject.embedding.cosine_distance(embedding).label("distance")
-        result = await db.execute(
-            select(ContentObject, distance_col)
-            .where(*filters, distance_col <= 0.45)
-            .order_by(distance_col)
-            .limit(limit)
-        )
-        contents = [row.ContentObject for row in result.all()]
-    else:
-        result = await db.execute(
-            select(ContentObject)
-            .where(*filters)
-            .order_by(ContentObject.parsed_at.desc())
-            .limit(limit)
-        )
-        contents = list(result.scalars().all())
-
-    return [
-        ChainItem(
-            id=co.id,
-            url=co.url,
-            title=co.title,
-            thumbnail_url=co.thumbnail_url,
-            source_type=co.source_type.value if co.source_type else None,
-            saved_at=co.parsed_at or dt.now(timezone.utc),
-            is_public=True,
-        )
-        for co in contents
-    ]
-
-
-async def _get_user_allow_public_chain(db: AsyncSession, user_id: UUID) -> bool:
-    from sqlalchemy import select
-    from app.models.user import User
-    result = await db.execute(select(User.allow_public_chain).where(User.id == user_id))
-    val = result.scalar_one_or_none()
-    return bool(val)
-
-
 async def get_chain_start_items(
     db: AsyncSession, user_id: UUID, start_type: str
 ) -> list[ChainItem]:
-    allow_public = await _get_user_allow_public_chain(db, user_id)
-    own_limit = 3 if allow_public else 5
-
     if start_type == "random":
-        items = await crud_items.get_random_with_embedding(db, user_id, limit=own_limit)
+        items = await crud_items.get_random_with_embedding(db, user_id, limit=5)
     elif start_type == "forgotten":
-        items = await crud_items.get_forgotten(db, user_id, limit=own_limit)
+        items = await crud_items.get_forgotten(db, user_id, limit=5)
     else:
-        items = await crud_items.get_recent_with_embedding(db, user_id, limit=own_limit)
+        items = await crud_items.get_recent_with_embedding(db, user_id, limit=5)
 
-    result = [_to_chain_item(ui) for ui in items]
-
-    if allow_public:
-        needed = 5 - len(result)
-        public_items = await _get_public_chain_items(db, None, needed, user_id)
-        result.extend(public_items)
-
-    return result
+    return [_to_chain_item(ui) for ui in items]
 
 
 async def _fetch_content_for_chain(
@@ -493,26 +419,14 @@ async def get_chain_candidates(
         embedding = co.embedding if co else None
         current_content_id = item_id
 
-    allow_public = await _get_user_allow_public_chain(db, user_id)
-    own_limit = 3 if allow_public else 5
-
     own_hits = await crud_items.get_random_with_embedding(
-        db, user_id, limit=own_limit + len(exclude_ids) + 1
+        db, user_id, limit=5 + len(exclude_ids) + 1
     )
     exclude_id_set = {item_id, *exclude_ids}
-    own_candidates = [
+    candidates = [
         _to_chain_item(ui) for ui in own_hits
         if ui.id not in exclude_id_set
-    ][:own_limit]
-
-    candidates = own_candidates
-
-    if allow_public:
-        needed = 5 - len(candidates)
-        chain_content_ids = await _resolve_content_ids(db, user_id, [item_id, *exclude_ids])
-        exclude_content_ids = list({cid for cid in chain_content_ids if cid is not None})
-        public_items = await _get_public_chain_items(db, None, needed, user_id, exclude_content_ids)
-        candidates.extend(public_items)
+    ][:5]
 
     return candidates
 

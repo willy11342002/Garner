@@ -30,12 +30,9 @@ async def update_user(
     db: AsyncSession,
     user: User,
     avatar_url: str | None = None,
-    allow_public_chain: bool | None = None,
 ) -> User:
     if avatar_url is not None:
         user.avatar_url = avatar_url
-    if allow_public_chain is not None:
-        user.allow_public_chain = allow_public_chain
     await db.flush()
     return user
 

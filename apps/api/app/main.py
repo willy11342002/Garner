@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -34,7 +35,20 @@ async def lifespan(app: FastAPI):
         await supabase.storage.create_bucket("avatars", options={"public": True})
     except Exception:
         pass  # bucket 已存在
+
+    async def _daily_maintenance():
+        from app.workers.maintenance import run_maintenance
+        while True:
+            await asyncio.sleep(86400)  # 24 小時
+            try:
+                await run_maintenance()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error("daily maintenance failed: %s", e)
+
+    task = asyncio.create_task(_daily_maintenance())
     yield
+    task.cancel()
 
 
 app = FastAPI(title="Garner API", version="0.1.0", lifespan=lifespan)

@@ -56,10 +56,7 @@ async def update_me(body: UserUpdate, current_user: CurrentUser, db: DbSession):
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    await crud_users.update_user(
-        db, user,
-        allow_public_chain=body.allow_public_chain,
-    )
+    await crud_users.update_user(db, user)
     await db.commit()
     await db.refresh(user)
     return user

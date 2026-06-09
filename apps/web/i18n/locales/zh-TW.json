@@ -151,12 +151,6 @@
       "system": "隨系統",
       "language": "介面語言"
     },
-    "explore": {
-      "title": "探索設定",
-      "public_chain_label": "從公開集合探索",
-      "public_chain_desc": "知識庫內容不足時，自動補入公開集合的知識點，讓連鎖探索更豐富。",
-      "public_chain_badge": "公開知識"
-    },
     "danger": {
       "title": "危險區域",
       "delete_desc": "永久刪除你的帳號與所有資料，此操作無法復原。",

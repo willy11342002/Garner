@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     storage_bucket: str = "thumbnails"
     sentry_dsn: str = ""
     allowed_origins: str = "http://localhost:3000"
-    admin_secret: str = ""
     apify_api_token: str = ""
 
 
