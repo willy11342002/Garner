@@ -7,6 +7,8 @@
       <span class="app-footer__sep">·</span>
       <NuxtLink to="/terms" class="app-footer__link">{{ t('landing.terms_link') }}</NuxtLink>
       <span class="app-footer__sep">·</span>
+      <NuxtLink to="/refund" class="app-footer__link">{{ t('refund.refund_link') }}</NuxtLink>
+      <span class="app-footer__sep">·</span>
       <a
         href="https://docs.google.com/forms/d/e/1FAIpQLSdYlIIXPUfQ5DyL-ptIxCwx4G99D4mx9CiwJ9OVQYcGXUDzqw/viewform"
         target="_blank"

@@ -69,6 +69,9 @@
           <li>{{ t('privacy.s7_li1') }}</li>
           <li>{{ t('privacy.s7_li2') }}</li>
           <li>{{ t('privacy.s7_li3') }}</li>
+          <li>{{ t('privacy.s7_li4') }}</li>
+          <li>{{ t('privacy.s7_li5') }}</li>
+          <li>{{ t('privacy.s7_li6') }}</li>
         </ul>
       </section>
 
@@ -84,13 +87,19 @@
 
       <section class="pp-section">
         <h2>{{ t('privacy.s10_title') }}</h2>
+        <p>{{ t('privacy.s10_body') }}</p>
+      </section>
+
+      <section class="pp-section">
+        <h2>{{ t('privacy.s11_title') }}</h2>
         <p>
-          {{ t('privacy.s10_body') }}
+          {{ t('privacy.s11_body') }}
           <a href="https://docs.google.com/forms/d/e/1FAIpQLSdYlIIXPUfQ5DyL-ptIxCwx4G99D4mx9CiwJ9OVQYcGXUDzqw/viewform" target="_blank" rel="noopener" class="pp-link">{{ t('privacy.contact_form') }}</a>
         </p>
       </section>
     </article>
   </main>
+  <LayoutAppFooter />
 </template>
 
 <script setup lang="ts">

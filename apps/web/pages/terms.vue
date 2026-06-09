@@ -28,6 +28,7 @@
           <li>{{ t('terms.s3_li3') }}</li>
           <li>{{ t('terms.s3_li4') }}</li>
         </ul>
+        <p>{{ t('terms.s3_footer') }}</p>
       </section>
 
       <section class="pp-section">
@@ -57,13 +58,38 @@
 
       <section class="pp-section">
         <h2>{{ t('terms.s9_title') }}</h2>
+        <p>{{ t('terms.s9_body') }}</p>
+      </section>
+
+      <section class="pp-section">
+        <h2>{{ t('terms.s10_title') }}</h2>
+        <p>{{ t('terms.s10_body') }}</p>
+      </section>
+
+      <section class="pp-section">
+        <h2>{{ t('terms.s11_title') }}</h2>
+        <p>{{ t('terms.s11_body') }}</p>
+      </section>
+
+      <section class="pp-section">
+        <h2>{{ t('terms.s12_title') }}</h2>
+        <p>{{ t('terms.s12_privacy') }}</p>
+        <p>{{ t('terms.s12_force') }}</p>
+        <p>{{ t('terms.s12_severability') }}</p>
+        <p>{{ t('terms.s12_waiver') }}</p>
+        <p>{{ t('terms.s12_entire') }}</p>
+      </section>
+
+      <section class="pp-section">
+        <h2>{{ t('terms.s13_title') }}</h2>
         <p>
-          {{ t('terms.s9_body') }}
+          {{ t('terms.s13_body') }}
           <a href="https://docs.google.com/forms/d/e/1FAIpQLSdYlIIXPUfQ5DyL-ptIxCwx4G99D4mx9CiwJ9OVQYcGXUDzqw/viewform" target="_blank" rel="noopener" class="pp-link">{{ t('terms.contact_form') }}</a>
         </p>
       </section>
     </article>
   </main>
+  <LayoutAppFooter />
 </template>
 
 <script setup lang="ts">
