@@ -3,7 +3,9 @@
     <!-- 左側：session 列表 -->
     <aside class="chat-list" :class="{ 'chat-list--hidden-mobile': mobileView === 'chat' }">
       <div class="chat-list__head">
-        <span class="chat-list__title">{{ t('chat.title') }}</span>
+        <span v-if="quota?.chat" class="chat-list__quota" :class="{ 'chat-list__quota--warn': chatQuotaFull }">
+          {{ chatQuotaRemaining }}<template v-if="quota.chat.limit !== null"> / {{ quota.chat.limit }}</template>
+        </span>
         <button class="chat-icon-btn" :title="t('chat.new')" @click="newSession">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 5v14M5 12h14"/></svg>
         </button>
@@ -342,6 +344,11 @@ const sessionsInFolder = (folderId: string) => sessions.value.filter(s => s.fold
 const chatQuotaFull = computed(() => {
   const q = quota.value?.chat
   return !!q && q.limit !== null && q.used >= q.limit
+})
+const chatQuotaRemaining = computed(() => {
+  const q = quota.value?.chat
+  if (!q || q.limit === null) return '∞'
+  return Math.max(0, q.limit - q.used)
 })
 
 // ── Init ──────────────────────────────────────────────────────────────────────

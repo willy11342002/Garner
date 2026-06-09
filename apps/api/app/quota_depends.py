@@ -224,11 +224,9 @@ async def check_chat_quota(current_user: CurrentUser, db: DbSession) -> None:
     user_id = UUID(current_user["sub"])
     plan_id, plan_name = await _get_plan(db, user_id)
     limit = await _get_limit(db, plan_id, "chat_daily")
-    if limit is None:
-        return
     period = _daily_key()
     used = await _get_usage(db, user_id, "chat_daily", period)
-    if used >= limit:
+    if limit is not None and used >= limit:
         raise _quota_exceeded("chat_daily", used, limit, plan_name)
     await _increment(db, user_id, "chat_daily", period)
     await db.commit()
@@ -239,11 +237,9 @@ async def check_explore_quota(current_user: CurrentUser, db: DbSession) -> None:
     user_id = UUID(current_user["sub"])
     plan_id, plan_name = await _get_plan(db, user_id)
     limit = await _get_limit(db, plan_id, "explore_monthly")
-    if limit is None:
-        return
     period = _monthly_key()
     used = await _get_usage(db, user_id, "explore_monthly", period)
-    if used >= limit:
+    if limit is not None and used >= limit:
         raise _quota_exceeded("explore_monthly", used, limit, plan_name)
     await _increment(db, user_id, "explore_monthly", period)
     await db.commit()
@@ -254,11 +250,9 @@ async def check_synthesis_quota(current_user: CurrentUser, db: DbSession) -> Non
     user_id = UUID(current_user["sub"])
     plan_id, plan_name = await _get_plan(db, user_id)
     limit = await _get_limit(db, plan_id, "synthesis_monthly")
-    if limit is None:
-        return
     period = _monthly_key()
     used = await _get_usage(db, user_id, "synthesis_monthly", period)
-    if used >= limit:
+    if limit is not None and used >= limit:
         raise _quota_exceeded("synthesis_monthly", used, limit, plan_name)
     await _increment(db, user_id, "synthesis_monthly", period)
     await db.commit()

@@ -6,8 +6,8 @@
       <header class="synth-section__head">
         <div class="synth-section__title-row">
           <span class="eyebrow">知識合成</span>
-          <span v-if="quota?.synthesis" class="synth-quota-badge" :class="{ 'synth-quota-badge--warn': synthQuotaFull }">
-            剩餘 {{ synthQuotaRemaining }} / {{ quota.synthesis.limit }} 次
+          <span v-if="quota?.chat" class="synth-quota-badge" :class="{ 'synth-quota-badge--warn': synthQuotaFull }">
+            剩餘 {{ synthQuotaRemaining }} / {{ quota.chat.limit }} 次
           </span>
         </div>
         <span class="synth-section__desc">選擇知識節點，輸入指令，讓 AI 幫你提煉洞察或撰寫文章</span>
@@ -186,12 +186,12 @@ const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article:
 const quota = ref<UsageSummary | null>(null)
 
 const synthQuotaRemaining = computed(() => {
-  const q = quota.value?.synthesis
+  const q = quota.value?.chat
   if (!q || q.limit === null) return '∞'
   return Math.max(0, q.limit - q.used)
 })
 const synthQuotaFull = computed(() => {
-  const q = quota.value?.synthesis
+  const q = quota.value?.chat
   return !!q && q.limit !== null && q.used >= q.limit
 })
 
