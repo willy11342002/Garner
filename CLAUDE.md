@@ -253,6 +253,7 @@ apps/extension/
 - Extension 功能邊界：偵測頁面 → 抓 og:image → 呼叫 FastAPI → Popup 顯示結果
 - Popup 只顯示存入狀態（成功 / 處理中 / 失敗），不做複雜 UI
 - API endpoint 從 `PLASMO_PUBLIC_API_BASE_URL` 讀取
+- **部署前必須先升版號**：Chrome Web Store 要求每次上傳的版本必須大於已發布版本，否則會報 `Invalid version number` 錯誤。每次發布前請先更新 `apps/extension/package.json` 的 `version` 欄位（遵循 semver，patch release 改第三位即可）。
 
 ---
 
