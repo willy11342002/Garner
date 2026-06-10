@@ -6,7 +6,7 @@ Quota dependencies — 以 FastAPI Depends 方式注入配額檢查。
 應在 item_service.create_item() 內查 plan → 取得 video_max_sec 傳給 background task。
 
 用法（router 端）：
-    from app.quota_depends import SaveQuota, ChatQuota, ExploreQuota, SearchAccess, ForkAccess
+    from app.quota_depends import SaveQuota, ChatQuota, SynthesisQuota, SearchAccess, ForkAccess
 
     @router.post("/")
     async def create_item(_quota: SaveQuota, ...): ...
@@ -234,19 +234,6 @@ async def check_chat_quota(current_user: CurrentUser, db: DbSession) -> None:
     await db.commit()
 
 
-async def check_explore_quota(current_user: CurrentUser, db: DbSession) -> None:
-    """Check + increment。Surprise / chain hop / chain full 各算一次。"""
-    user_id = UUID(current_user["sub"])
-    plan_id, plan_name = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan_id, "explore_monthly")
-    period = _monthly_key()
-    used = await _get_usage(db, user_id, "explore_monthly", period)
-    if limit is not None and used >= limit:
-        raise _quota_exceeded("explore_monthly", used, limit, plan_name)
-    await _increment(db, user_id, "explore_monthly", period)
-    await db.commit()
-
-
 async def check_synthesis_quota(current_user: CurrentUser, db: DbSession) -> None:
     """Check + increment。每次 POST /explore/synthesize 算一次。"""
     user_id = UUID(current_user["sub"])
@@ -291,7 +278,6 @@ async def get_video_max_sec(db: AsyncSession, user_id: UUID) -> int:
 SaveQuota = Annotated[None, Depends(check_save_quota)]
 ReanalyzeQuota = Annotated[None, Depends(check_reanalyze_quota)]
 ChatQuota = Annotated[None, Depends(check_chat_quota)]
-ExploreQuota = Annotated[None, Depends(check_explore_quota)]
 SynthesisQuota = Annotated[None, Depends(check_synthesis_quota)]
 SearchAccess = Annotated[None, Depends(check_search_access)]
 ForkAccess = Annotated[None, Depends(check_fork_access)]

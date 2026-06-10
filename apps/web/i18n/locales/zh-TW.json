@@ -361,7 +361,6 @@
     "usage_title": "本期用量",
     "usage_saves": "月存入",
     "usage_chat": "AI Chat",
-    "usage_explore": "AI Explore",
     "usage_unlimited": "無限制",
     "usage_count": "{used} / {limit} 次",
     "usage_count_saves": "{used} / {limit} 筆",
@@ -371,10 +370,8 @@
     "reset_monthly": "每月重置",
     "quota_full_saves": "本月存入額度已用完，明月 1 日重置。",
     "quota_full_chat": "今日 Chat 次數已用完，明天重置。",
-    "quota_full_explore": "本月 Explore 次數已用完，明月 1 日重置。",
     "features_title": "功能權限",
     "feature_search": "語意搜尋",
-    "feature_fork": "Fork 集合",
     "feature_video": "影片上限 {n} 分鐘",
     "feature_on": "開放",
     "feature_off": "未開放"

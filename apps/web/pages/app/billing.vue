@@ -142,30 +142,6 @@ function pct(used: number, limit: number | null): number {
                     </div>
                   </div>
 
-                  <!-- explore -->
-                  <div class="billing-usage-row">
-                    <div class="billing-usage-head">
-                      <span class="billing-usage-name">{{ t('billing.usage_explore') }}</span>
-                      <span class="billing-usage-reset">{{ t('billing.reset_monthly') }}</span>
-                    </div>
-                    <div class="billing-bar-wrap">
-                      <div class="billing-bar">
-                        <div
-                          v-if="quota.explore.limit !== null"
-                          class="billing-bar__fill"
-                          :class="{ 'billing-bar__fill--warn': pct(quota.explore.used, quota.explore.limit) >= 80 }"
-                          :style="{ width: `${pct(quota.explore.used, quota.explore.limit)}%` }"
-                        />
-                      </div>
-                      <span v-if="quota.explore.limit !== null" class="billing-usage-stat">
-                        {{ t('billing.usage_count', { used: quota.explore.used, limit: quota.explore.limit }) }}
-                        <span class="billing-usage-pct">· {{ pct(quota.explore.used, quota.explore.limit) }}%</span>
-                      </span>
-                      <span v-else class="billing-usage-stat billing-usage-stat--unlimited">
-                        {{ t('billing.usage_unlimited_label') }}
-                      </span>
-                    </div>
-                  </div>
                 </div>
 
                 <!-- Feature flags -->
@@ -178,14 +154,6 @@ function pct(used: number, limit: number | null): number {
                     {{ t('billing.feature_search') }}
                     <span class="billing-feature__sep" />
                     {{ quota.search_enabled ? t('billing.feature_on') : t('billing.feature_off') }}
-                  </span>
-                  <span
-                    class="billing-feature"
-                    :class="quota.fork_enabled ? 'billing-feature--on' : 'billing-feature--off'"
-                  >
-                    {{ t('billing.feature_fork') }}
-                    <span class="billing-feature__sep" />
-                    {{ quota.fork_enabled ? t('billing.feature_on') : t('billing.feature_off') }}
                   </span>
                   <span class="billing-feature billing-feature--on">
                     {{ t('billing.feature_video', { n: quota.video_max_minutes }) }}

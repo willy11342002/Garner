@@ -280,10 +280,8 @@ export interface UsageSummary {
   period_end: string | null
   saves: QuotaItem
   chat: QuotaItem
-  explore: QuotaItem
   synthesis: QuotaItem
   search_enabled: boolean
-  fork_enabled: boolean
   video_max_minutes: number
 }
 

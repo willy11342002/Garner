@@ -361,7 +361,6 @@
     "usage_title": "Usage this period",
     "usage_saves": "Monthly saves",
     "usage_chat": "AI Chat",
-    "usage_explore": "AI Explore",
     "usage_unlimited": "Unlimited",
     "usage_count": "{used} / {limit}",
     "usage_count_saves": "{used} / {limit} saves",
@@ -371,10 +370,8 @@
     "reset_monthly": "Resets monthly",
     "quota_full_saves": "Monthly save limit reached. Resets on the 1st.",
     "quota_full_chat": "Daily Chat limit reached. Resets tomorrow.",
-    "quota_full_explore": "Monthly Explore limit reached. Resets on the 1st.",
     "features_title": "Features",
     "feature_search": "Semantic search",
-    "feature_fork": "Fork collections",
     "feature_video": "Video up to {n} min",
     "feature_on": "Enabled",
     "feature_off": "Unavailable"
