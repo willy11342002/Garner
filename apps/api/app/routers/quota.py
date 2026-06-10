@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.dependencies import CurrentUser, DbSession
-from app.quota_depends import _daily_key, _monthly_key
+from app.quota_depends import _monthly_key
 
 router = APIRouter()
 
@@ -62,8 +62,8 @@ SELECT
     ) AS saves_used,
     -- usage（各走 unique index point lookup）
     COALESCE((SELECT ufu.count FROM user_feature_usage ufu
-              WHERE ufu.user_id = :user_id AND ufu.feature = 'chat_daily'
-                AND ufu.period_key = :daily_key), 0)    AS chat_used,
+              WHERE ufu.user_id = :user_id AND ufu.feature = 'chat_monthly'
+                AND ufu.period_key = :monthly_key), 0)  AS chat_used,
     COALESCE((SELECT ufu.count FROM user_feature_usage ufu
               WHERE ufu.user_id = :user_id AND ufu.feature = 'synthesis_monthly'
                 AND ufu.period_key = :monthly_key), 0)  AS synthesis_used,
@@ -71,7 +71,7 @@ SELECT
     (SELECT pfl.value FROM plan_feature_limits pfl
      WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'saves_monthly')      AS saves_limit,
     (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'chat_daily')         AS chat_limit,
+     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'chat_monthly')       AS chat_limit,
     (SELECT pfl.value FROM plan_feature_limits pfl
      WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'synthesis_monthly')  AS synthesis_limit,
     (SELECT pfl.value FROM plan_feature_limits pfl
@@ -95,7 +95,6 @@ async def get_my_quota(current_user: CurrentUser, db: DbSession):
         {
             "user_id": user_id,
             "month_start": month_start,
-            "daily_key": _daily_key(),
             "monthly_key": _monthly_key(),
         },
     )).mappings().one()

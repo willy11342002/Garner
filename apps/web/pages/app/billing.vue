@@ -121,7 +121,7 @@ function pct(used: number, limit: number | null): number {
                   <div class="billing-usage-row">
                     <div class="billing-usage-head">
                       <span class="billing-usage-name">{{ t('billing.usage_chat') }}</span>
-                      <span class="billing-usage-reset">{{ t('billing.reset_daily') }}</span>
+                      <span class="billing-usage-reset">{{ t('billing.reset_monthly') }}</span>
                     </div>
                     <div class="billing-bar-wrap">
                       <div class="billing-bar">

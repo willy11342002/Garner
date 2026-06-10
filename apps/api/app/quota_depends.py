@@ -225,12 +225,12 @@ async def check_chat_quota(current_user: CurrentUser, db: DbSession) -> None:
     """Check + increment。並發安全：在串流開始前就鎖定用量。"""
     user_id = UUID(current_user["sub"])
     plan_id, plan_name = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan_id, "chat_daily")
-    period = _daily_key()
-    used = await _get_usage(db, user_id, "chat_daily", period)
+    limit = await _get_limit(db, plan_id, "chat_monthly")
+    period = _monthly_key()
+    used = await _get_usage(db, user_id, "chat_monthly", period)
     if limit is not None and used >= limit:
-        raise _quota_exceeded("chat_daily", used, limit, plan_name)
-    await _increment(db, user_id, "chat_daily", period)
+        raise _quota_exceeded("chat_monthly", used, limit, plan_name)
+    await _increment(db, user_id, "chat_monthly", period)
     await db.commit()
 
 
