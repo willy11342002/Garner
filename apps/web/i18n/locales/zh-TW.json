@@ -73,6 +73,22 @@
     "toggleTheme": "切換主題",
     "toggleLanguage": "切換語言"
   },
+  "fab": {
+    "title": "AI 對話",
+    "open": "AI 對話",
+    "close": "關閉對話",
+    "empty": "加入知識節點，開始對話",
+    "quota_warn": "剩 {n} 次",
+    "quota_full": "次數已用完",
+    "chain_clear": "清除全部",
+    "placeholder": "輸入訊息...",
+    "placeholder_full": "本月對話次數已用完",
+    "error": "發生錯誤，請稍後再試。",
+    "nodes": "{n} 個知識節點",
+    "thinking": "思考中",
+    "searching": "搜尋中",
+    "found": "找到 {n} 筆"
+  },
   "chat": {
     "title": "AI Chat",
     "new": "新對話",

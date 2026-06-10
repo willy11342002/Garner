@@ -4,6 +4,9 @@
     <div class="hcp__head">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="15" height="15"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       <span class="hcp__title">{{ sessionTitle }}</span>
+      <span class="hcp__quota-badge" :class="{ 'hcp__quota-badge--empty': chatQuotaFull }">
+        {{ chatQuotaFull ? t('fab.quota_full') : t('fab.quota_warn', { n: chatQuotaRemaining }) }}
+      </span>
       <button class="hcp__close" @click="emit('close')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
@@ -13,7 +16,7 @@
     <div ref="messagesEl" class="hcp__messages">
       <div v-if="!messages.length" class="hcp__empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <p>加入知識節點，開始對話</p>
+        <p>{{ t('fab.empty') }}</p>
       </div>
 
       <template v-for="msg in messages" :key="msg.id">
@@ -23,7 +26,7 @@
             <div class="context-block">
               <button class="context-block__toggle" @click="toggleContext(msg.id)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                <span class="context-block__label">{{ userContextMap[msg.id].length }} 個知識節點</span>
+                <span class="context-block__label">{{ t('fab.nodes', { n: userContextMap[msg.id].length }) }}</span>
                 <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openContexts.has(msg.id) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <Transition name="thinking">
@@ -46,7 +49,7 @@
             <div class="process-block">
               <button class="process-block__toggle" @click="toggleThinking(msg.id)">
                 <span class="process-block__icon">💭</span>
-                <span class="process-block__label">思考中</span>
+                <span class="process-block__label">{{ t('fab.thinking') }}</span>
                 <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openThinking.has(msg.id) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <Transition name="thinking">
@@ -60,7 +63,7 @@
                     </div>
                     <div v-if="step.toolResult" class="process-body__tool-result">
                       <span class="process-body__step-icon">✓</span>
-                      <span>找到 {{ step.toolResult.count }} 筆</span>
+                      <span>{{ t('fab.found', { n: step.toolResult.count }) }}</span>
                     </div>
                   </div>
                 </div>
@@ -117,7 +120,7 @@
                 </div>
                 <div v-else class="process-body__tool-result process-body__tool-result--pending">
                   <span class="process-body__step-icon">⋯</span>
-                  <span>搜尋中</span>
+                  <span>{{ t('fab.searching') }}</span>
                 </div>
               </div>
             </div>
@@ -142,7 +145,7 @@
           <button class="hcp__node-remove" @click="chain.remove(item.id)">×</button>
         </div>
       </div>
-      <button class="hcp__chain-clear" @click="chain.clear()">清除全部</button>
+      <button class="hcp__chain-clear" @click="chain.clear()">{{ t('fab.chain_clear') }}</button>
     </div>
 
     <!-- Input -->
@@ -152,7 +155,7 @@
           ref="inputEl"
           v-model="inputText"
           class="chat-input"
-          :placeholder="chatQuotaFull ? '本月對話次數已用完' : '輸入訊息...'"
+          :placeholder="chatQuotaFull ? t('fab.placeholder_full') : t('fab.placeholder')"
           :disabled="chatQuotaFull"
           rows="1"
           @keydown.enter.exact.prevent="send"
@@ -171,6 +174,7 @@ import type { ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSumm
 
 const emit = defineEmits<{ close: [] }>()
 
+const { t } = useI18n()
 const apiFetch = useApiFetch()
 const config = useRuntimeConfig()
 const session = useSupabaseSession()
@@ -185,6 +189,17 @@ const chatQuotaFull = computed(() => {
   const q = quota.value?.chat
   return !!q && q.limit !== null && q.used >= q.limit
 })
+const chatQuotaRemaining = computed(() => {
+  const q = quota.value?.chat
+  if (!q || q.limit === null) return null
+  return Math.max(0, q.limit - q.used)
+})
+const quotaWarning = computed(() => {
+  const q = quota.value?.chat
+  if (!q || q.limit === null) return false
+  const remaining = q.limit - q.used
+  return remaining <= Math.ceil(q.limit * 0.2) // 剩餘 ≤ 20% 才顯示
+})
 onMounted(async () => {
   try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
 })
@@ -192,7 +207,7 @@ onMounted(async () => {
 // ── Session ────────────────────────────────────────────────
 const activeSessionId = ref<string | null>(null)
 const activeSession = ref<ChatSessionDetail | null>(null)
-const sessionTitle = computed(() => activeSession.value?.title || 'AI 對話')
+const sessionTitle = computed(() => activeSession.value?.title || t('fab.title'))
 
 async function ensureSession(): Promise<string> {
   if (activeSessionId.value) return activeSessionId.value
@@ -366,7 +381,7 @@ async function send() {
     messages.value.push({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: '發生錯誤，請稍後再試。',
+      content: t('fab.error'),
       cited_item_ids: null,
       created_at: new Date().toISOString(),
     })
@@ -426,6 +441,23 @@ function sourceLabel(type: string | null) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.hcp__quota-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--warn) 10%, transparent);
+  color: var(--warn);
+  border: 1px solid color-mix(in oklab, var(--warn) 28%, transparent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hcp__quota-badge--empty {
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 28%, transparent);
+}
+
 .hcp__close {
   width: 26px;
   height: 26px;

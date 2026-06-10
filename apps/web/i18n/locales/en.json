@@ -73,6 +73,22 @@
     "toggleTheme": "Toggle theme",
     "toggleLanguage": "Toggle language"
   },
+  "fab": {
+    "title": "AI Chat",
+    "open": "AI Chat",
+    "close": "Close chat",
+    "empty": "Add knowledge nodes to start chatting",
+    "quota_warn": "{n} left",
+    "quota_full": "Quota used up",
+    "chain_clear": "Clear all",
+    "placeholder": "Type a message...",
+    "placeholder_full": "Monthly quota used up",
+    "error": "An error occurred, please try again.",
+    "nodes": "{n} knowledge nodes",
+    "thinking": "Thinking",
+    "searching": "Searching",
+    "found": "Found {n}"
+  },
   "chat": {
     "title": "AI Chat",
     "new": "New chat",

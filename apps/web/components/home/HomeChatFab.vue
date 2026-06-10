@@ -10,7 +10,7 @@
   <button
     class="fab"
     :class="{ 'fab--open': open, 'fab--has-items': chainItems.length > 0 }"
-    :title="open ? '關閉對話' : 'AI 對話'"
+    :title="open ? t('fab.close') : t('fab.open')"
     @click="open = !open"
   >
     <Transition name="fab-icon" mode="out-in">
@@ -22,6 +22,7 @@
 </template>
 
 <script setup lang="ts">
+const { t } = useI18n()
 const { chainItems } = useChain()
 const open = ref(false)
 </script>
