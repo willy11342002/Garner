@@ -116,10 +116,19 @@ async def get_page(
     offset: int = 0,
     limit: int = 25,
 ) -> tuple[list[UserItem], int]:
+    # 排除有 pending（未確認）tag 的 items — 那些由 /items/pending-review 負責
+    pending_ids_subq = (
+        select(ItemTag.user_item_id)
+        .where(ItemTag.confirmed == False)  # noqa: E712
+        .distinct()
+        .scalar_subquery()
+    )
+
     base_filters = [
         UserItem.user_id == user_id,
         UserItem.deleted_at.is_(None),
         UserItem.status == UserItemStatus.active,
+        UserItem.id.not_in(pending_ids_subq),
     ]
     if saved_after:
         base_filters.append(UserItem.saved_at >= saved_after)

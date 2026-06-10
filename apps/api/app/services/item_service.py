@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
@@ -423,6 +423,34 @@ async def create_article_draft(
             await crud_tags.attach_tag(db, item_id, tag.id, source=TagSource.ai)
     except Exception:
         pass  # tag 生成失敗不影響文章建立
+
+    # ── 生成 embedding + chunks（讓文章可被語意搜尋與 Chat RAG 找到）──────────
+    content_id = result.item.content_id
+    if content_id:
+        try:
+            from app.crud import chunks as crud_chunks
+            from app.models.content_object import ContentObject as _ContentObject
+            now = datetime.now(timezone.utc)
+            embed_text = f"{title}\n\n{content_markdown}"
+            embedding = await ai_service.embed(embed_text)
+            chunk_texts = ai_service.chunk_text(content_markdown)
+            chunk_records = [
+                {"text": c, "embedding": await ai_service.embed(c)}
+                for c in chunk_texts
+            ]
+            await db.execute(
+                _sa.update(_ContentObject)
+                .where(_ContentObject.id == content_id)
+                .values(embedding=embedding, parsed_at=now)
+            )
+            await crud_chunks.replace_chunks(db, content_id, chunk_records)
+            await db.execute(
+                _sa.update(UserItemModel)
+                .where(UserItemModel.id == item_id)
+                .values(parsed_at=now)
+            )
+        except Exception:
+            pass  # embedding 失敗不影響文章建立
 
     await db.commit()
 

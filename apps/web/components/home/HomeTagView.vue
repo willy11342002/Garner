@@ -157,9 +157,11 @@ async function fetchItems(page = 1) {
   })
 }
 
-// Items to display on current page (excluding pending-review and still-processing)
+// Items to display on current page.
+// Pending-review items are excluded at the backend level (/items/ never returns them).
+// Still show note items even without parsed_at — they're created synchronously without AI processing.
 const displayItems = computed(() =>
-  itemStore.items.filter(i => !!i.parsed_at && !pendingItemIds.value.has(i.id))
+  itemStore.items.filter(i => !!i.parsed_at || i.source_type === 'note')
 )
 
 // Watchers: reset to page 1 on any filter change
@@ -342,7 +344,7 @@ onMounted(async () => {
           <div class="card__footer">
             <span class="mono">{{ relativeTime(item.saved_at) }}</span>
             <span
-              v-if="!item.parsed_at"
+              v-if="!item.parsed_at && item.source_type !== 'note'"
               class="processing-badge"
               @mouseenter="processingHover = item.id"
               @mouseleave="processingHover = null"
