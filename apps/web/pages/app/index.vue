@@ -21,15 +21,6 @@ const saveError = ref('')
 const route = useRoute()
 const currentView = computed(() => (route.query.view as string) || 'tags')
 
-// Share wizard modal
-const shareModalOpen = ref(false)
-const shareModalTagId = ref<string | undefined>(undefined)
-
-function openShareModal(tagId: string) {
-  shareModalTagId.value = tagId
-  shareModalOpen.value = true
-}
-
 async function refreshTags(itemId: string) {
   const tags = await getItemTags(itemId)
   const idx = itemStore.items.findIndex(i => i.id === itemId)
@@ -115,22 +106,13 @@ onMounted(async () => {
         <h1 class="page-header__title">{{ t('home.title') }}</h1>
         <HomeViewSwitcher :search-enabled="quota?.search_enabled ?? false" />
       </div>
-      <HomeTagView
-        v-if="currentView === 'tags'"
-        @open-share="openShareModal"
-      />
+      <HomeTagView v-if="currentView === 'tags'" />
       <HomeMapView v-else-if="currentView === 'map'" />
       <HomeSemanticSearchView v-else-if="currentView === 'semantic'" />
     </template>
 
     <div class="shell__spacer"></div>
   </main>
-
-  <ShareWizardModal
-    :open="shareModalOpen"
-    :preset-tag-id="shareModalTagId"
-    @close="shareModalOpen = false"
-  />
 
   <HomeChatFab />
 </template>

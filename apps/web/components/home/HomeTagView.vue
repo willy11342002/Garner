@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import type { Tag } from '~/types/api'
 
-const emit = defineEmits<{
-  'open-share': [tagId: string]
-}>()
-
 const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const { localize } = useI18nContent()
