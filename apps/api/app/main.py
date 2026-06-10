@@ -62,9 +62,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Garner API", version="0.1.0", lifespan=lifespan)
 
+_origins = [o.strip() for o in settings.allowed_origins.split(",")]
+_origin_regex = r"chrome-extension://.*"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins.split(","),
+    allow_origins=_origins,
+    allow_origin_regex=_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

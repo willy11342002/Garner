@@ -10,6 +10,7 @@ const itemStore = useItemStore()
 const { localize } = useI18nContent()
 const { open: openItemModal } = useItemModal()
 const { pendingItemIds } = usePendingItems()
+const { toggle: toggleChain, isInChain } = useChain()
 const { t } = useI18n()
 
 const processingHover = ref<string | null>(null)
@@ -329,6 +330,12 @@ onMounted(async () => {
             <div class="placeholder__stripes"></div>
           </div>
           <span class="source-badge">{{ sourceLabel(item.url) }}</span>
+          <button
+            class="card-chain-btn"
+            :class="{ 'card-chain-btn--active': isInChain(item.id) }"
+            :title="isInChain(item.id) ? '移出選取' : '加入 AI 對話'"
+            @click.prevent.stop="toggleChain(item)"
+          >{{ isInChain(item.id) ? '−' : '+' }}</button>
         </div>
         <div class="card__body">
           <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
@@ -379,3 +386,45 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.card-chain-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border2);
+  background: var(--surface);
+  color: var(--text-mid);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .15s, background .15s, border-color .15s, color .15s;
+  z-index: 2;
+}
+.card:hover .card-chain-btn {
+  opacity: 1;
+}
+.card-chain-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.card-chain-btn--active {
+  opacity: 1;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.card-chain-btn--active:hover {
+  background: color-mix(in oklab, var(--accent) 70%, var(--surface));
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+</style>

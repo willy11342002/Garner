@@ -131,4 +131,6 @@ onMounted(async () => {
     :preset-tag-id="shareModalTagId"
     @close="shareModalOpen = false"
   />
+
+  <HomeChatFab />
 </template>
