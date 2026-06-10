@@ -94,5 +94,6 @@ watch(user, (u) => {
   .landing { padding: 48px 20px 64px; }
   .landing__title { font-size: 36px; }
   .landing__sub { font-size: 14px; }
+  .landing__features { grid-template-columns: 1fr; }
 }
 </style>

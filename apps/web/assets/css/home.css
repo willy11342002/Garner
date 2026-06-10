@@ -941,10 +941,13 @@
     min-height: 0;
     margin: 12px 0 20px;
     border-radius: 14px;
+    overflow: visible;
   }
   .empty-state__art { min-height: 100px; }
-  .empty-state__body { padding: 24px 20px; gap: 12px; }
+  .empty-state__body { padding: 24px 20px; gap: 12px; overflow: visible; }
   .empty-state__title { font-size: 22px; }
+  .cta-input-row { flex-wrap: wrap; }
+  .cta-input-row .btn { flex: 1 0 100%; justify-content: center; }
 
   /* Page header */
   .page-header {
