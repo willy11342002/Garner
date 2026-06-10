@@ -157,9 +157,6 @@
         <span style="flex:1;"></span>
         <button style="color:var(--text-dim);font-size:14px;" @click="done = false">×</button>
       </div>
-      <div class="swm-toast__actions">
-        <NuxtLink :to="`/app/collection/${newCollectionId}`" class="btn btn--accent">前往查看 →</NuxtLink>
-      </div>
     </div>
   </Transition>
 </template>

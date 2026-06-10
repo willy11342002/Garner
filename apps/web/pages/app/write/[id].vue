@@ -10,7 +10,6 @@ const id = route.params.id as string
 const FROM_LABELS: Record<string, string> = {
   '/app/articles': '我的文章',
   '/app/chat': '對話',
-  '/app/collections': '我的集合',
   '/app/archive': '封存庫',
 }
 const backPath = computed(() => (route.query.from as string) || '/app')
