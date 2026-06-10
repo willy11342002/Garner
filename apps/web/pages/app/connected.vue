@@ -161,9 +161,22 @@ onMounted(async () => {
     return
   }
 
-  // 等待 content script 注入 DOM 屬性（最多 500ms）
-  await new Promise(resolve => setTimeout(resolve, 500))
-  extInstalled.value = document.documentElement.getAttribute('data-garner-ext') === 'true'
+  // PING / PONG 偵測 extension（timeout 1s fallback）
+  extInstalled.value = await new Promise<boolean>(resolve => {
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', handler)
+      resolve(false)
+    }, 1000)
+    function handler(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      if (e.data?.type !== 'GARNER_PONG') return
+      clearTimeout(timer)
+      window.removeEventListener('message', handler)
+      resolve(true)
+    }
+    window.addEventListener('message', handler)
+    window.postMessage({ type: 'GARNER_PING' }, window.location.origin)
+  })
 
   if (!extInstalled.value) return
 

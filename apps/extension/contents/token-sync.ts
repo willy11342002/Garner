@@ -8,12 +8,19 @@ export const config: PlasmoCSConfig = {
   run_at: "document_start",
 }
 
-// 讓 web app 能偵測 Extension 是否已安裝
+// 讓 web app 能偵測 Extension 是否已安裝（attribute 備用）
 document.documentElement.setAttribute("data-garner-ext", "true")
 
-// 接收 web app 推送的 PAT
+// 接收 web app 推送的訊息
 window.addEventListener("message", (e) => {
   if (e.origin !== window.location.origin) return
+
+  // PING / PONG 偵測機制
+  if (e.data?.type === "GARNER_PING") {
+    window.postMessage({ type: "GARNER_PONG" }, window.location.origin)
+    return
+  }
+
   if (e.data?.type !== "GARNER_TOKEN_UPDATE") return
 
   const { pat } = e.data
