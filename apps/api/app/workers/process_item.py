@@ -158,7 +158,7 @@ async def _save_fetch_info(
     """
     if info.title:
         if not content.title:
-            content.title = info.title       # ContentObject（CollectionItem 用）
+            content.title = info.title
         if not user_item.title:
             user_item.title = info.title     # UserItem snapshot
     if info.duration_sec is not None:

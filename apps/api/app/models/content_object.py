@@ -28,10 +28,7 @@ def detect_source_type(url: str) -> "SourceType":
 
 
 class ContentObject(Base):
-    """共享內容層：URL 去重、embedding、chunks、raw data。
-    title/thumbnail_url 保留供 CollectionItem 使用；
-    notes_md 已移至 UserItem（使用者私有）。
-    """
+    """共享內容層：URL 去重、embedding、chunks、raw data。"""
     __tablename__ = "content_objects"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -49,7 +46,6 @@ class ContentObject(Base):
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user_items: Mapped[list["UserItem"]] = relationship(back_populates="content")
-    collection_items: Mapped[list["CollectionItem"]] = relationship(back_populates="content")
     chunks: Mapped[list["ContentChunk"]] = relationship(
         back_populates="content", cascade="all, delete-orphan"
     )

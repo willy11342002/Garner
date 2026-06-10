@@ -21,4 +21,3 @@ class Tag(Base):
 
     user: Mapped["User"] = relationship(back_populates="tags")
     item_tags: Mapped[list["ItemTag"]] = relationship(back_populates="tag")
-    collections: Mapped[list["Collection"]] = relationship(back_populates="source_tag")

@@ -80,7 +80,6 @@ apps/api/
 │   ├── routers/             # 路由層：只做參數接收與回傳，不放業務邏輯
 │   │   ├── items.py
 │   │   ├── tags.py
-│   │   ├── collections.py
 │   │   ├── search.py
 │   │   └── auth.py
 │   ├── services/            # 業務邏輯層：所有核心運算放這裡
@@ -128,7 +127,7 @@ apps/api/
 - Class：`PascalCase`
 - 函式 / 變數：`snake_case`
 - Pydantic schema 命名：`ItemCreate`、`ItemRead`、`ItemUpdate`（動作後綴）
-- Router prefix：`/items`、`/tags`、`/collections`
+- Router prefix：`/items`、`/tags`
 
 ### Async 規則
 
@@ -154,11 +153,7 @@ apps/web/
 │   ├── index.vue        # 首頁（/）
 │   ├── app/             # 登入後的 SPA 區域（ssr: false）
 │   │   ├── index.vue
-│   │   ├── archive.vue
-│   │   └── collection/
-│   │       └── [id].vue
-│   └── share/           # 分享頁（ssr: true，SEO 需要）
-│       └── [slug].vue
+│   │   └── archive.vue
 ├── components/          # 可重用元件
 │   ├── base/            # 基礎 UI 元件（BaseButton、BaseCard 等）
 │   ├── item/            # Item 相關元件（ItemCard、ItemList 等）
@@ -192,8 +187,7 @@ apps/web/
 ```ts
 // nuxt.config.ts
 routeRules: {
-  '/share/**':   { ssr: true },
-  '/app/**':     { ssr: false },
+  '/app/**': { ssr: false },
 }
 ```
 
@@ -260,5 +254,4 @@ apps/extension/
 - BackgroundTasks 異步處理：MVP 階段不引入 Celery
 - Embedding 維度：1536（OpenAI text-embedding-3-small），不得更改，改了要 re-embed 全部資料
 - 軟刪除：`deleted_at` 欄位 + 排程硬刪除，禁止直接 hard delete
-- Fork 機制：只複製 URL + 摘要 + 標籤，不複製原始 content_objects
 - OpenRouter 401：捕捉並回傳 503（service unavailable），不要讓前端誤判為 auth 錯誤

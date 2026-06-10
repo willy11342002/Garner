@@ -3,8 +3,6 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.collection_item import CollectionItem
-from app.models.collection import Collection
 from app.models.item_tag import ItemTag
 from app.models.notification import Notification
 from app.models.subscription import Subscription
@@ -53,16 +51,9 @@ async def delete_user(db: AsyncSession, user: User) -> None:
     # 4. tags
     await db.execute(delete(Tag).where(Tag.user_id == uid))
 
-    # 5. collection_items（被 collections 參考，先刪）
-    collection_ids = select(Collection.id).where(Collection.user_id == uid)
-    await db.execute(delete(CollectionItem).where(CollectionItem.collection_id.in_(collection_ids)))
-
-    # 6. collections
-    await db.execute(delete(Collection).where(Collection.user_id == uid))
-
-    # 7. subscriptions
+    # 5. subscriptions
     await db.execute(delete(Subscription).where(Subscription.user_id == uid))
 
-    # 8. user（chat_folders / chat_sessions 有 ondelete=CASCADE，DB 自動處理）
+    # 6. user（chat_folders / chat_sessions 有 ondelete=CASCADE，DB 自動處理）
     await db.delete(user)
     await db.flush()

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import admin, articles, auth, billing, chat, collections, items, notifications, pat, quota, search, share, tags
+from app.routers import admin, articles, auth, billing, chat, items, notifications, pat, quota, search, tags
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -80,9 +80,7 @@ app.include_router(pat.router, prefix="/auth/pat", tags=["pat"])
 app.include_router(articles.router, prefix="/articles", tags=["articles"])
 app.include_router(items.router, prefix="/items", tags=["items"])
 app.include_router(tags.router, prefix="/tags", tags=["tags"])
-app.include_router(collections.router, prefix="/collections", tags=["collections"])
 app.include_router(search.router, prefix="/search", tags=["search"])
-app.include_router(share.router, prefix="/share", tags=["share"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(quota.router, prefix="/quota", tags=["quota"])

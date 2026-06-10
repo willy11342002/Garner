@@ -6,7 +6,7 @@ Quota dependencies — 以 FastAPI Depends 方式注入配額檢查。
 應在 item_service.create_item() 內查 plan → 取得 video_max_sec 傳給 background task。
 
 用法（router 端）：
-    from app.quota_depends import SaveQuota, ChatQuota, SearchAccess, ForkAccess
+    from app.quota_depends import SaveQuota, ChatQuota, SearchAccess
 
     @router.post("/")
     async def create_item(_quota: SaveQuota, ...): ...
@@ -243,14 +243,6 @@ async def check_search_access(current_user: CurrentUser, db: DbSession) -> None:
         raise _access_denied("search", plan_name)
 
 
-async def check_fork_access(current_user: CurrentUser, db: DbSession) -> None:
-    user_id = UUID(current_user["sub"])
-    plan_id, plan_name = await _get_plan(db, user_id)
-    limit = await _get_limit(db, plan_id, "fork")
-    if limit == 0:
-        raise _access_denied("fork", plan_name)
-
-
 async def get_video_max_sec(db: AsyncSession, user_id: UUID) -> int:
     """
     影片長度上限（秒）。供 item_service 查完 plan 後傳給 background task，
@@ -267,4 +259,3 @@ SaveQuota = Annotated[None, Depends(check_save_quota)]
 ReanalyzeQuota = Annotated[None, Depends(check_reanalyze_quota)]
 ChatQuota = Annotated[None, Depends(check_chat_quota)]
 SearchAccess = Annotated[None, Depends(check_search_access)]
-ForkAccess = Annotated[None, Depends(check_fork_access)]
