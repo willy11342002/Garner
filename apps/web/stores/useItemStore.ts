@@ -46,8 +46,18 @@ export const useItemStore = defineStore('item', () => {
     })
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      throw Object.assign(new Error(`HTTP ${response.status}`), { data: err, statusCode: response.status })
+      const body = await response.json().catch(() => ({}))
+      // Normalise error code: HTTPException → detail string; quota → detail.feature
+      const detail = body?.detail
+      const errorCode: string =
+        typeof detail === 'string' ? detail
+        : typeof detail?.feature === 'string' ? `quota_exceeded_${detail.feature}`
+        : `http_${response.status}`
+      throw Object.assign(new Error(`HTTP ${response.status}`), {
+        data: body,
+        statusCode: response.status,
+        errorCode,
+      })
     }
 
     const item = await response.json() as Item

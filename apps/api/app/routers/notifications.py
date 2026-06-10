@@ -13,10 +13,13 @@ router = APIRouter()
 @router.get("", response_model=list[NotificationRead])
 async def list_notifications(
     unread_only: bool = False,
+    limit: int = 20,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return await crud_notifications.list_for_user(db, UUID(current_user["sub"]), unread_only=unread_only)
+    return await crud_notifications.list_for_user(
+        db, UUID(current_user["sub"]), unread_only=unread_only, limit=min(limit, 100)
+    )
 
 
 @router.patch("/read")

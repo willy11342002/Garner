@@ -223,7 +223,7 @@
 <script setup lang="ts">
 import type { UsageSummary } from '~/types/api'
 
-const { t, locale, setLocale } = useI18n()
+const { t, te, locale, setLocale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { mode: themeMode, setMode } = useTheme()
@@ -335,6 +335,10 @@ function closeAdd() {
 async function submitAdd() {
   const url = addUrl.value.trim()
   if (!url || addSaving.value) return
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    addError.value = t('add.error_invalid_url')
+    return
+  }
   addSaving.value = true
   addError.value = ''
   try {
@@ -346,11 +350,9 @@ async function submitAdd() {
       navigateTo('/app')
     }
   } catch (err: any) {
-    if (err?.response?.status === 429) {
-      addError.value = t('add.error_quota_full')
-    } else {
-      addError.value = t('add.error')
-    }
+    const code = err?.errorCode as string | undefined
+    const i18nKey = code ? `add.error_${code}` : null
+    addError.value = (i18nKey && te(i18nKey)) ? t(i18nKey) : t('add.error')
   } finally {
     addSaving.value = false
   }

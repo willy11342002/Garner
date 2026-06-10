@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Generic, TypeVar
 from uuid import UUID
 
+from fastapi import HTTPException
 from pydantic import BaseModel, HttpUrl, model_validator
 
 T = TypeVar("T")
@@ -20,7 +21,7 @@ class ItemCreate(BaseModel):
         if self.url is not None:
             # external URLs must be http(s)
             if not self.url.startswith("http://") and not self.url.startswith("https://"):
-                raise ValueError("url must start with http:// or https://")
+                raise HTTPException(status_code=422, detail="invalid_url")
         return self
 
 
