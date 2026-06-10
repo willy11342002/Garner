@@ -10,34 +10,29 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Fallbacks keep the service alive even if the table is empty.
 _model_cache: dict[str, str] = {
     "llm": "anthropic/claude-3-5-haiku",
-    "vision": "anthropic/claude-3-haiku",  # must support multimodal input; claude-3-5-haiku does NOT support vision via Bedrock
     "video_llm": "google/gemini-2.5-flash",  # must support native video_url input
     "embedding": "openai/text-embedding-3-small",
 }
 
 
 async def load_model_configs() -> None:
-    """Load ai_model_configs from DB into the in-memory cache. Call once at startup."""
+    """Load model config from app_settings (keys prefixed with 'model.') into the in-memory cache."""
     from sqlalchemy import select
     from app.core.database import AsyncSessionLocal
-    from app.models.ai_model_config import AiModelConfig
+    from app.models.app_setting import AppSetting
 
     async with AsyncSessionLocal() as session:
-        rows = (await session.execute(select(AiModelConfig))).scalars().all()
+        rows = (await session.execute(
+            select(AppSetting).where(AppSetting.key.like("model.%"))
+        )).scalars().all()
         for row in rows:
-            _model_cache[row.key] = row.model_id
+            cache_key = row.key[len("model."):]
+            _model_cache[cache_key] = row.value
 
 
 def _llm() -> str:
     return _model_cache["llm"]
 
-
-def _vision_llm() -> str:
-    """Model used for image understanding. Must support multimodal input.
-    Note: claude-3-5-haiku does NOT support vision via Amazon Bedrock on OpenRouter.
-    Use claude-3-haiku or claude-3.5-sonnet instead.
-    """
-    return _model_cache.get("vision", "anthropic/claude-3-haiku")
 
 
 def _video_llm() -> str:
@@ -750,7 +745,7 @@ async def describe_images(images: list[bytes]) -> str:
             OPENROUTER_URL,
             headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
             json={
-                "model": _vision_llm(),
+                "model": _llm(),
                 "messages": [{"role": "user", "content": content}],
             },
             timeout=120,
@@ -758,7 +753,7 @@ async def describe_images(images: list[bytes]) -> str:
         if resp.status_code == 401:
             raise RuntimeError("OpenRouter service unavailable")
         if resp.status_code == 400:
-            _log.error("OpenRouter 400 for describe_images (model=%s): %s", _vision_llm(), resp.text)
+            _log.error("OpenRouter 400 for describe_images (model=%s): %s", _llm(), resp.text)
         resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"].strip()
 
