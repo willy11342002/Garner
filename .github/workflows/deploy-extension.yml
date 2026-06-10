@@ -41,7 +41,49 @@ jobs:
           echo "path=$ZIP" >> $GITHUB_OUTPUT
 
       - name: Submit to Chrome Web Store
-        uses: PlasmoHQ/bpp@v3
-        with:
-          keys: ${{ secrets.BPP_KEYS }}
-          artifact: ${{ steps.artifact.outputs.path }}
+        env:
+          BPP_KEYS: ${{ secrets.BPP_KEYS }}
+          ZIP_PATH: ${{ steps.artifact.outputs.path }}
+        run: |
+          CWS_CLIENT_ID=$(echo "$BPP_KEYS" | jq -r '.chrome.clientId')
+          CWS_CLIENT_SECRET=$(echo "$BPP_KEYS" | jq -r '.chrome.clientSecret')
+          CWS_REFRESH_TOKEN=$(echo "$BPP_KEYS" | jq -r '.chrome.refreshToken')
+          CWS_EXTENSION_ID=$(echo "$BPP_KEYS" | jq -r '.chrome.extId')
+
+          echo "🔑 Fetching access token..."
+          TOKEN_RESP=$(curl -s -X POST https://oauth2.googleapis.com/token \
+            -d "client_id=$CWS_CLIENT_ID&client_secret=$CWS_CLIENT_SECRET&refresh_token=$CWS_REFRESH_TOKEN&grant_type=refresh_token")
+          echo "Token response: $TOKEN_RESP"
+          ACCESS_TOKEN=$(echo "$TOKEN_RESP" | jq -r '.access_token')
+
+          echo "📦 Uploading zip..."
+          UPLOAD_RESP=$(curl -s \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "x-goog-api-version: 2" \
+            -X PUT \
+            -T "$ZIP_PATH" \
+            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CWS_EXTENSION_ID")
+          echo "Upload response: $UPLOAD_RESP"
+
+          UPLOAD_STATE=$(echo "$UPLOAD_RESP" | jq -r '.uploadState // "UNKNOWN"')
+          if [ "$UPLOAD_STATE" != "SUCCESS" ]; then
+            echo "❌ Upload failed with state: $UPLOAD_STATE"
+            exit 1
+          fi
+
+          echo "🚀 Publishing..."
+          PUBLISH_RESP=$(curl -s \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Length: 0" \
+            -X POST \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_EXTENSION_ID/publish")
+          echo "Publish response: $PUBLISH_RESP"
+
+          STATUS=$(echo "$PUBLISH_RESP" | jq -r '.status[0] // "UNKNOWN"')
+          if [ "$STATUS" != "OK" ]; then
+            echo "❌ Publish failed with status: $STATUS"
+            exit 1
+          fi
+
+          echo "✅ Published successfully!"
