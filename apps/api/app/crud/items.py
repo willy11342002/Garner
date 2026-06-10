@@ -218,9 +218,6 @@ async def count_weekly_new(db: AsyncSession, user_id: UUID) -> int:
 _NON_DELETED = (UserItem.deleted_at.is_(None),)
 
 
-DISTANCE_CUTOFF = 0.25
-
-
 async def semantic_search(
     db: AsyncSession,
     user_id: UUID,
@@ -230,7 +227,7 @@ async def semantic_search(
     saved_after: datetime | None = None,
     exclude_ids: list[UUID] | None = None,
     exclude_content_ids: list[UUID] | None = None,
-    cutoff: float = DISTANCE_CUTOFF,
+    cutoff: float = 0.45,
 ) -> list[tuple[UserItem, float]]:
     """向量搜尋，回傳 (UserItem, cosine_distance) 清單。可由多個 service 複用。"""
     filters = [

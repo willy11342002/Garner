@@ -2,8 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.crud import collections as crud_collections
 from app.dependencies import DbSession
-from app.schemas.collection import CollectionShareItemRead, CollectionShareRead
-from app.schemas.explore import PublicCollectionRead
+from app.schemas.collection import CollectionShareItemRead, CollectionShareRead, PublicCollectionRead
 
 router = APIRouter()
 

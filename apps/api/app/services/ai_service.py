@@ -375,36 +375,32 @@ _PLAN_SYSTEM = """\
 
 可用工具：
 
-1. semantic_search
-   語意向量搜尋，適合概念性／主題性問題。
-   參數：{{"name": "semantic_search", "query": "搜尋字串"}}
-
-2. structured_filter
-   結構化篩選，所有參數皆選填，可自由組合：
+1. search
+   搜尋知識庫，所有參數皆選填，可自由組合：
+   - query（str）：語意搜尋關鍵字（2-6 字），用於概念性／主題性問題
    - tags（list[str]）：按標籤篩選，OR 邏輯，符合任一標籤即回傳
    - source_type（str）：按來源類型，值為 "youtube" / "article" / "ig"
    - start_date（str）：儲存日期下限，格式 YYYY-MM-DD
    - end_date（str）：儲存日期上限，格式 YYYY-MM-DD
-   參數：{{"name": "structured_filter", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "..."}}
+   參數：{{"name": "search", "query": "...", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "..."}}
 
-3. create_article
+2. create_article
    根據對話脈絡或知識庫內容，建立一篇 AI 草稿文章、規劃、指南或清單。
    觸發時機：用戶明確要求「產出內容」，包含但不限於：
    「寫文章」「整理成文章」「幫我寫一篇」「生成...規劃/計畫/攻略/指南/清單/總結/摘要」
    「幫我規劃」「做一份」「產生草稿」「整理一下」「寫一個行程」等。
    關鍵判斷：用戶想要 AI **產出一份結構化內容**，而不只是回答問題。
-   可以和 semantic_search / structured_filter 搭配（先查知識庫，再撰寫文章）。
+   可以和 search 搭配（先查知識庫，再撰寫文章）。
    title：文章標題（繁體中文，簡潔有力）
    content：完整內容，使用 markdown 格式（標題用 ##/###、列表用 -、重點用 **粗體**）
    summary：50 字以內的內容摘要
    參數：{{"name": "create_article", "title": "文章標題", "content": "完整 markdown 內容", "summary": "摘要"}}
 
 規則：
-- semantic_search 與 structured_filter 可同時呼叫，結果自動合併去重
-- structured_filter 省略的參數代表不篩選該維度
+- search 省略的參數代表不限制該維度；至少要有一個參數
 - create_article 僅在用戶有明確產出需求時才呼叫，不要主動建立
-- 若同時查詢知識庫又要產出內容，三個工具可以一起呼叫
-- semantic_search 的 query 要精煉成 2-6 字的主題關鍵字，不要直接複製用戶的問句
+- 若同時查詢知識庫又要產出內容，兩個工具可以一起呼叫
+- query 要精煉成 2-6 字的主題關鍵字，不要直接複製用戶的問句
 - 若用戶問的是對話歷史、上一句話、閒聊、打招呼、或可直接從脈絡回答的問題，tools 回傳空陣列 []，不需要呼叫任何工具
 - 只輸出 JSON，不要 markdown fences
 

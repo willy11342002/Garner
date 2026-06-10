@@ -155,7 +155,6 @@ apps/web/
 │   ├── app/             # 登入後的 SPA 區域（ssr: false）
 │   │   ├── index.vue
 │   │   ├── archive.vue
-│   │   ├── explore.vue
 │   │   └── collection/
 │   │       └── [id].vue
 │   └── share/           # 分享頁（ssr: true，SEO 需要）
@@ -193,7 +192,6 @@ apps/web/
 ```ts
 // nuxt.config.ts
 routeRules: {
-  '/explore/**': { ssr: true },
   '/share/**':   { ssr: true },
   '/app/**':     { ssr: false },
 }

@@ -23,15 +23,12 @@ async def replace_chunks(
     await db.flush()
 
 
-DISTANCE_CUTOFF = 0.25
-
-
 async def semantic_search(
     db: AsyncSession,
     user_id: UUID,
     embedding: list[float],
     limit: int = 6,
-    cutoff: float = DISTANCE_CUTOFF,
+    cutoff: float = 0.45,
 ) -> list[tuple[ContentChunk, float]]:
     """在 content_chunks 做向量搜尋，回傳 (ContentChunk, distance)。
     只搜尋屬於該 user 未刪除 items 的 chunks。

@@ -20,8 +20,57 @@ from app.models.chat import MessageRole
 from app.models.user_item import UserItem
 from app.schemas.chat import ChatSource
 from app.services import ai_service
-from app.services.explore_service import rag_retrieve
 from app.services.item_service import create_article_draft
+
+
+async def _get_search_cutoff(db: AsyncSession) -> float:
+    from sqlalchemy import select
+    from app.models.app_setting import AppSetting
+    result = await db.execute(
+        select(AppSetting.value).where(AppSetting.key == "chain_distance_cutoff")
+    )
+    val = result.scalar_one_or_none()
+    try:
+        return float(val) if val is not None else 0.45
+    except (TypeError, ValueError):
+        return 0.45
+
+
+async def rag_retrieve(
+    db: AsyncSession,
+    user_id: UUID,
+    query: str,
+    limit: int = 8,
+) -> list[tuple[UserItem, float]]:
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import select
+
+    cutoff = await _get_search_cutoff(db)
+    embedding = await ai_service.embed(query)
+    chunk_hits = await crud_chunks.semantic_search(db, user_id, embedding, limit=limit * 2, cutoff=cutoff)
+
+    if chunk_hits:
+        seen: dict[UUID, tuple[UserItem, float]] = {}
+        for chunk, dist in chunk_hits:
+            result = await db.execute(
+                select(UserItem)
+                .options(joinedload(UserItem.content))
+                .join(UserItem.content)
+                .where(
+                    UserItem.content_id == chunk.content_id,
+                    UserItem.user_id == user_id,
+                    UserItem.deleted_at.is_(None),
+                )
+                .limit(1)
+            )
+            ui = result.scalar_one_or_none()
+            if ui and ui.id not in seen:
+                seen[ui.id] = (ui, dist)
+            if len(seen) >= limit:
+                break
+        return list(seen.values())
+
+    return await crud_items.semantic_search(db, user_id, embedding, limit=limit, cutoff=cutoff)
 
 
 # ---------------------------------------------------------------------------
@@ -41,41 +90,44 @@ def _parse_date(s: str | None) -> datetime | None:
 ItemWithDist = tuple[UserItem, float | None]
 
 
-async def _exec_semantic_search(
+async def _exec_search(
     db: AsyncSession, user_id: UUID, tool: dict
 ) -> list[ItemWithDist]:
-    query = tool.get("query", "")
-    if not query:
-        return []
-    hits = await rag_retrieve(db, user_id, query, limit=6)
-    return hits  # already list[tuple[UserItem, float]]
-
-
-async def _exec_structured_filter(
-    db: AsyncSession, user_id: UUID, tool: dict
-) -> list[ItemWithDist]:
+    query = (tool.get("query") or "").strip()
     tags = tool.get("tags") or None
     source_type = tool.get("source_type") or None
     saved_after = _parse_date(tool.get("start_date"))
     saved_before = _parse_date(tool.get("end_date"))
+    has_filters = any([tags, source_type, saved_after, saved_before])
 
-    if not any([tags, source_type, saved_after, saved_before]):
-        return []
+    seen_ids: set[UUID] = set()
+    results: list[ItemWithDist] = []
 
-    items = await crud_items.structured_filter(
-        db, user_id,
-        tags=tags,
-        source_type=source_type,
-        saved_after=saved_after,
-        saved_before=saved_before,
-        limit=8,
-    )
-    return [(ui, None) for ui in items]
+    if query:
+        for ui, dist in await rag_retrieve(db, user_id, query, limit=6):
+            if ui.id not in seen_ids:
+                seen_ids.add(ui.id)
+                results.append((ui, dist))
+
+    if has_filters:
+        items = await crud_items.structured_filter(
+            db, user_id,
+            tags=tags,
+            source_type=source_type,
+            saved_after=saved_after,
+            saved_before=saved_before,
+            limit=8,
+        )
+        for ui in items:
+            if ui.id not in seen_ids:
+                seen_ids.add(ui.id)
+                results.append((ui, None))
+
+    return results
 
 
 _TOOL_HANDLERS = {
-    "semantic_search": _exec_semantic_search,
-    "structured_filter": _exec_structured_filter,
+    "search": _exec_search,
 }
 
 
@@ -127,7 +179,7 @@ async def stream_reply(
         tools = plan.get("tools") or []
     except Exception:
         reasoning = "分析問題中..."
-        tools = [{"name": "semantic_search", "query": user_content}]
+        tools = [{"name": "search", "query": user_content}]
 
     yield _sse("thinking", {"text": reasoning})
 
@@ -209,8 +261,9 @@ async def stream_reply(
 
     # ── Step 3：Streaming 回覆 ────────────────────────────────────────────────
     # 用 chunk 原文取代 summary，讓 AI 能回答細節問題
+    cutoff = await _get_search_cutoff(db)
     query_embedding = await ai_service.embed(user_content)
-    chunk_hits = await crud_chunks.semantic_search(db, user_id, query_embedding, limit=12)
+    chunk_hits = await crud_chunks.semantic_search(db, user_id, query_embedding, limit=12, cutoff=cutoff)
 
     # 建立 content_id → title 的 mapping
     content_titles = {ui.content.id: ui.title for ui, _ in all_items}

@@ -89,12 +89,6 @@ export interface CollectionUpdate {
   visibility?: CollectionVisibility
 }
 
-export interface ExploreStats {
-  total_items: number
-  public_collections: number
-  weekly_new: number
-}
-
 export interface CollectionRead {
   id: string
   title: string
