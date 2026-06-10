@@ -178,9 +178,7 @@ onMounted(async () => {
     window.postMessage({ type: 'GARNER_PING' }, window.location.origin)
   })
 
-  if (!extInstalled.value) return
-
-  // Extension 已安裝 → 自動授權
+  // 不管有沒有擴充都靜默建立 PAT
   try {
     const { data: { session } } = await client.auth.getSession()
     if (!session) { status.value = 'error'; return }
@@ -198,8 +196,10 @@ onMounted(async () => {
     if (!resp.ok) { status.value = 'error'; return }
 
     const { token } = await resp.json()
-    window.postMessage({ type: 'GARNER_TOKEN_UPDATE', pat: token }, window.location.origin)
-    status.value = 'done'
+    if (extInstalled.value) {
+      window.postMessage({ type: 'GARNER_TOKEN_UPDATE', pat: token }, window.location.origin)
+      status.value = 'done'
+    }
   } catch {
     status.value = 'error'
   }
