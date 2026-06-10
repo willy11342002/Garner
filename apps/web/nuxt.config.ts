@@ -33,7 +33,6 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n'],
 
   routeRules: {
-    '/explore/**': { ssr: true },
     '/share/**': { ssr: true },
     '/app/**': { ssr: false },
   },

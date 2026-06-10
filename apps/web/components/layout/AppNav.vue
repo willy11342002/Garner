@@ -4,11 +4,6 @@
       <NuxtLink to="/app" class="nav__logo">Garner</NuxtLink>
       <div class="nav__tabs">
         <NuxtLink
-          to="/app/explore"
-          class="nav__tab"
-          :class="{ 'nav__tab--active': route.path.startsWith('/app/explore') }"
-        >{{ t('nav.explore') }}</NuxtLink>
-        <NuxtLink
           to="/app/chat"
           class="nav__tab"
           :class="{ 'nav__tab--active': route.path.startsWith('/app/chat') }"

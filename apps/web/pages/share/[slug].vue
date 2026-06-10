@@ -239,7 +239,6 @@
       <header class="rec-head">
         <span class="eyebrow">{{ t('share.you_may_like') }}</span>
         <span class="line"></span>
-        <NuxtLink to="/app/explore" class="mono" style="font-size:11px; color:var(--text-mid);">{{ t('share.see_all') }}</NuxtLink>
       </header>
       <div class="rec-scroll">
         <NuxtLink v-for="(rec, ri) in recs" :key="rec.slug" class="rec-card" :to="`/share/${rec.slug}`">
@@ -265,7 +264,6 @@
 
   <div v-else-if="error" class="empty-state" style="padding:80px 32px;text-align:center;">
     <p style="color:var(--text-mid);">{{ t('share.not_found') }}</p>
-    <NuxtLink to="/app/explore" class="btn" style="margin-top:16px;">{{ t('share.explore_btn') }}</NuxtLink>
   </div>
 
   <Transition name="toast">
