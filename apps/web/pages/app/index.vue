@@ -6,7 +6,7 @@ const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const { getItemTags, getPendingReview } = useItems()
 const { pendingItems } = usePendingItems()
-const { activeItemId } = useItemModal()
+const { activeItemId, open: openModal } = useItemModal()
 const { t } = useI18n()
 
 
@@ -19,6 +19,7 @@ const saving = ref(false)
 const saveError = ref('')
 
 const route = useRoute()
+const router = useRouter()
 const currentView = computed(() => (route.query.view as string) || 'tags')
 
 async function refreshTags(itemId: string) {
@@ -51,6 +52,10 @@ watch(activeItemId, async (newId, oldId) => {
   if (!newId && oldId) {
     await refreshTags(oldId)
     pendingItems.value = await getPendingReview()
+    if (route.query.item) {
+      const { item: _removed, ...rest } = route.query
+      router.replace({ query: rest })
+    }
   }
 })
 
@@ -62,6 +67,7 @@ onMounted(async () => {
   ])
   pendingItems.value = pending
   loading.value = false
+  if (route.query.item) openModal(route.query.item as string)
 })
 </script>
 
