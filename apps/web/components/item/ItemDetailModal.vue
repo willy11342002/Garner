@@ -3,12 +3,21 @@ import type { Item, CollectionShareItem, Tag } from '~/types/api'
 
 type AnyItem = Item | CollectionShareItem
 
+interface PlaceSearchResult {
+  place_id: string
+  lat: number
+  lng: number
+  name: string
+  display_name: string
+  type: string
+}
+
 interface ItemLocation {
   id: string
   name: string
   lat: number | null
   lng: number | null
-  source: 'ai' | 'metadata'
+  source: 'ai' | 'metadata' | 'user'
   confirmed: boolean
   order_index: number
 }
@@ -43,6 +52,12 @@ const mapSlotEl = ref<HTMLElement | null>(null)
 const itemLocations = ref<ItemLocation[]>([])
 const loadingLocations = ref(false)
 const extractingLocations = ref(false)
+const searchQuery = ref('')
+const searchLoading = ref(false)
+const searchHint = ref('')      // status text shown below search box
+const savingNewLoc = ref(false)
+let _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let _searchPins: import('leaflet').Marker[] = []
 
 // Owner key changes with each item so re-opening a different item always re-claims
 const mapOwnerKey = computed(() => `modal:${props.itemId ?? ''}`)
@@ -56,6 +71,7 @@ async function switchToMapTab() {
 }
 
 function switchToInfoTab() {
+  clearSearch()   // also calls clearSearchPins()
   gmap.release(mapOwnerKey.value)
   activeTab.value = 'info'
 }
@@ -175,6 +191,130 @@ async function extractLocations() {
   }
 }
 
+function onSearchInput() {
+  if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer)
+  const q = searchQuery.value.trim()
+  if (q.length < 2) { clearSearchPins(); searchHint.value = ''; return }
+  _searchDebounceTimer = setTimeout(() => doSearch(q), 350)
+}
+
+async function doSearch(q: string) {
+  searchLoading.value = true
+  searchHint.value = ''
+  try {
+    const map = gmap.getMap()
+    const params = new URLSearchParams({ q })
+    if (map) {
+      const bounds = map.getBounds()
+      const center = bounds.getCenter()
+      const ne = bounds.getNorthEast()
+      const radiusMeters = Math.min(Math.round(center.distanceTo(ne)), 50000)
+      params.set('lat', center.lat.toString())
+      params.set('lng', center.lng.toString())
+      params.set('radius', radiusMeters.toString())
+    }
+    const results = await apiFetch<PlaceSearchResult[]>(`/places/search?${params}`)
+    showSearchPins(results)
+    searchHint.value = results.length
+      ? `找到 ${results.length} 個結果，點 pin 確認後新增`
+      : '找不到相關地點'
+  } catch {
+    searchHint.value = '搜尋失敗，請稍後再試'
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function clearSearchPins() {
+  for (const m of _searchPins) m.remove()
+  _searchPins = []
+}
+
+function showSearchPins(results: PlaceSearchResult[]) {
+  const map = gmap.getMap()
+  const L = gmap.getL()
+  if (!map || !L) return
+  clearSearchPins()
+  if (!results.length) return
+  for (const r of results) {
+    const icon = L.divIcon({
+      className: '',
+      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin map-pin--search">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 8 12 20 12 20S24 20 24 12C24 5.37 18.63 0 12 0z"/>
+        <circle cx="12" cy="11" r="4.5" fill="white" fill-opacity="0.92"/>
+      </svg>`,
+      iconSize: [24, 32],
+      iconAnchor: [12, 32],
+    })
+    const m = L.marker([r.lat, r.lng], { icon }).addTo(map)
+    m.bindPopup(
+      L.popup({ closeButton: false, className: 'id-loc-popup', offset: [0, -18] })
+        .setContent(buildSearchPinPopup(r))
+    )
+    _searchPins.push(m)
+  }
+  const group = L.featureGroup(_searchPins)
+  map.fitBounds(group.getBounds().pad(0.5), { maxZoom: 14, animate: true })
+}
+
+function buildSearchPinPopup(r: PlaceSearchResult): HTMLElement {
+  const root = document.createElement('div')
+  root.className = 'id-loc-popup__inner'
+
+  const name = document.createElement('div')
+  name.className = 'id-loc-popup__name'
+  name.textContent = r.name
+  root.appendChild(name)
+
+  // Show address without the first part (= name) to avoid duplication
+  const addrParts = r.display_name.split(', ').slice(1, 4)
+  if (addrParts.length) {
+    const addr = document.createElement('div')
+    addr.className = 'id-loc-popup__addr'
+    addr.textContent = addrParts.join(', ')
+    root.appendChild(addr)
+  }
+
+  const actions = document.createElement('div')
+  actions.className = 'id-loc-popup__actions'
+
+  const addBtn = document.createElement('button')
+  addBtn.className = 'id-loc-popup__btn id-loc-popup__btn--confirm'
+  addBtn.textContent = '+ 新增地標'
+  addBtn.addEventListener('click', async () => {
+    addBtn.disabled = true
+    addBtn.textContent = '新增中…'
+    await createLocation(r.name, r.lat, r.lng)
+  })
+  actions.appendChild(addBtn)
+  root.appendChild(actions)
+  return root
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchHint.value = ''
+  clearSearchPins()
+  if (_searchDebounceTimer) { clearTimeout(_searchDebounceTimer); _searchDebounceTimer = null }
+}
+
+async function createLocation(name: string, lat: number, lng: number) {
+  if (!props.itemId) return
+  savingNewLoc.value = true
+  try {
+    const newLoc = await apiFetch<ItemLocation>(`/items/${props.itemId}/locations`, {
+      method: 'POST',
+      body: { name, lat, lng },
+    })
+    itemLocations.value.push(newLoc)
+    clearSearchPins()
+    clearSearch()
+    renderItemMarkers()
+  } finally {
+    savingNewLoc.value = false
+  }
+}
+
 // ── Tags ──────────────────────────────────────────────────────────────────────
 const addingTag = ref(false)
 const newTagInput = ref('')
@@ -282,11 +422,13 @@ watch(() => props.item, (v) => {
 
 onUnmounted(() => {
   lockScroll(false)
+  clearSearch()
   if (activeTab.value === 'map') gmap.release(mapOwnerKey.value)
 })
 
 function doClose() {
   if (activeTab.value === 'map') {
+    clearSearch()
     gmap.release(mapOwnerKey.value)
     activeTab.value = 'info'
   }
@@ -520,6 +662,30 @@ async function confirmArchive() {
 
             <!-- Map tab -->
             <template v-else-if="activeTab === 'map'">
+              <!-- Search box -->
+              <div class="id-map-search">
+                <div class="id-map-search__wrap">
+                  <svg class="id-map-search__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input
+                    v-model="searchQuery"
+                    type="text"
+                    class="id-map-search__input"
+                    placeholder="搜尋地點，結果會標在地圖上…"
+                    autocomplete="off"
+                    :disabled="savingNewLoc"
+                    @input="onSearchInput"
+                    @keydown.enter.prevent="onSearchInput"
+                    @keydown.esc="clearSearch"
+                  />
+                  <span v-if="searchLoading" class="id-map-search__saving">搜尋中…</span>
+                  <span v-else-if="savingNewLoc" class="id-map-search__saving">新增中…</span>
+                  <button v-else-if="searchQuery" class="id-map-search__clear" @click="clearSearch">×</button>
+                </div>
+                <div v-if="searchHint" class="id-map-search__hint">{{ searchHint }}</div>
+              </div>
+
               <!-- Map container: global Leaflet instance gets appended here -->
               <div ref="mapSlotEl" class="id-map-slot" />
 
@@ -534,7 +700,7 @@ async function confirmArchive() {
                     <span class="id-map-loc__name">{{ loc.name }}</span>
                     <span v-if="!loc.lat" class="id-map-loc__nogeo">無座標</span>
                     <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
-                      {{ loc.source === 'metadata' ? 'meta' : 'AI' }}
+                      {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? '手動' : 'AI' }}
                     </span>
                     <span v-if="!loc.confirmed" class="id-map-loc__badge id-map-loc__badge--pending">待確認</span>
                     <div class="id-map-loc__actions">

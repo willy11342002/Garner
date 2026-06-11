@@ -450,6 +450,80 @@
   border-color: var(--border2);
 }
 
+/* ── Map search ── */
+.id-map-search {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.id-map-search__wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  transition: border-color .12s;
+}
+.id-map-search__wrap:focus-within { border-color: var(--accent-bdr); }
+
+.id-map-search__icon {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.id-map-search__input {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 13px;
+  background: none;
+  border: none;
+  color: var(--text);
+  outline: none;
+  min-width: 0;
+}
+.id-map-search__input::placeholder { color: var(--text-dim); }
+.id-map-search__input:disabled { opacity: 0.5; }
+
+.id-map-search__saving {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.id-map-search__clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: color .12s;
+}
+.id-map-search__clear:hover { color: var(--text); }
+
+.id-map-search__hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  padding: 0 2px;
+}
+
+/* ── Search-result pin (orange) ── */
+.map-pin--search { fill: #f59e0b; }
+
+/* ── User-added location badge ── */
+.id-map-loc__badge--user {
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+}
+
 /* ── Leaflet location popup (global — Leaflet appends outside Vue tree) ── */
 .id-loc-popup .leaflet-popup-content-wrapper {
   background: var(--surface);
@@ -481,6 +555,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+}
+
+.id-loc-popup__addr {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  margin-top: 1px;
 }
 
 .id-loc-popup__actions {

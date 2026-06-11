@@ -20,6 +20,46 @@ _SEARCH_CACHE_SECONDS = 7 * 86400
 _DETAIL_FIELDS = "name,rating,reviews,photos,formatted_address,international_phone_number,opening_hours,url"
 
 
+async def text_search_places(query: str, lat: float | None = None, lng: float | None = None, radius: int = 5000) -> list[dict]:
+    """Search places via Google Places Text Search. Returns up to 5 results.
+
+    When lat/lng provided, results near that location are ranked higher.
+    radius is in metres (max 50000); only used when lat/lng is given.
+    """
+    if not settings.google_maps_api_key:
+        logger.error("Places Text Search: google_maps_api_key is not set")
+        return []
+    params: dict = {
+        "query": query,
+        "language": "zh-TW",
+        "key": settings.google_maps_api_key,
+    }
+    if lat is not None and lng is not None:
+        params["location"] = f"{lat},{lng}"
+        params["radius"] = min(radius, 50000)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{LEGACY_BASE}/textsearch/json", params=params)
+        if resp.status_code != 200:
+            logger.error("Places Text Search HTTP %d for %r", resp.status_code, query)
+            return []
+        results = []
+        for r in resp.json().get("results", [])[:5]:
+            loc = r.get("geometry", {}).get("location", {})
+            results.append({
+                "place_id": r["place_id"],
+                "lat": loc.get("lat", 0.0),
+                "lng": loc.get("lng", 0.0),
+                "name": r["name"],
+                "display_name": r.get("formatted_address", ""),
+                "type": (r.get("types") or [""])[0],
+            })
+        return results
+    except Exception:
+        logger.exception("Places Text Search failed for %r", query)
+        return []
+
+
 async def lookup_place(name: str, lat: float, lng: float, db: AsyncSession) -> PlaceCache | None:
     """Find a place by name + coordinates via Text Search, then return cached details."""
     place_id = await _text_search_cached(name, lat, lng)

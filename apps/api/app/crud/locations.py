@@ -32,6 +32,7 @@ async def create_location(
     order_index: int,
     lat: float | None = None,
     lng: float | None = None,
+    confirmed: bool = False,
 ) -> ContentLocation:
     loc = ContentLocation(
         content_id=content_id,
@@ -40,6 +41,7 @@ async def create_location(
         order_index=order_index,
         lat=lat,
         lng=lng,
+        confirmed=confirmed,
     )
     db.add(loc)
     return loc

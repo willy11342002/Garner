@@ -21,6 +21,22 @@ class ContentLocationUpdate(BaseModel):
     confirmed: bool | None = None
 
 
+class ContentLocationCreate(BaseModel):
+    name: str
+    lat: float | None = None
+    lng: float | None = None
+    geocode_hint: str | None = None  # full address/description for better geocoding accuracy
+
+
+class PlaceSearchResult(BaseModel):
+    place_id: str
+    lat: float
+    lng: float
+    name: str
+    display_name: str
+    type: str
+
+
 class PlaceReview(BaseModel):
     author: str | None = None
     author_photo: str | None = None

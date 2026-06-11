@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.crud import items as crud_items
 from app.crud import locations as crud_locations
 from app.dependencies import CurrentUser, DbSession
-from app.schemas.location import ContentLocationRead, ContentLocationUpdate, LocationMapPoint, PlaceCacheRead
+from app.schemas.location import ContentLocationCreate, ContentLocationRead, ContentLocationUpdate, LocationMapPoint, PlaceCacheRead, PlaceSearchResult
 from app.services import ai_service, geocoding_service, place_service
 
 router = APIRouter()
@@ -24,6 +24,41 @@ async def list_item_locations(item_id: UUID, current_user: CurrentUser, db: DbSe
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return await crud_locations.list_by_content_id(db, user_item.content_id)
+
+
+@router.post("/items/{item_id}/locations", response_model=ContentLocationRead, status_code=status.HTTP_201_CREATED)
+async def create_item_location(
+    item_id: UUID,
+    data: ContentLocationCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    user_id = UUID(current_user["sub"])
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    existing = await crud_locations.list_by_content_id(db, user_item.content_id)
+    next_order = max((l.order_index for l in existing), default=-1) + 1
+
+    lat, lng = data.lat, data.lng
+    if lat is None or lng is None:
+        geocode_query = data.geocode_hint or data.name
+        lat, lng = await geocoding_service.geocode(geocode_query)
+
+    loc = await crud_locations.create_location(
+        db,
+        content_id=user_item.content_id,
+        name=data.name,
+        source="user",
+        order_index=next_order,
+        lat=lat,
+        lng=lng,
+        confirmed=True,
+    )
+    await db.commit()
+    await db.refresh(loc)
+    return loc
 
 
 @router.patch(
@@ -209,6 +244,18 @@ async def get_map_locations(
 # ── Google Places cache ────────────────────────────────────────────────────────
 # IMPORTANT: specific routes (/places/photo, /places/lookup) must be declared
 # BEFORE the parameterized route (/places/{place_id}) or FastAPI will swallow them.
+
+
+@router.get("/places/search", response_model=list[PlaceSearchResult])
+async def search_places(
+    current_user: CurrentUser,
+    q: str = Query(min_length=2),
+    lat: float | None = Query(default=None, description="Map center latitude — biases results toward this location"),
+    lng: float | None = Query(default=None, description="Map center longitude"),
+    radius: int = Query(default=5000, ge=500, le=50000, description="Search bias radius in metres"),
+):
+    """Search places via Google Places Text Search. Returns up to 5 results with coordinates."""
+    return await place_service.text_search_places(q, lat=lat, lng=lng, radius=radius)
 
 
 @router.get("/places/photo")
