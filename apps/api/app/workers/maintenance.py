@@ -23,10 +23,7 @@ async def recalculate_tag_counts(db: AsyncSession) -> int:
             func.count(ItemTag.user_item_id).label("cnt"),
         )
         .join(UserItem, UserItem.id == ItemTag.user_item_id)
-        .where(
-            ItemTag.confirmed == True,  # noqa: E712
-            UserItem.deleted_at.is_(None),
-        )
+        .where(UserItem.deleted_at.is_(None))
         .group_by(ItemTag.tag_id)
         .subquery()
     )
@@ -52,14 +49,11 @@ async def recalculate_tag_counts(db: AsyncSession) -> int:
 
 
 async def delete_orphan_tags(db: AsyncSession) -> int:
-    """刪除沒有任何 confirmed + active item 的孤兒 tag（先清 item_tags）。"""
+    """刪除沒有任何 active item 的孤兒 tag（先清 item_tags）。"""
     has_active_item = (
         select(ItemTag.tag_id)
         .join(UserItem, UserItem.id == ItemTag.user_item_id)
-        .where(
-            ItemTag.confirmed == True,  # noqa: E712
-            UserItem.deleted_at.is_(None),
-        )
+        .where(UserItem.deleted_at.is_(None))
         .distinct()
     )
     orphan_tag_ids = select(Tag.id).where(Tag.id.not_in(has_active_item))

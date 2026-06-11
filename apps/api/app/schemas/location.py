@@ -10,7 +10,6 @@ class ContentLocationRead(BaseModel):
     lat: float | None
     lng: float | None
     source: str
-    confirmed: bool
     order_index: int
 
     model_config = {"from_attributes": True}
@@ -18,7 +17,6 @@ class ContentLocationRead(BaseModel):
 
 class ContentLocationUpdate(BaseModel):
     name: str | None = None
-    confirmed: bool | None = None
 
 
 class ContentLocationCreate(BaseModel):
@@ -68,7 +66,6 @@ class LocationMapPoint(BaseModel):
     lat: float
     lng: float
     source: str
-    confirmed: bool
     content_id: UUID
     item_id: UUID
     item_title: str | None = None

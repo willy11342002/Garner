@@ -12,8 +12,8 @@ from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
 from app.quota_depends import SaveQuota
-from app.schemas.item import ItemCreate, ItemPage, ItemPendingReviewRead, ItemRead, ItemUpdate
-from app.schemas.tag import TagBulkConfirm, TagCreate, TagRead, TagSingleConfirm
+from app.schemas.item import ItemCreate, ItemPage, ItemRead, ItemUpdate
+from app.schemas.tag import TagCreate, TagRead
 from app.services import item_service
 
 router = APIRouter()
@@ -118,22 +118,6 @@ async def create_item(
     )
 
 
-@router.get("/pending-review", response_model=list[ItemPendingReviewRead])
-async def list_pending_review(current_user: CurrentUser, db: DbSession):
-    rows = await crud_tags.get_items_with_pending_tags(db, UUID(current_user["sub"]))
-    return [
-        ItemPendingReviewRead(
-            id=ui.id,
-            url=ui.url or ui.content.url,
-            title=ui.title,
-            thumbnail_url=ui.thumbnail_url,
-            saved_at=ui.saved_at,
-            pending_tags=[TagRead.model_validate(t) for t in tags],
-        )
-        for ui, tags in rows
-    ]
-
-
 @router.get("/archived", response_model=list[ItemRead])
 async def list_archived(current_user: CurrentUser, db: DbSession):
     return await item_service.list_archived_items(db, UUID(current_user["sub"]))
@@ -212,24 +196,6 @@ async def list_item_tags(item_id: UUID, current_user: CurrentUser, db: DbSession
         .where(
             ItemTag.user_item_id == item_id,
             Tag.user_id == UUID(current_user["sub"]),
-            ItemTag.confirmed == True,  # noqa: E712
-        )
-    )
-    return list(result.scalars().all())
-
-
-@router.get("/{item_id}/tags/pending", response_model=list[TagRead])
-async def list_pending_item_tags(item_id: UUID, current_user: CurrentUser, db: DbSession):
-    from sqlalchemy import select
-    from app.models.item_tag import ItemTag
-    from app.models.tag import Tag
-    result = await db.execute(
-        select(Tag)
-        .join(ItemTag, ItemTag.tag_id == Tag.id)
-        .where(
-            ItemTag.user_item_id == item_id,
-            Tag.user_id == UUID(current_user["sub"]),
-            ItemTag.confirmed == False,  # noqa: E712
         )
     )
     return list(result.scalars().all())
@@ -241,27 +207,12 @@ async def attach_tag(
     data: TagCreate,
     current_user: CurrentUser,
     db: DbSession,
-    pending: bool = Query(default=False),
 ):
     user_id = UUID(current_user["sub"])
     tag = await crud_tags.get_or_create(db, user_id, data.name)
-    await crud_tags.attach_tag(db, item_id, tag.id, confirmed=not pending)
+    await crud_tags.attach_tag(db, item_id, tag.id)
     await db.commit()
     return tag
-
-
-@router.post("/{item_id}/tags/confirm/single", status_code=status.HTTP_204_NO_CONTENT)
-async def confirm_item_tag(item_id: UUID, body: TagSingleConfirm, current_user: CurrentUser, db: DbSession):
-    found = await crud_tags.confirm_item_tag(db, item_id, body.tag_id)
-    if not found:
-        raise HTTPException(status_code=404, detail="Pending tag not found")
-    await db.commit()
-
-
-@router.post("/{item_id}/tags/confirm/bulk", status_code=status.HTTP_204_NO_CONTENT)
-async def confirm_item_tags_bulk(item_id: UUID, body: TagBulkConfirm, current_user: CurrentUser, db: DbSession):
-    await crud_tags.confirm_item_tags_bulk(db, item_id, body.tag_ids)
-    await db.commit()
 
 
 @router.post("/{item_id}/translate/{locale}", response_model=ItemRead)

@@ -54,7 +54,6 @@ async def create_item_location(
         order_index=next_order,
         lat=lat,
         lng=lng,
-        confirmed=True,
     )
     await db.commit()
     await db.refresh(loc)
@@ -82,7 +81,7 @@ async def update_item_location(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     updated = await crud_locations.update_location(
-        db, location_id, name=data.name, confirmed=data.confirmed
+        db, location_id, name=data.name
     )
     return updated
 
@@ -222,7 +221,6 @@ async def get_map_locations(
     bounds: str = Query(
         description="Comma-separated: sw_lat,sw_lng,ne_lat,ne_lng"
     ),
-    confirmed: bool | None = Query(default=None),
 ):
     """Return all geocoded locations within a bounding box for the current user."""
     try:
@@ -235,9 +233,7 @@ async def get_map_locations(
         )
 
     user_id = UUID(current_user["sub"])
-    rows = await crud_locations.get_by_bounds(
-        db, user_id, sw_lat, sw_lng, ne_lat, ne_lng, confirmed=confirmed
-    )
+    rows = await crud_locations.get_by_bounds(db, user_id, sw_lat, sw_lng, ne_lat, ne_lng)
     return [LocationMapPoint(**row) for row in rows]
 
 

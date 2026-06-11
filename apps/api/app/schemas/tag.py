@@ -20,9 +20,3 @@ class TagUpdate(BaseModel):
     name: str
 
 
-class TagSingleConfirm(BaseModel):
-    tag_id: UUID
-
-
-class TagBulkConfirm(BaseModel):
-    tag_ids: list[UUID]

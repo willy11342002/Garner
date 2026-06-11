@@ -24,10 +24,7 @@ async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
             defer(UserItem.notes_md),
             # embedding 放 ContentObject，list 不需要，joinedload 僅作關聯用
             joinedload(UserItem.content).options(defer(ContentObject.embedding)),
-            # filter confirmed-only at DB level to avoid loading + Python-filtering all tags
-            selectinload(
-                UserItem.item_tags.and_(ItemTag.confirmed == True)  # noqa: E712
-            ).joinedload(ItemTag.tag),
+            selectinload(UserItem.item_tags).joinedload(ItemTag.tag),
         )
         .order_by(UserItem.saved_at.desc())
     )
@@ -116,19 +113,10 @@ async def get_page(
     offset: int = 0,
     limit: int = 25,
 ) -> tuple[list[UserItem], int]:
-    # 排除有 pending（未確認）tag 的 items — 那些由 /items/pending-review 負責
-    pending_ids_subq = (
-        select(ItemTag.user_item_id)
-        .where(ItemTag.confirmed == False)  # noqa: E712
-        .distinct()
-        .scalar_subquery()
-    )
-
     base_filters = [
         UserItem.user_id == user_id,
         UserItem.deleted_at.is_(None),
         UserItem.status == UserItemStatus.active,
-        UserItem.id.not_in(pending_ids_subq),
     ]
     if saved_after:
         base_filters.append(UserItem.saved_at >= saved_after)
@@ -144,7 +132,7 @@ async def get_page(
         if tag_logic == "and":
             ids_subq = (
                 select(UserItem.id)
-                .join(ItemTag, (ItemTag.user_item_id == UserItem.id) & (ItemTag.confirmed == True))  # noqa: E712
+                .join(ItemTag, ItemTag.user_item_id == UserItem.id)
                 .where(*base_filters, ItemTag.tag_id.in_(tag_ids))
                 .group_by(UserItem.id)
                 .having(func.count(func.distinct(ItemTag.tag_id)) == len(tag_ids))
@@ -153,7 +141,7 @@ async def get_page(
         else:
             ids_subq = (
                 select(UserItem.id)
-                .join(ItemTag, (ItemTag.user_item_id == UserItem.id) & (ItemTag.confirmed == True))  # noqa: E712
+                .join(ItemTag, ItemTag.user_item_id == UserItem.id)
                 .where(*base_filters, ItemTag.tag_id.in_(tag_ids))
                 .distinct()
                 .subquery()
@@ -188,9 +176,7 @@ async def get_page(
         .options(
             defer(UserItem.notes_md),
             joinedload(UserItem.content).options(defer(ContentObject.embedding)),
-            selectinload(
-                UserItem.item_tags.and_(ItemTag.confirmed == True)  # noqa: E712
-            ).joinedload(ItemTag.tag),
+            selectinload(UserItem.item_tags).joinedload(ItemTag.tag),
         )
     )
     items_by_id = {ui.id: ui for ui in result.scalars().unique().all()}

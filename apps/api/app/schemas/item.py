@@ -66,10 +66,3 @@ class ItemPage(BaseModel):
     page_size: int
 
 
-class ItemPendingReviewRead(BaseModel):
-    id: UUID
-    url: str
-    title: str | None
-    thumbnail_url: str | None
-    saved_at: datetime
-    pending_tags: list[TagRead]

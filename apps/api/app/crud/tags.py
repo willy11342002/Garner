@@ -74,7 +74,6 @@ async def attach_tag(
     user_item_id: UUID,
     tag_id: UUID,
     source: TagSource = TagSource.user,
-    confirmed: bool | None = None,
 ) -> ItemTag:
     result = await db.execute(
         select(ItemTag).where(
@@ -85,18 +84,15 @@ async def attach_tag(
     if existing:
         return existing
 
-    if confirmed is None:
-        confirmed = source == TagSource.user
-    item_tag = ItemTag(user_item_id=user_item_id, tag_id=tag_id, source=source, confirmed=confirmed)
+    item_tag = ItemTag(user_item_id=user_item_id, tag_id=tag_id, source=source)
     db.add(item_tag)
     await db.flush()
 
-    if confirmed:
-        result = await db.execute(select(Tag).where(Tag.id == tag_id))
-        tag = result.scalar_one_or_none()
-        if tag:
-            tag.item_count += 1
-            tag.last_used_at = datetime.now(timezone.utc)
+    result = await db.execute(select(Tag).where(Tag.id == tag_id))
+    tag = result.scalar_one_or_none()
+    if tag:
+        tag.item_count += 1
+        tag.last_used_at = datetime.now(timezone.utc)
 
     return item_tag
 
@@ -115,45 +111,12 @@ async def detach_tag(db: AsyncSession, user_item_id: UUID, tag_id: UUID) -> None
         )
     )
 
-    if item_tag and item_tag.confirmed:
+    if item_tag:
         result = await db.execute(select(Tag).where(Tag.id == tag_id))
         tag = result.scalar_one_or_none()
         if tag and tag.item_count > 0:
             tag.item_count -= 1
     await db.flush()
-
-
-async def get_items_with_pending_tags(
-    db: AsyncSession, user_id: UUID
-) -> list[tuple["UserItem", list[Tag]]]:  # type: ignore[name-defined]
-    from app.models.user_item import UserItem
-
-    result = await db.execute(
-        select(UserItem)
-        .join(ItemTag, ItemTag.user_item_id == UserItem.id)
-        .where(
-            UserItem.user_id == user_id,
-            ItemTag.confirmed == False,  # noqa: E712
-            UserItem.status != "archived",
-        )
-        .options(joinedload(UserItem.content))
-        .distinct()
-        .order_by(UserItem.saved_at.desc())
-    )
-    user_items = result.unique().scalars().all()
-
-    rows = []
-    for ui in user_items:
-        tag_result = await db.execute(
-            select(Tag)
-            .join(ItemTag, ItemTag.tag_id == Tag.id)
-            .where(
-                ItemTag.user_item_id == ui.id,
-                ItemTag.confirmed == False,  # noqa: E712
-            )
-        )
-        rows.append((ui, list(tag_result.scalars().all())))
-    return rows
 
 
 async def get_items_by_tag(
@@ -167,7 +130,6 @@ async def get_items_by_tag(
         .where(
             UserItem.user_id == user_id,
             ItemTag.tag_id == tag_id,
-            ItemTag.confirmed == True,  # noqa: E712
             UserItem.deleted_at.is_(None),
         )
         .options(joinedload(UserItem.content))
@@ -176,54 +138,3 @@ async def get_items_by_tag(
     return list(result.unique().scalars().all())
 
 
-async def confirm_item_tag(
-    db: AsyncSession, user_item_id: UUID, tag_id: UUID
-) -> bool:
-    result = await db.execute(
-        select(ItemTag).where(
-            ItemTag.user_item_id == user_item_id,
-            ItemTag.tag_id == tag_id,
-            ItemTag.confirmed == False,  # noqa: E712
-        )
-    )
-    item_tag = result.scalar_one_or_none()
-    if item_tag is None:
-        return False
-
-    item_tag.confirmed = True
-
-    tag_result = await db.execute(select(Tag).where(Tag.id == tag_id))
-    tag = tag_result.scalar_one_or_none()
-    if tag:
-        tag.item_count += 1
-        tag.last_used_at = datetime.now(timezone.utc)
-
-    await db.flush()
-    return True
-
-
-async def confirm_item_tags_bulk(
-    db: AsyncSession, user_item_id: UUID, tag_ids: list[UUID]
-) -> int:
-    result = await db.execute(
-        select(ItemTag).where(
-            ItemTag.user_item_id == user_item_id,
-            ItemTag.tag_id.in_(tag_ids),
-            ItemTag.confirmed == False,  # noqa: E712
-        )
-    )
-    item_tags = result.scalars().all()
-    confirmed_tag_ids = [it.tag_id for it in item_tags]
-    for item_tag in item_tags:
-        item_tag.confirmed = True
-
-    if confirmed_tag_ids:
-        tags_result = await db.execute(
-            select(Tag).where(Tag.id.in_(confirmed_tag_ids))
-        )
-        for tag in tags_result.scalars().all():
-            tag.item_count += 1
-            tag.last_used_at = datetime.now(timezone.utc)
-
-    await db.flush()
-    return len(item_tags)

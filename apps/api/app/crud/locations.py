@@ -32,7 +32,6 @@ async def create_location(
     order_index: int,
     lat: float | None = None,
     lng: float | None = None,
-    confirmed: bool = False,
 ) -> ContentLocation:
     loc = ContentLocation(
         content_id=content_id,
@@ -41,7 +40,6 @@ async def create_location(
         order_index=order_index,
         lat=lat,
         lng=lng,
-        confirmed=confirmed,
     )
     db.add(loc)
     return loc
@@ -60,15 +58,12 @@ async def update_location(
     db: AsyncSession,
     location_id: UUID,
     name: str | None = None,
-    confirmed: bool | None = None,
 ) -> ContentLocation | None:
     loc = await get_one(db, location_id)
     if loc is None:
         return None
     if name is not None:
         loc.name = name
-    if confirmed is not None:
-        loc.confirmed = confirmed
     await db.commit()
     await db.refresh(loc)
     return loc
@@ -101,27 +96,24 @@ async def get_by_bounds(
     sw_lng: float,
     ne_lat: float,
     ne_lng: float,
-    confirmed: bool | None = None,
 ) -> list[dict]:
     """Return all geocoded locations within the bounding box for a user."""
-    q = (
-        select(ContentLocation, UserItem)
-        .join(ContentObject, ContentLocation.content_id == ContentObject.id)
-        .join(UserItem, UserItem.content_id == ContentObject.id)
-        .where(
-            UserItem.user_id == user_id,
-            UserItem.deleted_at.is_(None),
-            UserItem.status == UserItemStatus.active,
-            ContentLocation.lat.isnot(None),
-            ContentLocation.lng.isnot(None),
-            ContentLocation.lat.between(sw_lat, ne_lat),
-            ContentLocation.lng.between(sw_lng, ne_lng),
+    rows = (
+        await db.execute(
+            select(ContentLocation, UserItem)
+            .join(ContentObject, ContentLocation.content_id == ContentObject.id)
+            .join(UserItem, UserItem.content_id == ContentObject.id)
+            .where(
+                UserItem.user_id == user_id,
+                UserItem.deleted_at.is_(None),
+                UserItem.status == UserItemStatus.active,
+                ContentLocation.lat.isnot(None),
+                ContentLocation.lng.isnot(None),
+                ContentLocation.lat.between(sw_lat, ne_lat),
+                ContentLocation.lng.between(sw_lng, ne_lng),
+            )
         )
-    )
-    if confirmed is not None:
-        q = q.where(ContentLocation.confirmed == confirmed)
-
-    rows = (await db.execute(q)).all()
+    ).all()
 
     return [
         {
@@ -130,7 +122,6 @@ async def get_by_bounds(
             "lat": loc.lat,
             "lng": loc.lng,
             "source": loc.source,
-            "confirmed": loc.confirmed,
             "content_id": loc.content_id,
             "item_id": item.id,
             "item_title": item.title,
