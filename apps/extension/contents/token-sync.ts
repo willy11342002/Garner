@@ -2,7 +2,7 @@ import type { PlasmoCSConfig } from "plasmo"
 
 export const config: PlasmoCSConfig = {
   matches: [
-    "https://garner.app/*",
+    "https://garner-brain.autos/*",
     "https://garner-brain.vercel.app/*",
     "http://localhost:3000/*",
   ],
