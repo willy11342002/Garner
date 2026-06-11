@@ -6,6 +6,7 @@ from app.models.notification import Notification, NotificationType
 from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
 from app.models.content_chunk import ContentChunk
 from app.models.content_location import ContentLocation
+from app.models.place_cache import PlaceCache
 from app.models.content_object import ContentObject, SourceType
 from app.models.item_tag import ItemTag, TagSource
 from app.models.plan import Plan
@@ -23,6 +24,7 @@ __all__ = [
     "ContentObject",
     "SourceType",
     "ContentLocation",
+    "PlaceCache",
     "UserItem",
     "UserItemStatus",
     "Tag",

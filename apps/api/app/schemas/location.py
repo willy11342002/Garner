@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -18,6 +19,30 @@ class ContentLocationRead(BaseModel):
 class ContentLocationUpdate(BaseModel):
     name: str | None = None
     confirmed: bool | None = None
+
+
+class PlaceReview(BaseModel):
+    author: str | None = None
+    author_photo: str | None = None
+    rating: int | None = None
+    text: str | None = None
+    relative_time: str | None = None
+    publish_time: str | None = None
+
+
+class PlaceCacheRead(BaseModel):
+    place_id: str
+    name: str | None = None
+    rating: float | None = None
+    reviews: list[PlaceReview] | None = None
+    photos: list[str] | None = None  # photo reference names
+    address: str | None = None
+    phone: str | None = None
+    opening_hours: dict | None = None
+    maps_url: str | None = None
+    cached_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class LocationMapPoint(BaseModel):

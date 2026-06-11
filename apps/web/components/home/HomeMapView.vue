@@ -15,13 +15,34 @@ interface MapLocation {
   item_source_type: string | null
 }
 
+interface PlaceReview {
+  author: string | null
+  author_photo: string | null
+  rating: number | null
+  text: string | null
+  relative_time: string | null
+}
+
+interface PlaceDetails {
+  place_id: string
+  name: string | null
+  rating: number | null
+  reviews: PlaceReview[] | null
+  photos: string[] | null
+  address: string | null
+  phone: string | null
+  opening_hours: { open_now: boolean; weekday_descriptions: string[] } | null
+  maps_url: string | null
+}
+
 const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const gmap = useGlobalMap()
+const config = useRuntimeConfig()
+const apiBase = config.public.apiBase as string
 
 // ── Map state ─────────────────────────────────────────────────────────────────
 const mapContainer = ref<HTMLElement | null>(null)
-// Local marker map: location id → Marker (for targeted removal)
 let localMarkers: Map<string, ReturnType<typeof gmap.getL>['Marker'] extends undefined ? never : import('leaflet').Marker> = new Map()
 
 const locations = ref<MapLocation[]>([])
@@ -33,6 +54,32 @@ const errorMsg = ref('')
 const drawerOpen = ref(false)
 const drawerLocationName = ref('')
 const drawerItems = ref<MapLocation[]>([])
+const drawerTab = ref<'place' | 'items'>('place')
+
+// Place info state
+const placeData = ref<PlaceDetails | null>(null)
+const placeLoading = ref(false)
+const placeError = ref('')
+const hoursExpanded = ref(false)
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function photoUrl(ref: string) {
+  return `${apiBase}/places/photo?ref=${encodeURIComponent(ref)}&max_width=400`
+}
+
+function ratingStars(rating: number | null): string {
+  if (!rating) return ''
+  const full = Math.round(rating)
+  return '★'.repeat(full) + '☆'.repeat(5 - full)
+}
+
+const todayHours = computed(() => {
+  const descs = placeData.value?.opening_hours?.weekday_descriptions
+  if (!descs?.length) return null
+  // JS getDay(): 0=Sun…6=Sat → Google index: Mon=0…Sun=6
+  const idx = (new Date().getDay() + 6) % 7
+  return descs[idx] ?? null
+})
 
 // ── No-location items ─────────────────────────────────────────────────────────
 const noLocationItems = computed(() =>
@@ -153,10 +200,27 @@ function updateMarkers(locs: MapLocation[]) {
 }
 
 // ── Drawer ────────────────────────────────────────────────────────────────────
-function openDrawer(group: MapLocation[]) {
-  drawerLocationName.value = group[0].name
+async function openDrawer(group: MapLocation[]) {
+  const loc = group[0]
+  drawerLocationName.value = loc.name
   drawerItems.value = group
   drawerOpen.value = true
+  drawerTab.value = 'place'
+  hoursExpanded.value = false
+  placeData.value = null
+  placeError.value = ''
+  placeLoading.value = true
+
+  try {
+    const result = await apiFetch<PlaceDetails | null>(
+      `/places/lookup?name=${encodeURIComponent(loc.name)}&lat=${loc.lat}&lng=${loc.lng}`
+    )
+    placeData.value = result ?? null
+  } catch {
+    placeError.value = '無法載入地點資訊'
+  } finally {
+    placeLoading.value = false
+  }
 }
 
 function closeDrawer() {
@@ -226,6 +290,8 @@ watch(gmap.currentOwner, async (owner) => {
     <!-- Location drawer -->
     <Transition name="drawer">
       <div v-if="drawerOpen" class="map-drawer">
+
+        <!-- Header -->
         <div class="map-drawer__header">
           <h3 class="map-drawer__title">{{ drawerLocationName }}</h3>
           <button class="map-drawer__close" @click="closeDrawer">
@@ -234,7 +300,122 @@ watch(gmap.currentOwner, async (owner) => {
             </svg>
           </button>
         </div>
-        <div class="map-drawer__items">
+
+        <!-- Tabs -->
+        <div class="map-drawer__tabs">
+          <button
+            class="map-drawer__tab"
+            :class="{ 'map-drawer__tab--active': drawerTab === 'place' }"
+            @click="drawerTab = 'place'"
+          >地點資訊</button>
+          <button
+            class="map-drawer__tab"
+            :class="{ 'map-drawer__tab--active': drawerTab === 'items' }"
+            @click="drawerTab = 'items'"
+          >知識 ({{ drawerItems.length }})</button>
+        </div>
+
+        <!-- ── Tab: 地點資訊 ── -->
+        <div v-if="drawerTab === 'place'" class="map-drawer__place">
+
+          <!-- Loading -->
+          <div v-if="placeLoading" class="map-drawer__state">
+            <span class="map-drawer__spinner" />
+            <span>載入地點資訊…</span>
+          </div>
+
+          <!-- Error -->
+          <div v-else-if="placeError" class="map-drawer__state map-drawer__state--err">
+            {{ placeError }}
+          </div>
+
+          <!-- Not found -->
+          <div v-else-if="!placeData" class="map-drawer__state">
+            找不到 Google 地點資訊
+          </div>
+
+          <!-- Place content -->
+          <template v-else>
+
+            <!-- Photos -->
+            <div v-if="placeData.photos?.length" class="map-drawer__photos">
+              <img
+                v-for="ref in placeData.photos.slice(0, 6)"
+                :key="ref"
+                :src="photoUrl(ref)"
+                class="map-drawer__photo"
+                alt=""
+              />
+            </div>
+
+            <!-- Rating -->
+            <div v-if="placeData.rating" class="map-drawer__rating">
+              <span class="map-drawer__rating-num">{{ placeData.rating.toFixed(1) }}</span>
+              <span class="map-drawer__stars">{{ ratingStars(placeData.rating) }}</span>
+            </div>
+
+            <!-- Info rows -->
+            <div class="map-drawer__info">
+              <div v-if="placeData.address" class="map-drawer__info-row">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/></svg>
+                <span>{{ placeData.address }}</span>
+              </div>
+              <div v-if="placeData.phone" class="map-drawer__info-row">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.25h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.84a16 16 0 0 0 5.83 5.83l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16a2 2 0 0 1 .27.92z"/></svg>
+                <a :href="`tel:${placeData.phone}`" class="map-drawer__phone">{{ placeData.phone }}</a>
+              </div>
+              <div v-if="placeData.opening_hours" class="map-drawer__info-row map-drawer__hours-row" @click="hoursExpanded = !hoursExpanded">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span
+                  class="map-drawer__open-status"
+                  :class="placeData.opening_hours.open_now ? 'map-drawer__open-status--open' : 'map-drawer__open-status--closed'"
+                >{{ placeData.opening_hours.open_now ? '目前營業中' : '目前休息中' }}</span>
+                <span class="map-drawer__hours-today" v-if="todayHours && !hoursExpanded">
+                  · {{ todayHours.split(':').slice(1).join(':').trim() }}
+                </span>
+                <svg class="map-drawer__hours-caret" :class="{ 'map-drawer__hours-caret--open': hoursExpanded }" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+              <div v-if="hoursExpanded && placeData.opening_hours?.weekday_descriptions" class="map-drawer__hours-list">
+                <div v-for="(day, i) in placeData.opening_hours.weekday_descriptions" :key="i" class="map-drawer__hours-day">
+                  {{ day }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Reviews -->
+            <div v-if="placeData.reviews?.length" class="map-drawer__reviews">
+              <div class="map-drawer__section-title">評論</div>
+              <div v-for="(rev, i) in placeData.reviews" :key="i" class="map-drawer__review">
+                <div class="map-drawer__review-header">
+                  <img v-if="rev.author_photo" :src="rev.author_photo" class="map-drawer__review-avatar" alt="" referrerpolicy="no-referrer" />
+                  <div v-else class="map-drawer__review-avatar map-drawer__review-avatar--empty" />
+                  <div class="map-drawer__review-meta">
+                    <span class="map-drawer__review-author">{{ rev.author || '匿名' }}</span>
+                    <span class="map-drawer__review-time">{{ rev.relative_time }}</span>
+                  </div>
+                </div>
+                <div class="map-drawer__review-stars">{{ ratingStars(rev.rating) }}</div>
+                <p v-if="rev.text" class="map-drawer__review-text">{{ rev.text }}</p>
+              </div>
+            </div>
+
+            <!-- Google Maps link -->
+            <a
+              v-if="placeData.maps_url"
+              :href="placeData.maps_url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="map-drawer__maps-link"
+            >
+              在 Google Maps 查看
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+
+          </template>
+        </div>
+
+        <!-- ── Tab: 知識 ── -->
+        <div v-if="drawerTab === 'items'" class="map-drawer__items">
           <div v-for="loc in drawerItems" :key="loc.id" class="map-drawer__item">
             <div class="map-drawer__item-card" @click="openItem(loc.item_id)">
               <img v-if="loc.item_thumbnail" :src="loc.item_thumbnail" class="map-drawer__item-thumb" alt="" />
@@ -262,6 +443,7 @@ watch(gmap.currentOwner, async (owner) => {
             </div>
           </div>
         </div>
+
       </div>
     </Transition>
 
@@ -344,14 +526,13 @@ watch(gmap.currentOwner, async (owner) => {
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14);
   z-index: 1000;
-  padding: 16px;
 }
 
 .map-drawer__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  padding: 14px 14px 0;
 }
 
 .map-drawer__title {
@@ -359,6 +540,10 @@ watch(gmap.currentOwner, async (owner) => {
   font-weight: 600;
   color: var(--text);
   margin: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .map-drawer__close {
@@ -370,26 +555,251 @@ watch(gmap.currentOwner, async (owner) => {
   border-radius: 4px;
   display: flex;
   align-items: center;
+  flex-shrink: 0;
+  margin-left: 8px;
   transition: background 0.12s;
 }
 .map-drawer__close:hover { background: var(--surface2); }
 
-.map-drawer__items {
+/* ── Tabs ── */
+.map-drawer__tabs {
+  display: flex;
+  padding: 10px 14px 0;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.map-drawer__tab {
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-mid);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.map-drawer__tab--active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Place tab ── */
+.map-drawer__place {
+  padding: 12px 14px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.map-drawer__item {
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.map-drawer__state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-mid);
+  padding: 8px 0;
+}
+.map-drawer__state--err { color: #dc2626; }
+
+.map-drawer__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Photos */
+.map-drawer__photos {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -14px;
+  padding: 0 14px;
+}
+.map-drawer__photos::-webkit-scrollbar { display: none; }
+
+.map-drawer__photo {
+  width: 80px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+
+/* Rating */
+.map-drawer__rating {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.map-drawer__rating-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.map-drawer__stars {
+  font-size: 13px;
+  color: #f59e0b;
+  letter-spacing: 1px;
+}
+
+/* Info rows */
+.map-drawer__info {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.map-drawer__info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.map-drawer__info-row svg { flex-shrink: 0; margin-top: 1px; color: var(--text-mid); }
+.map-drawer__phone { color: var(--accent); text-decoration: none; }
+.map-drawer__phone:hover { text-decoration: underline; }
+
+.map-drawer__hours-row { cursor: pointer; align-items: center; }
+.map-drawer__open-status--open { color: #059669; font-weight: 500; }
+.map-drawer__open-status--closed { color: #dc2626; font-weight: 500; }
+.map-drawer__hours-today { color: var(--text-mid); }
+.map-drawer__hours-caret {
+  margin-left: auto;
+  transition: transform 0.18s;
+  flex-shrink: 0;
+  color: var(--text-mid);
+}
+.map-drawer__hours-caret--open { transform: rotate(180deg); }
+
+.map-drawer__hours-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 20px;
+}
+.map-drawer__hours-day {
+  font-size: 11.5px;
+  color: var(--text-mid);
+  line-height: 1.5;
+}
+
+/* Reviews */
+.map-drawer__reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.map-drawer__section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-mid);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.map-drawer__review {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.map-drawer__review:last-child { border-bottom: none; padding-bottom: 0; }
+
+.map-drawer__review-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.map-drawer__review-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.map-drawer__review-avatar--empty { background: var(--surface2); }
+.map-drawer__review-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.map-drawer__review-author {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.map-drawer__review-time {
+  font-size: 11px;
+  color: var(--text-mid);
+}
+.map-drawer__review-stars {
+  font-size: 11px;
+  color: #f59e0b;
+  letter-spacing: 1px;
+}
+.map-drawer__review-text {
+  font-size: 12px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Google Maps link */
+.map-drawer__maps-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+.map-drawer__maps-link:hover { text-decoration: underline; }
+
+/* ── Items tab ── */
+.map-drawer__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 0 0;
+}
+
+.map-drawer__item {
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+.map-drawer__item:first-child { border-top: none; }
 
 .map-drawer__item-card {
   display: flex;
   gap: 10px;
-  padding: 10px;
+  padding: 10px 14px;
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -458,7 +868,7 @@ watch(gmap.currentOwner, async (owner) => {
 .map-drawer__item-actions {
   display: flex;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 6px 14px;
   background: var(--surface2);
   border-top: 1px solid var(--border);
 }

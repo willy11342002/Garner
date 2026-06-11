@@ -1,12 +1,15 @@
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import Response
 
+from app.core.config import settings
 from app.crud import items as crud_items
 from app.crud import locations as crud_locations
 from app.dependencies import CurrentUser, DbSession
-from app.schemas.location import ContentLocationRead, ContentLocationUpdate, LocationMapPoint
-from app.services import ai_service, geocoding_service
+from app.schemas.location import ContentLocationRead, ContentLocationUpdate, LocationMapPoint, PlaceCacheRead
+from app.services import ai_service, geocoding_service, place_service
 
 router = APIRouter()
 
@@ -201,3 +204,55 @@ async def get_map_locations(
         db, user_id, sw_lat, sw_lng, ne_lat, ne_lng, confirmed=confirmed
     )
     return [LocationMapPoint(**row) for row in rows]
+
+
+# ── Google Places cache ────────────────────────────────────────────────────────
+# IMPORTANT: specific routes (/places/photo, /places/lookup) must be declared
+# BEFORE the parameterized route (/places/{place_id}) or FastAPI will swallow them.
+
+
+@router.get("/places/photo")
+async def proxy_place_photo(
+    ref: str = Query(description="Photo reference name (places/.../photos/...)"),
+    max_width: int = Query(default=800, ge=100, le=4096),
+):
+    """Proxy a Google Places photo so the API key stays server-side. No auth required."""
+    if not settings.google_maps_api_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Maps API key not configured")
+
+    url = "https://maps.googleapis.com/maps/api/place/photo"
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url, params={"photoreference": ref, "maxwidth": max_width, "key": settings.google_maps_api_key})
+        if resp.status_code != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Photo fetch failed")
+        return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Photo fetch failed")
+
+
+@router.get("/places/lookup", response_model=PlaceCacheRead | None)
+async def lookup_place_details(
+    current_user: CurrentUser,
+    db: DbSession,
+    name: str = Query(),
+    lat: float = Query(),
+    lng: float = Query(),
+):
+    """Find a place by name + coordinates via Google Text Search, return cached details."""
+    return await place_service.lookup_place(name, lat, lng, db)
+
+
+@router.get("/places/{place_id}", response_model=PlaceCacheRead)
+async def get_place_details(
+    place_id: str,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Return cached Google Places details for a place_id (7-day TTL)."""
+    result = await place_service.get_place_details(place_id, db)
+    if result is None or not result.name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Place not found")
+    return result
