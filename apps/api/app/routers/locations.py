@@ -1,0 +1,203 @@
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from app.crud import items as crud_items
+from app.crud import locations as crud_locations
+from app.dependencies import CurrentUser, DbSession
+from app.schemas.location import ContentLocationRead, ContentLocationUpdate, LocationMapPoint
+from app.services import ai_service, geocoding_service
+
+router = APIRouter()
+
+
+# ── Item-scoped endpoints ──────────────────────────────────────────────────────
+
+
+@router.get("/items/{item_id}/locations", response_model=list[ContentLocationRead])
+async def list_item_locations(item_id: UUID, current_user: CurrentUser, db: DbSession):
+    user_id = UUID(current_user["sub"])
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return await crud_locations.list_by_content_id(db, user_item.content_id)
+
+
+@router.patch(
+    "/items/{item_id}/locations/{location_id}",
+    response_model=ContentLocationRead,
+)
+async def update_item_location(
+    item_id: UUID,
+    location_id: UUID,
+    data: ContentLocationUpdate,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    user_id = UUID(current_user["sub"])
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    loc = await crud_locations.get_one(db, location_id)
+    if loc is None or loc.content_id != user_item.content_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    updated = await crud_locations.update_location(
+        db, location_id, name=data.name, confirmed=data.confirmed
+    )
+    return updated
+
+
+@router.delete(
+    "/items/{item_id}/locations/{location_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_item_location(
+    item_id: UUID,
+    location_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    user_id = UUID(current_user["sub"])
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    loc = await crud_locations.get_one(db, location_id)
+    if loc is None or loc.content_id != user_item.content_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    await crud_locations.delete_location(db, location_id)
+
+
+# ── Extract locations for existing item ───────────────────────────────────────
+
+
+@router.post(
+    "/items/{item_id}/locations/extract",
+    response_model=list[ContentLocationRead],
+)
+async def extract_item_locations(
+    item_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Run AI location extraction on an existing item using stored raw_data.
+
+    Text source priority (same logic as process_item):
+    - article : raw_data.text / raw_data.markdown  (full original text)
+    - youtube : raw_data.title + raw_data.description
+    - ig      : raw_data.caption
+    - note    : notes_md (raw_data is empty for internal notes)
+
+    Deletes previous AI-extracted locations, re-extracts, geocodes, and returns results.
+    Metadata-sourced locations (IG locationName) are preserved.
+    """
+    user_id = UUID(current_user["sub"])
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    content_id = user_item.content_id
+    raw_data: dict = (user_item.content.raw_data or {}) if user_item.content else {}
+    source_type = user_item.source_type
+
+    # Clear old AI-extracted locations; preserve metadata-sourced ones
+    await crud_locations.delete_ai_locations(db, content_id)
+
+    # Source 1: IG metadata locationName (mirrors worker logic)
+    locations_to_save: list[dict] = []
+    metadata_name = raw_data.get("locationName")
+    if metadata_name and isinstance(metadata_name, str):
+        locations_to_save.append({"name": metadata_name, "order": 0, "source": "metadata"})
+
+    # Source 2: AI extraction from raw_data text
+    text = _build_extract_text(raw_data, source_type, user_item.notes_md)
+    if text:
+        metadata_names = {loc["name"] for loc in locations_to_save}
+        ai_locations = await ai_service.extract_locations(text)
+        for loc_data in ai_locations:
+            name = loc_data.get("name")
+            if name and name not in metadata_names:
+                locations_to_save.append({"name": name, "order": loc_data.get("order", 0), "source": "ai"})
+
+    if not locations_to_save:
+        await db.commit()
+        return []
+
+    created = []
+    for loc_data in locations_to_save:
+        loc_obj = await crud_locations.create_location(
+            db,
+            content_id=content_id,
+            name=loc_data["name"],
+            source=loc_data["source"],
+            order_index=loc_data.get("order", 0),
+        )
+        created.append(loc_obj)
+
+    await db.flush()
+
+    for loc_obj in created:
+        lat, lng = await geocoding_service.geocode(loc_obj.name)
+        loc_obj.lat = lat
+        loc_obj.lng = lng
+
+    await db.commit()
+    return await crud_locations.list_by_content_id(db, content_id)
+
+
+def _build_extract_text(
+    raw_data: dict,
+    source_type: str | None,
+    notes_md: str | None,
+) -> str:
+    """Reconstruct the best available text for location extraction from stored data."""
+    if source_type == "article":
+        return (raw_data.get("text") or raw_data.get("markdown") or "")[:16000]
+
+    if source_type == "youtube":
+        parts: list[str] = []
+        title = raw_data.get("title")
+        if title:
+            parts.append(f"[標題]\n{title}")
+        desc = raw_data.get("description") or raw_data.get("text")
+        if desc:
+            parts.append(f"[說明]\n{desc[:4000]}")
+        return "\n\n".join(parts)
+
+    if source_type == "ig":
+        return (raw_data.get("caption") or raw_data.get("text") or "")[:4000]
+
+    # note (internal) or unknown: raw_data is empty, fall back to notes_md
+    return (notes_md or "")[:8000]
+
+
+# ── Map bounding box query ─────────────────────────────────────────────────────
+
+
+@router.get("/locations", response_model=list[LocationMapPoint])
+async def get_map_locations(
+    current_user: CurrentUser,
+    db: DbSession,
+    bounds: str = Query(
+        description="Comma-separated: sw_lat,sw_lng,ne_lat,ne_lng"
+    ),
+    confirmed: bool | None = Query(default=None),
+):
+    """Return all geocoded locations within a bounding box for the current user."""
+    try:
+        parts = [float(p) for p in bounds.split(",")]
+        sw_lat, sw_lng, ne_lat, ne_lng = parts
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="bounds must be 'sw_lat,sw_lng,ne_lat,ne_lng'",
+        )
+
+    user_id = UUID(current_user["sub"])
+    rows = await crud_locations.get_by_bounds(
+        db, user_id, sw_lat, sw_lng, ne_lat, ne_lng, confirmed=confirmed
+    )
+    return [LocationMapPoint(**row) for row in rows]

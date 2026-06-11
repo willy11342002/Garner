@@ -252,11 +252,42 @@ async function confirmArchive() {
 
           <div class="id-body">
             <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
-            <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
+            <div class="id-body__header">
+              <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
+              <div class="id-body__actions">
+                <button
+                  v-if="!readonly && pendingTags.length"
+                  class="btn btn--confirm-tags"
+                  :disabled="confirmingAll"
+                  @click="handleConfirmAll"
+                >
+                  {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
+                </button>
+                <button
+                  v-if="!readonly"
+                  class="btn btn--accent"
+                  :disabled="savingNotes"
+                  @click="isEditingNotes ? saveNotes() : startEditNotes()"
+                >
+                  {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
+                </button>
+                <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
+                    <template v-if="(item as Item).status === 'archived'">
+                      <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+                    </template>
+                    <template v-else>
+                      <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
+                    </template>
+                  </svg>
+                  {{ archiving ? '處理中…' : (item as Item).status === 'archived' ? '復原' : '封存' }}
+                </button>
+              </div>
+            </div>
 
             <div v-if="!readonly" class="id-body__tags">
               <template v-if="pendingTags.length">
-<span
+                <span
                   v-for="tag in pendingTags"
                   :key="tag.id"
                   class="tag-chip tag-chip--pending id-tag"
@@ -307,36 +338,6 @@ async function confirmArchive() {
             </div>
             <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
               <span class="processing-badge">AI 處理中...</span>
-            </div>
-
-            <div class="id-body__actions">
-              <button
-                v-if="!readonly && pendingTags.length"
-                class="btn btn--confirm-tags"
-                :disabled="confirmingAll"
-                @click="handleConfirmAll"
-              >
-                {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
-              </button>
-              <button
-                v-if="!readonly"
-                class="btn btn--accent"
-                :disabled="savingNotes"
-                @click="isEditingNotes ? saveNotes() : startEditNotes()"
-              >
-                {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
-              </button>
-<button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
-                  <template v-if="(item as Item).status === 'archived'">
-                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
-                  </template>
-                  <template v-else>
-                    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
-                  </template>
-                </svg>
-                {{ archiving ? '處理中…' : (item as Item).status === 'archived' ? '復原' : '封存' }}
-              </button>
             </div>
           </div>
         </div>

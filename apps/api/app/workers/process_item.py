@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import events
 from app.crud import chunks as crud_chunks
+from app.crud import locations as crud_locations
 from app.crud import notifications as crud_notifications
 from app.crud import tags as crud_tags
 from app.models.content_object import ContentObject
@@ -16,6 +17,7 @@ from app.models.notification import NotificationType
 from app.providers import get_provider
 from app.providers.base import FetchInfo
 from app.services import ai_service
+from app.services import geocoding_service
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,12 @@ async def process_item(
         title, analysis, summary_embedding, chunk_records,
     )
 
+    # Stage: locating — save extracted locations and geocode（"done" event已發出，此步驟不影響 UI）
+    try:
+        await _save_locations(db, content_id, content, analysis)
+    except Exception:
+        logger.exception("Failed to save locations for content_id=%s", content_id)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -225,6 +233,64 @@ async def _save_analysis(
 
     await db.commit()
     events.notify(str(user_item_id))
+
+
+async def _save_locations(
+    db: AsyncSession,
+    content_id: UUID,
+    content: ContentObject,
+    analysis: dict,
+) -> None:
+    """Save extracted locations and geocode them.
+
+    Sources (in priority order):
+    1. IG metadata: content.raw_data.locationName  (source="metadata")
+    2. AI extraction: analysis["locations"]          (source="ai")
+    """
+    locations_to_save: list[dict] = []
+
+    # Source 1: IG metadata locationName
+    raw_data = content.raw_data or {}
+    metadata_name = raw_data.get("locationName")
+    if metadata_name and isinstance(metadata_name, str):
+        locations_to_save.append({"name": metadata_name, "order": 0, "source": "metadata"})
+
+    # Source 2: AI-extracted locations (skip duplicates already from metadata)
+    metadata_names = {s["name"] for s in locations_to_save}
+    for loc in analysis.get("locations", []):
+        if not isinstance(loc, dict):
+            continue
+        name = loc.get("name")
+        if name and name not in metadata_names:
+            locations_to_save.append({
+                "name": name,
+                "order": loc.get("order", 0),
+                "source": "ai",
+            })
+
+    if not locations_to_save:
+        return
+
+    # Create records, then geocode and update
+    created = []
+    for loc_data in locations_to_save:
+        loc_obj = await crud_locations.create_location(
+            db,
+            content_id=content_id,
+            name=loc_data["name"],
+            source=loc_data["source"],
+            order_index=loc_data["order"],
+        )
+        created.append(loc_obj)
+
+    await db.flush()  # assign IDs before geocoding
+
+    for loc_obj in created:
+        lat, lng = await geocoding_service.geocode(loc_obj.name)
+        loc_obj.lat = lat
+        loc_obj.lng = lng
+
+    await db.commit()
 
 
 async def _fail(

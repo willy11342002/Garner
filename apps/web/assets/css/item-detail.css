@@ -39,7 +39,7 @@
   border-radius: 20px;
   overflow: hidden;
   box-shadow: 0 32px 80px -16px rgba(0, 0, 0, 0.7);
-  max-height: calc(100vh - 80px);
+  height: 90vh;
 }
 
 /* Close button */
@@ -104,7 +104,6 @@
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
-  max-height: calc(100vh - 80px);
   position: relative;
   z-index: 3;
 }
@@ -221,7 +220,8 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px 16px;
-  max-height: 420px;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -369,26 +369,29 @@
 /* ---------- Modal Responsive ---------- */
 @media (max-width: 720px) {
   .id-overlay { padding: 0; align-items: flex-end; justify-content: center; }
+
+  /* Panel is the scroll container; rows: media fixed + body auto-height */
   .id-panel {
     grid-template-columns: 1fr;
-    grid-template-rows: 200px 1fr;
+    grid-template-rows: 200px auto;
     border-radius: 20px 20px 0 0;
     width: 100vw;
     max-width: 100vw;
     height: 92vh;
     max-height: 92vh;
+    overflow-y: auto;
     animation: id-slide-up .3s cubic-bezier(0.32, 0.72, 0, 1) both;
   }
 
-  /* 無縮圖時跳過 media 行，body 佔滿全高 */
   .id-panel:not(:has(.id-media__img)) {
-    grid-template-rows: 1fr;
+    grid-template-rows: auto;
   }
 
   @keyframes id-slide-up {
     from { opacity: 0; transform: translateY(60px); }
     to   { opacity: 1; transform: translateY(0); }
   }
+
   .id-media {
     height: 100%;
     min-height: 0;
@@ -396,14 +399,24 @@
   .id-media::after {
     background: linear-gradient(180deg, transparent 20%, var(--surface) 90%);
   }
+
+  /* Body does not scroll; panel handles scrolling */
   .id-body {
     padding: 20px 20px 32px;
-    max-height: none;
-    min-height: 0;
-    overflow-y: auto;
+    overflow-y: visible;
   }
-  .id-body__title { font-size: 20px; }
+
   .id-body__meta.mono { display: none; }
-  /* 不用 auto margin，讓 actions 緊接內容下方 */
+  .id-body__title     { font-size: 20px; }
+  .id-body__summary   { flex: none; overflow: visible; max-height: none; }
+
+  /* title + actions sticky as one unit */
+  .id-body__header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--surface);
+    padding-bottom: 8px;
+  }
   .id-body__actions { margin-top: 8px; }
 }

@@ -5,6 +5,7 @@ from app.models.user_feature_usage import UserFeatureUsage
 from app.models.notification import Notification, NotificationType
 from app.models.chat import ChatFolder, ChatMessage, ChatSession, MessageRole
 from app.models.content_chunk import ContentChunk
+from app.models.content_location import ContentLocation
 from app.models.content_object import ContentObject, SourceType
 from app.models.item_tag import ItemTag, TagSource
 from app.models.plan import Plan
@@ -21,6 +22,7 @@ __all__ = [
     "SubscriptionStatus",
     "ContentObject",
     "SourceType",
+    "ContentLocation",
     "UserItem",
     "UserItemStatus",
     "Tag",

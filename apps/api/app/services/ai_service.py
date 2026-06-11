@@ -79,7 +79,10 @@ Analyze the following content and return ONLY a JSON object:
   "tags": {
     "zh-TW": ["標籤1", "標籤2", "標籤3"],
     "en": ["tag1", "tag2", "tag3"]
-  }
+  },
+  "locations": [
+    {"name": "地點名稱", "order": 0}
+  ]
 }
 
 Rules for tags:
@@ -87,6 +90,13 @@ Rules for tags:
 - BROAD, REUSABLE categories — themes, domains, concepts that apply across many items
 - AVOID specific proper nouns or one-off details
 - Tags must be conceptually paired (same index = same concept across languages)
+
+Rules for locations:
+- Extract ONLY specific, real-world places that are actually visited or featured in the content (e.g. restaurants, landmarks, cities, neighborhoods)
+- EXCLUDE places merely mentioned in passing or unrelated to the content's subject matter
+- Use the most recognizable name for the place (prefer official or well-known names)
+- order starts at 0 and reflects the sequence in which places appear
+- Return [] if no concrete locations are identifiable
 - Return ONLY the JSON object, no markdown fences, no extra text
 
 Content:
@@ -106,6 +116,13 @@ Rules for tags:
 - AVOID specific proper nouns or one-off details
 - For existing tags: use the exact zh-TW name from the list; derive the English equivalent yourself
 - Tags must be conceptually paired (same index = same concept across languages)
+
+Rules for locations:
+- Extract ONLY specific, real-world places that are actually visited or featured in the content (e.g. restaurants, landmarks, cities, neighborhoods)
+- EXCLUDE places merely mentioned in passing or unrelated to the content's subject matter
+- Use the most recognizable name for the place (prefer official or well-known names)
+- order starts at 0 and reflects the sequence in which places appear
+- Return [] if no concrete locations are identifiable
 - Return ONLY the JSON object, no markdown fences, no extra text
 
 Output format:
@@ -114,7 +131,10 @@ Output format:
   "tags": {{
     "zh-TW": ["標籤1", "標籤2", "標籤3"],
     "en": ["tag1", "tag2", "tag3"]
-  }}
+  }},
+  "locations": [
+    {{"name": "地點名稱", "order": 0}}
+  ]
 }}
 
 Content:
@@ -182,6 +202,7 @@ async def analyze_content(content: str, candidate_tags: list[str] | None = None)
         "summary_md": {"zh-TW": zh_md},
         "embed_text": tags_data.get("embed_text", ""),
         "tags": tags_data.get("tags", {"zh-TW": [], "en": []}),
+        "locations": tags_data.get("locations", []),
     }
 
 
@@ -810,6 +831,36 @@ async def understand_instagram(
                 parts.append(f"[影片 {idx} 內容]\n{text}")
 
     return "\n\n".join(parts) if parts else None
+
+
+_EXTRACT_LOCATIONS_PROMPT = """\
+Read the following content and extract ONLY specific, real-world places that are actually visited or featured (e.g. restaurants, landmarks, cities, neighborhoods, scenic spots).
+
+Rules:
+- EXCLUDE places merely mentioned in passing or unrelated to the content's subject matter
+- Use the most recognizable name for each place (official or well-known name)
+- order starts at 0 and reflects the sequence places appear in the content
+- Return [] if no concrete locations are identifiable
+- Return ONLY a JSON array, no markdown fences, no extra text
+
+Output format:
+[{"name": "地點名稱", "order": 0}]
+
+Content:
+"""
+
+
+async def extract_locations(text: str) -> list[dict]:
+    """Extract location names from existing notes_md using AI. Returns [{name, order}]."""
+    truncated = text[:16000]
+    raw = await _llm_call(_EXTRACT_LOCATIONS_PROMPT + truncated)
+    try:
+        data = _parse_json(raw)
+        if isinstance(data, list):
+            return [loc for loc in data if isinstance(loc, dict) and loc.get("name")]
+    except Exception:
+        pass
+    return []
 
 
 async def embed(text: str) -> list[float]:

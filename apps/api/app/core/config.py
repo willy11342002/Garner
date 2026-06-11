@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     gumroad_client_id: str = ""
     gumroad_client_secret: str = ""
     gumroad_redirect_uri: str = "https://garner-brain.up.railway.app/auth/gumroad/callback"
+    google_maps_api_key: str = ""
 
 
 settings = Settings()
