@@ -1,12 +1,10 @@
 {
   "name": "garner-extension",
   "displayName": "Garner — 一鍵收藏，AI 幫你整理",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "scripts": {
     "gen-icon": "node scripts/gen-icon.mjs",
-    "predev": "node scripts/gen-icon.mjs",
-    "prebuild": "node scripts/gen-icon.mjs",
     "dev": "plasmo dev",
     "build": "plasmo build",
     "package": "plasmo package"
