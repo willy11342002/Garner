@@ -237,10 +237,12 @@ async function confirmArchive() {
         @keydown.esc="doClose"
         tabindex="-1"
       >
-        <div v-if="loading" class="id-spinner">載入中...</div>
-        <div v-else-if="error" class="id-spinner">載入失敗，請重新整理</div>
-        <div v-else-if="item" class="id-panel fadeup">
+        <div class="id-panel">
           <button class="id-close" @click="doClose">×</button>
+          <div v-if="loading || error" class="id-spinner id-spinner--panel">
+            {{ error ? '載入失敗，請重新整理' : '載入中...' }}
+          </div>
+          <template v-else-if="item">
 
           <div class="id-media">
             <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="id-media__img" alt="">
@@ -340,6 +342,7 @@ async function confirmArchive() {
               <span class="processing-badge">AI 處理中...</span>
             </div>
           </div>
+          </template>
         </div>
       </div>
     </template>
