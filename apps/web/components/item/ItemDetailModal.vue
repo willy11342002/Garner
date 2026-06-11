@@ -3,19 +3,29 @@ import type { Item, CollectionShareItem, Tag } from '~/types/api'
 
 type AnyItem = Item | CollectionShareItem
 
+interface ItemLocation {
+  id: string
+  name: string
+  lat: number | null
+  lng: number | null
+  source: 'ai' | 'metadata'
+  confirmed: boolean
+  order_index: number
+}
+
 const props = defineProps<{
-  itemId?: string | null     // 私人模式：傳 id，自動 fetch
-  item?: AnyItem | null      // 公開唯讀模式：直接傳已載入的 item
-  page?: boolean             // true → 內嵌頁面模式（無 overlay）
-  startInEdit?: boolean      // true → 開啟後自動進入筆記編輯模式
+  itemId?: string | null
+  item?: AnyItem | null
+  page?: boolean
+  startInEdit?: boolean
 }>()
 const emit = defineEmits<{ close: []; archived: [] }>()
 
-// 是否顯示
 const isOpen = computed(() => !!(props.itemId || props.item))
-// 是否為唯讀公開模式
 const readonly = computed(() => !props.itemId)
 
+const apiFetch = useApiFetch()
+const gmap = useGlobalMap()
 const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, confirmItemTagsBulk } = useItems()
 const { updateArticle } = useArticles()
 
@@ -25,10 +35,147 @@ const pendingTags = ref<Tag[]>([])
 const loading = ref(false)
 const error = ref(false)
 
-// 最終顯示的 item：私人模式用 fetchedItem，公開模式用 props.item
 const item = computed(() => readonly.value ? props.item ?? null : fetchedItem.value)
 
-// Tags
+// ── Tab ───────────────────────────────────────────────────────────────────────
+const activeTab = ref<'info' | 'map'>('info')
+const mapSlotEl = ref<HTMLElement | null>(null)
+const itemLocations = ref<ItemLocation[]>([])
+const loadingLocations = ref(false)
+const extractingLocations = ref(false)
+
+// Owner key changes with each item so re-opening a different item always re-claims
+const mapOwnerKey = computed(() => `modal:${props.itemId ?? ''}`)
+
+async function switchToMapTab() {
+  activeTab.value = 'map'
+  await nextTick()  // wait for mapSlotEl to mount via v-if
+  if (!mapSlotEl.value || !props.itemId) return
+  await gmap.claim(mapSlotEl.value, mapOwnerKey.value)
+  await loadItemLocations()
+}
+
+function switchToInfoTab() {
+  gmap.release(mapOwnerKey.value)
+  activeTab.value = 'info'
+}
+
+async function loadItemLocations() {
+  if (!props.itemId) return
+  loadingLocations.value = true
+  try {
+    itemLocations.value = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations`)
+    renderItemMarkers()
+  } finally {
+    loadingLocations.value = false
+  }
+}
+
+function renderItemMarkers() {
+  const map = gmap.getMap()
+  const L = gmap.getL()
+  if (!map || !L) return
+
+  gmap.clearAllMarkers()
+
+  const geoLocs = itemLocations.value.filter(l => l.lat !== null && l.lng !== null)
+  if (!geoLocs.length) return
+
+  const markerList: import('leaflet').Marker[] = []
+  for (const loc of geoLocs) {
+    const icon = L.divIcon({
+      className: '',
+      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin ${loc.confirmed ? 'map-pin--confirmed' : 'map-pin--pending'}">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 8 12 20 12 20S24 20 24 12C24 5.37 18.63 0 12 0z"/>
+        <circle cx="12" cy="11" r="4.5" fill="white" fill-opacity="0.92"/>
+      </svg>`,
+      iconSize: [24, 32],
+      iconAnchor: [12, 32],
+    })
+    const m = L.marker([loc.lat!, loc.lng!], { icon }).addTo(map)
+    m.bindPopup(
+      L.popup({ closeButton: false, className: 'id-loc-popup', offset: [0, -18] })
+        .setContent(buildLocPopup(loc, m))
+    )
+    gmap.registerMarker(m)
+    markerList.push(m)
+  }
+
+  if (markerList.length > 0) {
+    const group = L.featureGroup(markerList)
+    map.fitBounds(group.getBounds().pad(0.4), { maxZoom: 14, animate: false })
+  }
+}
+
+function buildLocPopup(loc: ItemLocation, marker: import('leaflet').Marker): HTMLElement {
+  const root = document.createElement('div')
+  root.className = 'id-loc-popup__inner'
+
+  const name = document.createElement('div')
+  name.className = 'id-loc-popup__name'
+  name.textContent = loc.name
+  root.appendChild(name)
+
+  const actions = document.createElement('div')
+  actions.className = 'id-loc-popup__actions'
+
+  if (!loc.confirmed) {
+    const confirmBtn = document.createElement('button')
+    confirmBtn.className = 'id-loc-popup__btn id-loc-popup__btn--confirm'
+    confirmBtn.textContent = '確認'
+    confirmBtn.addEventListener('click', async () => {
+      confirmBtn.disabled = true
+      confirmBtn.textContent = '確認中…'
+      await confirmLocation(loc)
+      marker.closePopup()
+    })
+    actions.appendChild(confirmBtn)
+  }
+
+  const deleteBtn = document.createElement('button')
+  deleteBtn.className = 'id-loc-popup__btn id-loc-popup__btn--delete'
+  deleteBtn.textContent = '刪除'
+  deleteBtn.addEventListener('click', async () => {
+    deleteBtn.disabled = true
+    deleteBtn.textContent = '刪除中…'
+    await deleteLocation(loc)
+    marker.closePopup()
+  })
+  actions.appendChild(deleteBtn)
+  root.appendChild(actions)
+
+  return root
+}
+
+async function confirmLocation(loc: ItemLocation) {
+  if (!props.itemId) return
+  await apiFetch(`/items/${props.itemId}/locations/${loc.id}`, {
+    method: 'PATCH',
+    body: { confirmed: true },
+  })
+  loc.confirmed = true
+  renderItemMarkers()
+}
+
+async function deleteLocation(loc: ItemLocation) {
+  if (!props.itemId) return
+  await apiFetch(`/items/${props.itemId}/locations/${loc.id}`, { method: 'DELETE' })
+  itemLocations.value = itemLocations.value.filter(l => l.id !== loc.id)
+  renderItemMarkers()
+}
+
+async function extractLocations() {
+  if (!props.itemId) return
+  extractingLocations.value = true
+  try {
+    itemLocations.value = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations/extract`, { method: 'POST' })
+    renderItemMarkers()
+  } finally {
+    extractingLocations.value = false
+  }
+}
+
+// ── Tags ──────────────────────────────────────────────────────────────────────
 const addingTag = ref(false)
 const newTagInput = ref('')
 const tagRemoving = ref<Record<string, boolean>>({})
@@ -37,7 +184,7 @@ const tagInputRef = ref<HTMLInputElement | null>(null)
 const tagConfirming = ref<Record<string, boolean>>({})
 const confirmingAll = ref(false)
 
-// Inline note editing
+// ── Inline note editing ───────────────────────────────────────────────────────
 const isEditingNotes = ref(false)
 const editingNotesMd = ref('')
 const savingNotes = ref(false)
@@ -59,7 +206,7 @@ async function saveNotes() {
   }
 }
 
-// Archive
+// ── Archive ───────────────────────────────────────────────────────────────────
 const archiving = ref(false)
 const showArchiveConfirm = ref(false)
 
@@ -110,7 +257,14 @@ const lockScroll = (lock: boolean) => {
   document.body.style.overflow = lock ? 'hidden' : ''
 }
 
-watch(() => props.itemId, (id) => {
+watch(() => props.itemId, (id, prevId) => {
+  // Reset map tab when item changes
+  if (activeTab.value === 'map') {
+    gmap.release(`modal:${prevId ?? ''}`)
+    activeTab.value = 'info'
+  }
+  itemLocations.value = []
+
   if (id) {
     lockScroll(true)
     load(id)
@@ -128,16 +282,21 @@ watch(() => props.item, (v) => {
 
 onUnmounted(() => {
   lockScroll(false)
+  if (activeTab.value === 'map') gmap.release(mapOwnerKey.value)
 })
 
 function doClose() {
+  if (activeTab.value === 'map') {
+    gmap.release(mapOwnerKey.value)
+    activeTab.value = 'info'
+  }
   showArchiveConfirm.value = false
   isEditingNotes.value = false
   editingNotesMd.value = ''
   emit('close')
 }
 
-// Tag handlers
+// ── Tag handlers ──────────────────────────────────────────────────────────────
 async function startAddingTag() {
   addingTag.value = true
   await nextTick()
@@ -204,7 +363,7 @@ async function handleRemovePendingTag(tag: Tag) {
   }
 }
 
-// Archive handlers
+// ── Archive handlers ──────────────────────────────────────────────────────────
 function requestArchive() {
   if (item.value?.status === 'archived') confirmArchive()
   else showArchiveConfirm.value = true
@@ -266,7 +425,7 @@ async function confirmArchive() {
                   {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
                 </button>
                 <button
-                  v-if="!readonly"
+                  v-if="!readonly && activeTab === 'info'"
                   class="btn btn--accent"
                   :disabled="savingNotes"
                   @click="isEditingNotes ? saveNotes() : startEditNotes()"
@@ -286,6 +445,147 @@ async function confirmArchive() {
                 </button>
               </div>
             </div>
+
+            <!-- Tab bar (only in private mode) -->
+            <div v-if="!readonly" class="id-tabs">
+              <button
+                class="id-tab"
+                :class="{ 'id-tab--active': activeTab === 'info' }"
+                @click="switchToInfoTab"
+              >筆記</button>
+              <button
+                class="id-tab"
+                :class="{ 'id-tab--active': activeTab === 'map' }"
+                @click="switchToMapTab"
+              >地圖</button>
+            </div>
+
+            <!-- Info tab: tags + notes -->
+            <template v-if="activeTab === 'info'">
+              <div class="id-body__tags">
+                <template v-if="pendingTags.length">
+                  <span
+                    v-for="tag in pendingTags"
+                    :key="tag.id"
+                    class="tag-chip tag-chip--pending id-tag"
+                    :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
+                  >
+                    {{ tag.name }}
+                    <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
+                    <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
+                  </span>
+                </template>
+                <span
+                  v-for="(tag, i) in tags"
+                  :key="tag.id"
+                  :class="`tag-chip tag-chip--${tagColor(i)} id-tag`"
+                  :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
+                >
+                  {{ tag.name }}
+                  <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
+                </span>
+                <template v-if="addingTag">
+                  <input
+                    ref="tagInputRef"
+                    v-model="newTagInput"
+                    class="id-tag__input"
+                    placeholder="標籤名稱"
+                    @keydown.enter="handleAddTag"
+                    @keydown.esc.stop="addingTag = false; newTagInput = ''"
+                    @blur="handleAddTag"
+                  />
+                </template>
+                <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
+                  + 新增標籤
+                </button>
+              </div>
+
+              <div class="id-body__summary">
+                <TiptapEditor
+                  v-if="isEditingNotes"
+                  v-model="editingNotesMd"
+                  :readonly="false"
+                />
+                <TiptapEditor
+                  v-else-if="(item as Item).notes_md"
+                  :model-value="(item as Item).notes_md"
+                  :readonly="true"
+                />
+                <p v-else class="id-body__summary-empty">尚無筆記</p>
+              </div>
+              <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
+                <span class="processing-badge">AI 處理中...</span>
+              </div>
+            </template>
+
+            <!-- Map tab -->
+            <template v-else-if="activeTab === 'map'">
+              <!-- Map container: global Leaflet instance gets appended here -->
+              <div ref="mapSlotEl" class="id-map-slot" />
+
+              <!-- Locations list -->
+              <div class="id-map-locations">
+                <div v-if="loadingLocations" class="id-map-locations__loading">載入地點中…</div>
+                <template v-else-if="itemLocations.length">
+                  <div v-for="loc in itemLocations" :key="loc.id" class="id-map-loc">
+                    <svg class="id-map-loc__pin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                      <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/>
+                    </svg>
+                    <span class="id-map-loc__name">{{ loc.name }}</span>
+                    <span v-if="!loc.lat" class="id-map-loc__nogeo">無座標</span>
+                    <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
+                      {{ loc.source === 'metadata' ? 'meta' : 'AI' }}
+                    </span>
+                    <span v-if="!loc.confirmed" class="id-map-loc__badge id-map-loc__badge--pending">待確認</span>
+                    <div class="id-map-loc__actions">
+                      <button
+                        v-if="!loc.confirmed"
+                        class="id-map-loc__btn id-map-loc__btn--confirm"
+                        @click="confirmLocation(loc)"
+                      >確認</button>
+                      <button
+                        class="id-map-loc__btn id-map-loc__btn--delete"
+                        @click="deleteLocation(loc)"
+                      >刪除</button>
+                    </div>
+                  </div>
+                </template>
+                <div v-else class="id-map-locations__empty">
+                  <span>此內容尚無地點資訊</span>
+                  <button
+                    class="id-map-loc__btn id-map-loc__btn--extract"
+                    :disabled="extractingLocations"
+                    @click="extractLocations"
+                  >
+                    {{ extractingLocations ? '抽取中…' : '補抓地點' }}
+                  </button>
+                </div>
+              </div>
+            </template>
+
+          </div>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- ── Page mode ── -->
+    <template v-else>
+      <div v-if="loading" class="idp-state">載入中...</div>
+      <div v-else-if="error" class="idp-state">載入失敗，請重新整理</div>
+      <div v-else-if="item" class="idp-wrap">
+        <div class="idp-panel">
+          <div class="idp-media">
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="idp-media__img" alt="">
+            <div v-else class="placeholder placeholder--b idp-media__ph">
+              <div class="placeholder__stripes"></div>
+            </div>
+            <span class="source-badge idp-media__badge">{{ sourceLabel(item.url) }}</span>
+          </div>
+
+          <div class="idp-body">
+            <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
+            <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
 
             <div v-if="!readonly" class="id-body__tags">
               <template v-if="pendingTags.length">
@@ -341,88 +641,7 @@ async function confirmArchive() {
             <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
               <span class="processing-badge">AI 處理中...</span>
             </div>
-          </div>
-          </template>
-        </div>
-      </div>
-    </template>
 
-    <!-- ── Page mode ── -->
-    <template v-else>
-      <div v-if="loading" class="idp-state">載入中...</div>
-      <div v-else-if="error" class="idp-state">載入失敗，請重新整理</div>
-      <div v-else-if="item" class="idp-wrap">
-        <div class="idp-panel">
-          <div class="idp-media">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="idp-media__img" alt="">
-            <div v-else class="placeholder placeholder--b idp-media__ph">
-              <div class="placeholder__stripes"></div>
-            </div>
-            <span class="source-badge idp-media__badge">{{ sourceLabel(item.url) }}</span>
-          </div>
-
-          <div class="idp-body">
-            <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
-            <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
-
-            <!-- Tags -->
-            <div v-if="!readonly" class="id-body__tags">
-              <template v-if="pendingTags.length">
-<span
-                  v-for="tag in pendingTags"
-                  :key="tag.id"
-                  class="tag-chip tag-chip--pending id-tag"
-                  :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
-                >
-                  {{ tag.name }}
-                  <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
-                  <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
-                </span>
-              </template>
-              <span
-                v-for="(tag, i) in tags"
-                :key="tag.id"
-                :class="`tag-chip tag-chip--${tagColor(i)} id-tag`"
-                :style="tagRemoving[tag.id] ? 'opacity:0.4;pointer-events:none' : ''"
-              >
-                {{ tag.name }}
-                <button class="id-tag__remove" @click="handleRemoveTag(tag)">×</button>
-              </span>
-              <template v-if="addingTag">
-                <input
-                  ref="tagInputRef"
-                  v-model="newTagInput"
-                  class="id-tag__input"
-                  placeholder="標籤名稱"
-                  @keydown.enter="handleAddTag"
-                  @keydown.esc.stop="addingTag = false; newTagInput = ''"
-                  @blur="handleAddTag"
-                />
-              </template>
-              <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
-                + 新增標籤
-              </button>
-            </div>
-
-            <!-- Notes -->
-            <div class="id-body__summary">
-              <TiptapEditor
-                v-if="isEditingNotes"
-                v-model="editingNotesMd"
-                :readonly="false"
-              />
-              <TiptapEditor
-                v-else-if="(item as Item).notes_md"
-                :model-value="(item as Item).notes_md"
-                :readonly="true"
-              />
-              <p v-else class="id-body__summary-empty">尚無筆記</p>
-            </div>
-            <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
-              <span class="processing-badge">AI 處理中...</span>
-            </div>
-
-            <!-- Actions -->
             <div class="id-body__actions">
               <button
                 v-if="!readonly && pendingTags.length"
@@ -440,7 +659,7 @@ async function confirmArchive() {
               >
                 {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
               </button>
-<button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
+              <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
                   <template v-if="(item as Item).status === 'archived'">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>

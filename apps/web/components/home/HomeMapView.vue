@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Map as LeafletMap, Marker as LeafletMarker, LatLngBounds } from 'leaflet'
+import type { LatLngBounds } from 'leaflet'
 
 interface MapLocation {
   id: string
@@ -17,11 +17,12 @@ interface MapLocation {
 
 const apiFetch = useApiFetch()
 const itemStore = useItemStore()
+const gmap = useGlobalMap()
 
 // ── Map state ─────────────────────────────────────────────────────────────────
 const mapContainer = ref<HTMLElement | null>(null)
-let map: LeafletMap | null = null
-let markers: Map<string, LeafletMarker> = new Map()
+// Local marker map: location id → Marker (for targeted removal)
+let localMarkers: Map<string, ReturnType<typeof gmap.getL>['Marker'] extends undefined ? never : import('leaflet').Marker> = new Map()
 
 const locations = ref<MapLocation[]>([])
 const allLocatedItemIds = ref<Set<string>>(new Set())
@@ -34,65 +35,36 @@ const drawerLocationName = ref('')
 const drawerItems = ref<MapLocation[]>([])
 
 // ── No-location items ─────────────────────────────────────────────────────────
-const noLocationItems = computed(() => {
-  return itemStore.items.filter(
-    item => !allLocatedItemIds.value.has(item.id) && item.status === 'active'
-  )
-})
+const noLocationItems = computed(() =>
+  itemStore.items.filter(item => !allLocatedItemIds.value.has(item.id) && item.status === 'active')
+)
 
 const extractingIds = ref<Set<string>>(new Set())
 
 async function extractLocations(itemId: string) {
   if (extractingIds.value.has(itemId)) return
-  const s = new Set(extractingIds.value)
-  s.add(itemId)
-  extractingIds.value = s
-
+  extractingIds.value = new Set([...extractingIds.value, itemId])
   try {
-    const locs = await apiFetch<Array<{ id: string; item_id?: string }>>(`/items/${itemId}/locations/extract`, { method: 'POST' })
+    const locs = await apiFetch<Array<{ id: string }>>(`/items/${itemId}/locations/extract`, { method: 'POST' })
     if (locs.length > 0) {
-      const ids = new Set(allLocatedItemIds.value)
-      ids.add(itemId)
-      allLocatedItemIds.value = ids
+      allLocatedItemIds.value = new Set([...allLocatedItemIds.value, itemId])
       await loadLocationsInBounds()
     }
-  } catch {}  finally {
-    const s2 = new Set(extractingIds.value)
-    s2.delete(itemId)
-    extractingIds.value = s2
+  } catch {}
+  finally {
+    const s = new Set(extractingIds.value)
+    s.delete(itemId)
+    extractingIds.value = s
   }
 }
 
-// ── Map init ──────────────────────────────────────────────────────────────────
-async function initMap() {
+// ── Map setup ─────────────────────────────────────────────────────────────────
+async function setupMap() {
   if (!mapContainer.value) return
+  localMarkers = new Map()
+  await gmap.claim(mapContainer.value, 'home')
+  gmap.onMoveEnd(loadLocationsInBounds)
 
-  const L = (await import('leaflet')).default
-  await import('leaflet/dist/leaflet.css')
-
-  // Fix default icon paths (Leaflet + bundler issue)
-  delete (L.Icon.Default.prototype as any)._getIconUrl
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  })
-
-  map = L.map(mapContainer.value, {
-    center: [23.5, 121],  // center on Taiwan by default
-    zoom: 7,
-    zoomControl: true,
-  })
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 19,
-  }).addTo(map)
-
-  map.on('moveend', loadLocationsInBounds)
-  map.on('zoomend', loadLocationsInBounds)
-
-  // Fetch all locations worldwide once to determine which items have locations
   try {
     const all = await apiFetch<MapLocation[]>('/locations?bounds=-90,-180,90,180')
     allLocatedItemIds.value = new Set(all.map(l => l.item_id))
@@ -102,8 +74,17 @@ async function initMap() {
   loadingMap.value = false
 }
 
+async function reclaimMap() {
+  if (!mapContainer.value) return
+  localMarkers = new Map()
+  await gmap.claim(mapContainer.value, 'home')
+  gmap.onMoveEnd(loadLocationsInBounds)
+  await loadLocationsInBounds()
+}
+
 // ── Fetch locations ───────────────────────────────────────────────────────────
 async function loadLocationsInBounds() {
+  const map = gmap.getMap()
   if (!map) return
 
   const bounds: LatLngBounds = map.getBounds()
@@ -115,26 +96,27 @@ async function loadLocationsInBounds() {
     const data = await apiFetch<MapLocation[]>(`/locations?bounds=${boundsParam}`)
     locations.value = data
     updateMarkers(data)
-  } catch (e) {
+  } catch {
     errorMsg.value = '無法載入地點資料'
   }
 }
 
 // ── Markers ───────────────────────────────────────────────────────────────────
-async function updateMarkers(locs: MapLocation[]) {
-  if (!map) return
-  const L = (await import('leaflet')).default
+function updateMarkers(locs: MapLocation[]) {
+  const map = gmap.getMap()
+  const L = gmap.getL()
+  if (!map || !L) return
 
-  // Remove old markers not in the new set
+  // Remove markers no longer in viewport
   const newIds = new Set(locs.map(l => l.id))
-  for (const [id, marker] of markers) {
+  for (const [id, marker] of localMarkers) {
     if (!newIds.has(id)) {
-      marker.remove()
-      markers.delete(id)
+      gmap.removeMarker(marker)
+      localMarkers.delete(id)
     }
   }
 
-  // Group by (lat, lng) for clustering
+  // Group by (lat, lng) for clustering display
   const grouped = new Map<string, MapLocation[]>()
   for (const loc of locs) {
     const key = `${loc.lat},${loc.lng}`
@@ -142,27 +124,31 @@ async function updateMarkers(locs: MapLocation[]) {
     grouped.get(key)!.push(loc)
   }
 
-  // Add new markers
   for (const group of grouped.values()) {
     const first = group[0]
-    const key = first.id
-
-    if (markers.has(key)) continue  // already on map
+    if (localMarkers.has(first.id)) continue
 
     const isConfirmed = group.every(l => l.confirmed)
     const count = group.length
 
-    // Custom icon based on confirmation status and cluster count
+    const countLabel = count > 1
+      ? `<text x="12" y="14.5" text-anchor="middle" font-size="7" font-weight="800" fill="#1d4ed8">${count}</text>`
+      : ''
     const icon = L.divIcon({
       className: '',
-      html: `<div class="map-marker ${isConfirmed ? 'map-marker--confirmed' : 'map-marker--pending'}">${count > 1 ? count : ''}</div>`,
-      iconSize: [32, 32],
-      iconAnchor: [16, 16],
+      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin ${isConfirmed ? 'map-pin--confirmed' : 'map-pin--pending'}">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 8 12 20 12 20S24 20 24 12C24 5.37 18.63 0 12 0z"/>
+        <circle cx="12" cy="11" r="${count > 1 ? 5.5 : 4.5}" fill="white" fill-opacity="0.92"/>
+        ${countLabel}
+      </svg>`,
+      iconSize: [24, 32],
+      iconAnchor: [12, 32],
     })
 
-    const marker = L.marker([first.lat!, first.lng!], { icon }).addTo(map!)
+    const marker = L.marker([first.lat, first.lng], { icon }).addTo(map)
     marker.on('click', () => openDrawer(group))
-    markers.set(key, marker)
+    gmap.registerMarker(marker)
+    localMarkers.set(first.id, marker)
   }
 }
 
@@ -192,7 +178,6 @@ async function deleteLocation(loc: MapLocation) {
   locations.value = locations.value.filter(l => l.id !== loc.id)
   drawerItems.value = drawerItems.value.filter(l => l.id !== loc.id)
   if (drawerItems.value.length === 0) closeDrawer()
-  // Re-check if the item still has any locations
   const stillHas = locations.value.some(l => l.item_id === loc.item_id)
   if (!stillHas) {
     allLocatedItemIds.value = new Set([...allLocatedItemIds.value].filter(id => id !== loc.item_id))
@@ -206,11 +191,22 @@ function openItem(itemId: string) {
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
-onMounted(initMap)
+const isMounted = ref(false)
+
+onMounted(() => {
+  isMounted.value = true
+  setupMap()
+})
 
 onUnmounted(() => {
-  map?.remove()
-  map = null
+  isMounted.value = false
+  gmap.release('home')
+})
+
+// Re-claim when modal releases the map
+watch(gmap.currentOwner, async (owner) => {
+  if (owner !== null || !isMounted.value) return
+  await reclaimMap()
 })
 </script>
 
@@ -224,7 +220,7 @@ onUnmounted(() => {
     <!-- Error -->
     <div v-if="errorMsg" class="map-error">{{ errorMsg }}</div>
 
-    <!-- Map container -->
+    <!-- Map container slot — the global containerEl will be appended here -->
     <div ref="mapContainer" class="map-container" />
 
     <!-- Location drawer -->
@@ -239,18 +235,9 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="map-drawer__items">
-          <div
-            v-for="loc in drawerItems"
-            :key="loc.id"
-            class="map-drawer__item"
-          >
+          <div v-for="loc in drawerItems" :key="loc.id" class="map-drawer__item">
             <div class="map-drawer__item-card" @click="openItem(loc.item_id)">
-              <img
-                v-if="loc.item_thumbnail"
-                :src="loc.item_thumbnail"
-                class="map-drawer__item-thumb"
-                alt=""
-              />
+              <img v-if="loc.item_thumbnail" :src="loc.item_thumbnail" class="map-drawer__item-thumb" alt="" />
               <div v-else class="map-drawer__item-thumb map-drawer__item-thumb--empty" />
               <div class="map-drawer__item-body">
                 <span class="map-drawer__item-title">{{ loc.item_title || '（無標題）' }}</span>
@@ -266,12 +253,10 @@ onUnmounted(() => {
               <button
                 v-if="!loc.confirmed"
                 class="map-drawer__action map-drawer__action--confirm"
-                title="確認此地點"
                 @click.stop="confirmLocation(loc)"
               >確認</button>
               <button
                 class="map-drawer__action map-drawer__action--delete"
-                title="刪除此地點"
                 @click.stop="deleteLocation(loc)"
               >刪除</button>
             </div>
@@ -287,11 +272,7 @@ onUnmounted(() => {
         <span>{{ noLocationItems.length }} 筆內容尚無地點資訊</span>
       </div>
       <div class="map-no-location__list">
-        <div
-          v-for="item in noLocationItems.slice(0, 20)"
-          :key="item.id"
-          class="map-no-location__row"
-        >
+        <div v-for="item in noLocationItems.slice(0, 20)" :key="item.id" class="map-no-location__row">
           <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="map-no-location__thumb" alt="" />
           <div v-else class="map-no-location__thumb map-no-location__thumb--empty" />
           <span class="map-no-location__name">{{ item.title || '（無標題）' }}</span>
@@ -422,9 +403,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   background: var(--surface2);
 }
-.map-drawer__item-thumb--empty {
-  background: var(--surface2);
-}
+.map-drawer__item-thumb--empty { background: var(--surface2); }
 
 .map-drawer__item-body {
   display: flex;
@@ -500,7 +479,6 @@ onUnmounted(() => {
   color: var(--accent);
   border-color: var(--accent-bdr);
 }
-
 .map-drawer__action--delete {
   background: rgba(239, 68, 68, 0.08);
   color: #dc2626;
@@ -547,11 +525,8 @@ onUnmounted(() => {
   border-radius: 5px;
   object-fit: cover;
   flex-shrink: 0;
-  background: var(--surface2);
 }
-.map-no-location__thumb--empty {
-  background: var(--border);
-}
+.map-no-location__thumb--empty { background: var(--border); }
 
 .map-no-location__name {
   flex: 1;
@@ -575,10 +550,7 @@ onUnmounted(() => {
   transition: opacity 0.12s;
   white-space: nowrap;
 }
-.map-no-location__extract:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.map-no-location__extract:disabled { opacity: 0.5; cursor: not-allowed; }
 .map-no-location__extract:not(:disabled):hover { opacity: 0.8; }
 
 .map-no-location__more {
@@ -601,30 +573,19 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* Global: Leaflet marker overrides (unscoped) */
-.map-marker {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-  transition: transform 0.12s;
+/* Global: Leaflet marker overrides (must be unscoped) */
+.map-pin {
+  display: block;
+  overflow: visible;
   cursor: pointer;
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,0.3));
+  transition: transform 0.12s, filter 0.12s;
 }
-.map-marker:hover { transform: scale(1.15); }
+.map-pin:hover {
+  transform: scale(1.18) translateY(-2px);
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.38));
+}
 
-.map-marker--confirmed {
-  background: #3b82f6;
-  color: white;
-}
-
-.map-marker--pending {
-  background: rgba(59, 130, 246, 0.45);
-  color: white;
-}
+.map-pin--confirmed { fill: #3b82f6; }
+.map-pin--pending   { fill: #93c5fd; }
 </style>
