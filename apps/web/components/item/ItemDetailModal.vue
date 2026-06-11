@@ -7,6 +7,7 @@ const props = defineProps<{
   itemId?: string | null     // 私人模式：傳 id，自動 fetch
   item?: AnyItem | null      // 公開唯讀模式：直接傳已載入的 item
   page?: boolean             // true → 內嵌頁面模式（無 overlay）
+  startInEdit?: boolean      // true → 開啟後自動進入筆記編輯模式
 }>()
 const emit = defineEmits<{ close: []; archived: [] }>()
 
@@ -16,6 +17,7 @@ const isOpen = computed(() => !!(props.itemId || props.item))
 const readonly = computed(() => !props.itemId)
 
 const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, confirmItemTagsBulk } = useItems()
+const { updateArticle } = useArticles()
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
@@ -49,7 +51,7 @@ async function saveNotes() {
   if (!item.value) return
   savingNotes.value = true
   try {
-    await updateItem(item.value.id, { notes_md: editingNotesMd.value })
+    await updateArticle(item.value.id, { notes_md: editingNotesMd.value })
     if (fetchedItem.value) fetchedItem.value = { ...fetchedItem.value, notes_md: editingNotesMd.value }
     isEditingNotes.value = false
   } finally {
@@ -89,11 +91,13 @@ async function load(id: string) {
   fetchedItem.value = null
   tags.value = []
   pendingTags.value = []
+  isEditingNotes.value = false
   try {
     const [fi, ft, fp] = await Promise.all([getItem(id), getItemTags(id), getPendingItemTags(id)])
     fetchedItem.value = fi
     tags.value = ft
     pendingTags.value = fp
+    if (props.startInEdit) startEditNotes()
   } catch {
     error.value = true
   } finally {

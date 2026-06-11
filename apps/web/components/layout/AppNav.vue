@@ -203,8 +203,8 @@
             </div>
             <p v-if="addError" class="add-modal__error">{{ addError }}</p>
             <div class="add-modal__divider"><span>{{ t('add.orDivider') }}</span></div>
-            <button class="add-modal__write-btn" @click="closeAdd(); navigateTo(`/app/write?from=${route.path}`)">
-              {{ t('add.writeArticle') }}
+            <button class="add-modal__write-btn" :disabled="writingArticle" @click="handleWriteArticle">
+              {{ writingArticle ? t('add.saving') : t('add.writeArticle') }}
             </button>
           </template>
         </div>
@@ -214,6 +214,7 @@
     <!-- Item detail modal (通知共用) -->
     <ItemDetailModal
       :item-id="activeItemId"
+      :start-in-edit="activeItemEditMode"
       @close="closeItemModal()"
       @archived="onItemArchived"
     />
@@ -251,7 +252,22 @@ const menuOpen = ref(false)
 const menuPanel = ref<'main' | 'appearance' | 'language'>('main')
 
 // Item detail modal
-const { activeItemId, open: openItemModal, close: closeItemModal } = useItemModal()
+const { activeItemId, activeItemEditMode, open: openItemModal, openInEdit: openItemInEdit, close: closeItemModal } = useItemModal()
+
+// 新增文章（建立後直接開 modal 編輯）
+const { createArticle } = useArticles()
+const writingArticle = ref(false)
+async function handleWriteArticle() {
+  if (writingArticle.value) return
+  writingArticle.value = true
+  closeAdd()
+  try {
+    const article = await createArticle()
+    openItemInEdit(article.id)
+  } catch { /* ignore */ } finally {
+    writingArticle.value = false
+  }
+}
 
 function onItemArchived() {
   if (!activeItemId.value) return

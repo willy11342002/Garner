@@ -2,9 +2,9 @@
 definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 我的文章' })
 
-const { listArticles, reanalyzeArticle } = useArticles()
+const { listArticles, createArticle, reanalyzeArticle } = useArticles()
+const { openInEdit } = useItemModal()
 const apiFetch = useApiFetch()
-const router = useRouter()
 
 const articles = ref<Awaited<ReturnType<typeof listArticles>>>([])
 const loading = ref(true)
@@ -19,6 +19,20 @@ onMounted(async () => {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+// ── 新增文章 ──────────────────────────────────────────────────────────────────
+const creatingArticle = ref(false)
+
+async function handleNewArticle() {
+  if (creatingArticle.value) return
+  creatingArticle.value = true
+  try {
+    const article = await createArticle()
+    openInEdit(article.id)
+  } catch { /* ignore */ } finally {
+    creatingArticle.value = false
+  }
 }
 
 // ── 選擇模式 ──────────────────────────────────────────────────────────────────
@@ -44,7 +58,7 @@ function handleCardClick(id: string) {
   if (selecting.value) {
     toggleSelect(id)
   } else {
-    router.push(`/app/write/${id}?from=/app/articles`)
+    openInEdit(id)
   }
 }
 
@@ -90,9 +104,9 @@ async function batchArchive() {
     </header>
 
     <div class="articles-toolbar">
-      <button class="btn btn--accent" @click="router.push('/app/write')">
+      <button class="btn btn--accent" :disabled="creatingArticle" @click="handleNewArticle">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        新增文章
+        {{ creatingArticle ? '建立中…' : '新增文章' }}
       </button>
       <button class="btn btn--ghost" :class="{ 'btn--ghost-active': selecting }" @click="selecting ? exitSelectMode() : enterSelectMode()">
         {{ selecting ? '取消選擇' : '選擇' }}

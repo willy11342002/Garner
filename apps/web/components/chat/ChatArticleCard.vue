@@ -26,10 +26,9 @@ import type { ArticleDraft } from '~/types/api'
 const props = defineProps<{ draft: ArticleDraft }>()
 defineEmits<{ preview: [id: string] }>()
 
-const router = useRouter()
-
 function openInEditor() {
-  router.push(`/app/write/${props.draft.id}?from=/app/chat`)
+  const { openInEdit } = useItemModal()
+  openInEdit(props.draft.id)
 }
 </script>
 

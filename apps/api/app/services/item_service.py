@@ -271,7 +271,7 @@ async def delete_item(db: AsyncSession, user_id: UUID, item_id: UUID, *, hard: b
 
 
 async def list_articles(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
-    """列出所有 user_item（含外部連結與手寫筆記），統一在 /app/write 顯示。"""
+    """列出所有 user_item（含外部連結與手寫筆記）。"""
     from app.models.user_item import UserItem as UserItemModel
     result = await db.execute(
         select(UserItemModel)
