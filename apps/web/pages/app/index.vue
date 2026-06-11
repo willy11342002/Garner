@@ -4,8 +4,7 @@ useHead({ title: 'Garner — 我的知識庫' })
 
 const apiFetch = useApiFetch()
 const itemStore = useItemStore()
-const { getItemTags, getPendingReview } = useItems()
-const { pendingItems } = usePendingItems()
+const { getItemTags } = useItems()
 const { activeItemId, open: openModal } = useItemModal()
 const { t } = useI18n()
 
@@ -47,11 +46,10 @@ async function quickSave() {
   }
 }
 
-// Refresh tags and pending list when item modal is closed
+// Refresh tags when item modal is closed
 watch(activeItemId, async (newId, oldId) => {
   if (!newId && oldId) {
     await refreshTags(oldId)
-    pendingItems.value = await getPendingReview()
     if (route.query.item) {
       const { item: _removed, ...rest } = route.query
       router.replace({ query: rest })
@@ -60,12 +58,10 @@ watch(activeItemId, async (newId, oldId) => {
 })
 
 onMounted(async () => {
-  const [, pending] = await Promise.all([
+  await Promise.all([
     itemStore.load(),
-    getPendingReview(),
     apiFetch<UsageSummary>('/quota/me').then(q => { quota.value = q }).catch(() => {}),
   ])
-  pendingItems.value = pending
   loading.value = false
   if (route.query.item) openModal(route.query.item as string)
 })
@@ -107,7 +103,6 @@ onMounted(async () => {
 
     <!-- Populated -->
     <template v-else>
-      <HomePendingSection @item-tags-updated="refreshTags" />
       <div class="page-header">
         <h1 class="page-header__title">{{ t('home.title') }}</h1>
         <HomeViewSwitcher :search-enabled="quota?.search_enabled ?? false" />

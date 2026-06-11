@@ -5,7 +5,6 @@ const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const { localize } = useI18nContent()
 const { open: openItemModal } = useItemModal()
-const { pendingItemIds } = usePendingItems()
 const { toggle: toggleChain, isInChain } = useChain()
 const { t } = useI18n()
 

@@ -7,7 +7,6 @@ interface MapLocation {
   lat: number
   lng: number
   source: string
-  confirmed: boolean
   content_id: string
   item_id: string
   item_title: string | null
@@ -175,7 +174,6 @@ function updateMarkers(locs: MapLocation[]) {
     const first = group[0]
     if (localMarkers.has(first.id)) continue
 
-    const isConfirmed = group.every(l => l.confirmed)
     const count = group.length
 
     const countLabel = count > 1
@@ -183,7 +181,7 @@ function updateMarkers(locs: MapLocation[]) {
       : ''
     const icon = L.divIcon({
       className: '',
-      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin ${isConfirmed ? 'map-pin--confirmed' : 'map-pin--pending'}">
+      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin">
         <path d="M12 0C5.37 0 0 5.37 0 12c0 8 12 20 12 20S24 20 24 12C24 5.37 18.63 0 12 0z"/>
         <circle cx="12" cy="11" r="${count > 1 ? 5.5 : 4.5}" fill="white" fill-opacity="0.92"/>
         ${countLabel}
@@ -228,15 +226,6 @@ function closeDrawer() {
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
-async function confirmLocation(loc: MapLocation) {
-  await apiFetch(`/items/${loc.item_id}/locations/${loc.id}`, {
-    method: 'PATCH',
-    body: { confirmed: true },
-  })
-  loc.confirmed = true
-  await loadLocationsInBounds()
-}
-
 async function deleteLocation(loc: MapLocation) {
   await apiFetch(`/items/${loc.item_id}/locations/${loc.id}`, { method: 'DELETE' })
   locations.value = locations.value.filter(l => l.id !== loc.id)
@@ -426,16 +415,10 @@ watch(gmap.currentOwner, async (owner) => {
                   <span class="map-drawer__badge" :class="`map-drawer__badge--${loc.source}`">
                     {{ loc.source === 'metadata' ? 'metadata' : 'AI' }}
                   </span>
-                  <span v-if="!loc.confirmed" class="map-drawer__badge map-drawer__badge--pending">未確認</span>
                 </span>
               </div>
             </div>
             <div class="map-drawer__item-actions">
-              <button
-                v-if="!loc.confirmed"
-                class="map-drawer__action map-drawer__action--confirm"
-                @click.stop="confirmLocation(loc)"
-              >確認</button>
               <button
                 class="map-drawer__action map-drawer__action--delete"
                 @click.stop="deleteLocation(loc)"
@@ -859,12 +842,6 @@ watch(gmap.currentOwner, async (owner) => {
   color: #059669;
   border: 1px solid rgba(16, 185, 129, 0.25);
 }
-.map-drawer__badge--pending {
-  background: rgba(234, 179, 8, 0.1);
-  color: #b45309;
-  border: 1px solid rgba(234, 179, 8, 0.25);
-}
-
 .map-drawer__item-actions {
   display: flex;
   gap: 6px;
@@ -884,11 +861,6 @@ watch(gmap.currentOwner, async (owner) => {
 }
 .map-drawer__action:hover { opacity: 0.8; }
 
-.map-drawer__action--confirm {
-  background: var(--accent-dim);
-  color: var(--accent);
-  border-color: var(--accent-bdr);
-}
 .map-drawer__action--delete {
   background: rgba(239, 68, 68, 0.08);
   color: #dc2626;
@@ -996,6 +968,5 @@ watch(gmap.currentOwner, async (owner) => {
   filter: drop-shadow(0 4px 8px rgba(0,0,0,0.38));
 }
 
-.map-pin--confirmed { fill: #3b82f6; }
-.map-pin--pending   { fill: #93c5fd; }
+.map-pin { fill: #3b82f6; }
 </style>

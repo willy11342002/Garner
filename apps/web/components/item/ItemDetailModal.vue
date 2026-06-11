@@ -18,7 +18,6 @@ interface ItemLocation {
   lat: number | null
   lng: number | null
   source: 'ai' | 'metadata' | 'user'
-  confirmed: boolean
   order_index: number
 }
 
@@ -35,12 +34,11 @@ const readonly = computed(() => !props.itemId)
 
 const apiFetch = useApiFetch()
 const gmap = useGlobalMap()
-const { getItem, getItemTags, getPendingItemTags, attachTag, detachTag, updateItem, confirmItemTag, confirmItemTagsBulk } = useItems()
+const { getItem, getItemTags, attachTag, detachTag, updateItem } = useItems()
 const { updateArticle } = useArticles()
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
-const pendingTags = ref<Tag[]>([])
 const loading = ref(false)
 const error = ref(false)
 
@@ -101,7 +99,7 @@ function renderItemMarkers() {
   for (const loc of geoLocs) {
     const icon = L.divIcon({
       className: '',
-      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin ${loc.confirmed ? 'map-pin--confirmed' : 'map-pin--pending'}">
+      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin">
         <path d="M12 0C5.37 0 0 5.37 0 12c0 8 12 20 12 20S24 20 24 12C24 5.37 18.63 0 12 0z"/>
         <circle cx="12" cy="11" r="4.5" fill="white" fill-opacity="0.92"/>
       </svg>`,
@@ -135,19 +133,6 @@ function buildLocPopup(loc: ItemLocation, marker: import('leaflet').Marker): HTM
   const actions = document.createElement('div')
   actions.className = 'id-loc-popup__actions'
 
-  if (!loc.confirmed) {
-    const confirmBtn = document.createElement('button')
-    confirmBtn.className = 'id-loc-popup__btn id-loc-popup__btn--confirm'
-    confirmBtn.textContent = '確認'
-    confirmBtn.addEventListener('click', async () => {
-      confirmBtn.disabled = true
-      confirmBtn.textContent = '確認中…'
-      await confirmLocation(loc)
-      marker.closePopup()
-    })
-    actions.appendChild(confirmBtn)
-  }
-
   const deleteBtn = document.createElement('button')
   deleteBtn.className = 'id-loc-popup__btn id-loc-popup__btn--delete'
   deleteBtn.textContent = '刪除'
@@ -161,16 +146,6 @@ function buildLocPopup(loc: ItemLocation, marker: import('leaflet').Marker): HTM
   root.appendChild(actions)
 
   return root
-}
-
-async function confirmLocation(loc: ItemLocation) {
-  if (!props.itemId) return
-  await apiFetch(`/items/${props.itemId}/locations/${loc.id}`, {
-    method: 'PATCH',
-    body: { confirmed: true },
-  })
-  loc.confirmed = true
-  renderItemMarkers()
 }
 
 async function deleteLocation(loc: ItemLocation) {
@@ -321,8 +296,6 @@ const newTagInput = ref('')
 const tagRemoving = ref<Record<string, boolean>>({})
 const tagAdding = ref(false)
 const tagInputRef = ref<HTMLInputElement | null>(null)
-const tagConfirming = ref<Record<string, boolean>>({})
-const confirmingAll = ref(false)
 
 // ── Inline note editing ───────────────────────────────────────────────────────
 const isEditingNotes = ref(false)
@@ -377,13 +350,11 @@ async function load(id: string) {
   error.value = false
   fetchedItem.value = null
   tags.value = []
-  pendingTags.value = []
   isEditingNotes.value = false
   try {
-    const [fi, ft, fp] = await Promise.all([getItem(id), getItemTags(id), getPendingItemTags(id)])
+    const [fi, ft] = await Promise.all([getItem(id), getItemTags(id)])
     fetchedItem.value = fi
     tags.value = ft
-    pendingTags.value = fp
     if (props.startInEdit) startEditNotes()
   } catch {
     error.value = true
@@ -412,7 +383,6 @@ watch(() => props.itemId, (id, prevId) => {
     lockScroll(false)
     fetchedItem.value = null
     tags.value = []
-    pendingTags.value = []
   }
 }, { immediate: true })
 
@@ -452,7 +422,7 @@ async function handleAddTag() {
   if (!name || !item.value) return
   tagAdding.value = true
   try {
-    const tag = await attachTag(item.value.id, name, false)
+    const tag = await attachTag(item.value.id, name)
     if (tag) tags.value.push(tag)
   } finally {
     tagAdding.value = false
@@ -465,41 +435,6 @@ async function handleRemoveTag(tag: Tag) {
   try {
     await detachTag(item.value.id, tag.id)
     tags.value = tags.value.filter(t => t.id !== tag.id)
-  } finally {
-    delete tagRemoving.value[tag.id]
-  }
-}
-
-async function handleConfirmTag(tag: Tag) {
-  if (!item.value) return
-  tagConfirming.value[tag.id] = true
-  try {
-    await confirmItemTag(item.value.id, tag.id)
-    pendingTags.value = pendingTags.value.filter(t => t.id !== tag.id)
-    tags.value.push(tag)
-  } finally {
-    delete tagConfirming.value[tag.id]
-  }
-}
-
-async function handleConfirmAll() {
-  if (!item.value || !pendingTags.value.length) return
-  confirmingAll.value = true
-  try {
-    await confirmItemTagsBulk(item.value.id, pendingTags.value.map(t => t.id))
-    tags.value.push(...pendingTags.value)
-    pendingTags.value = []
-  } finally {
-    confirmingAll.value = false
-  }
-}
-
-async function handleRemovePendingTag(tag: Tag) {
-  if (!item.value) return
-  tagRemoving.value[tag.id] = true
-  try {
-    await detachTag(item.value.id, tag.id)
-    pendingTags.value = pendingTags.value.filter(t => t.id !== tag.id)
   } finally {
     delete tagRemoving.value[tag.id]
   }
@@ -559,14 +494,6 @@ async function confirmArchive() {
               <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
               <div class="id-body__actions">
                 <button
-                  v-if="!readonly && pendingTags.length"
-                  class="btn btn--confirm-tags"
-                  :disabled="confirmingAll"
-                  @click="handleConfirmAll"
-                >
-                  {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
-                </button>
-                <button
                   v-if="!readonly && activeTab === 'info'"
                   class="btn btn--accent"
                   :disabled="savingNotes"
@@ -605,18 +532,6 @@ async function confirmArchive() {
             <!-- Info tab: tags + notes -->
             <template v-if="activeTab === 'info'">
               <div class="id-body__tags">
-                <template v-if="pendingTags.length">
-                  <span
-                    v-for="tag in pendingTags"
-                    :key="tag.id"
-                    class="tag-chip tag-chip--pending id-tag"
-                    :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
-                  >
-                    {{ tag.name }}
-                    <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
-                    <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
-                  </span>
-                </template>
                 <span
                   v-for="(tag, i) in tags"
                   :key="tag.id"
@@ -702,13 +617,7 @@ async function confirmArchive() {
                     <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
                       {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? '手動' : 'AI' }}
                     </span>
-                    <span v-if="!loc.confirmed" class="id-map-loc__badge id-map-loc__badge--pending">待確認</span>
                     <div class="id-map-loc__actions">
-                      <button
-                        v-if="!loc.confirmed"
-                        class="id-map-loc__btn id-map-loc__btn--confirm"
-                        @click="confirmLocation(loc)"
-                      >確認</button>
                       <button
                         class="id-map-loc__btn id-map-loc__btn--delete"
                         @click="deleteLocation(loc)"
@@ -754,18 +663,6 @@ async function confirmArchive() {
             <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
 
             <div v-if="!readonly" class="id-body__tags">
-              <template v-if="pendingTags.length">
-                <span
-                  v-for="tag in pendingTags"
-                  :key="tag.id"
-                  class="tag-chip tag-chip--pending id-tag"
-                  :style="(tagRemoving[tag.id] || tagConfirming[tag.id]) ? 'opacity:0.4;pointer-events:none' : ''"
-                >
-                  {{ tag.name }}
-                  <button class="id-tag__confirm" @click="handleConfirmTag(tag)" title="確認此標籤">✓</button>
-                  <button class="id-tag__remove" @click="handleRemovePendingTag(tag)">×</button>
-                </span>
-              </template>
               <span
                 v-for="(tag, i) in tags"
                 :key="tag.id"
@@ -809,14 +706,6 @@ async function confirmArchive() {
             </div>
 
             <div class="id-body__actions">
-              <button
-                v-if="!readonly && pendingTags.length"
-                class="btn btn--confirm-tags"
-                :disabled="confirmingAll"
-                @click="handleConfirmAll"
-              >
-                {{ confirmingAll ? '確認中…' : `確認標籤 (${pendingTags.length})` }}
-              </button>
               <button
                 v-if="!readonly"
                 class="btn btn--accent"

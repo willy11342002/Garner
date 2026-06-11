@@ -48,15 +48,6 @@ export interface Tag {
   item_count: number
 }
 
-export interface ItemPendingReview {
-  id: string
-  url: string
-  title: string | null
-  thumbnail_url: string | null
-  saved_at: string
-  pending_tags: Tag[]
-}
-
 export interface TagCreate {
   name: string
 }

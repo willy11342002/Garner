@@ -1,4 +1,4 @@
-import type { Item, ItemCreate, ItemPage, ItemPendingReview, ItemUpdate, Tag } from '~/types/api'
+import type { Item, ItemCreate, ItemPage, ItemUpdate, Tag } from '~/types/api'
 
 export function useItems() {
   const apiFetch = useApiFetch()
@@ -47,9 +47,8 @@ export function useItems() {
     return apiFetch(`/items/${id}/tags`)
   }
 
-  function attachTag(id: string, name: string, pending = false): Promise<Tag> {
-    const url = pending ? `/items/${id}/tags?pending=1` : `/items/${id}/tags`
-    return apiFetch(url, { method: 'POST', body: { name } })
+  function attachTag(id: string, name: string): Promise<Tag> {
+    return apiFetch(`/items/${id}/tags`, { method: 'POST', body: { name } })
   }
 
   function detachTag(itemId: string, tagId: string): Promise<void> {
@@ -60,25 +59,8 @@ export function useItems() {
     return apiFetch('/items/archived')
   }
 
-  function getPendingReview(): Promise<ItemPendingReview[]> {
-    return apiFetch('/items/pending-review')
-  }
-
-  function getPendingItemTags(id: string): Promise<Tag[]> {
-    return apiFetch(`/items/${id}/tags/pending`)
-  }
-
-  function confirmItemTag(itemId: string, tagId: string): Promise<void> {
-    return apiFetch(`/items/${itemId}/tags/confirm/single`, { method: 'POST', body: { tag_id: tagId } })
-  }
-
-  function confirmItemTagsBulk(itemId: string, tagIds: string[]): Promise<void> {
-    return apiFetch(`/items/${itemId}/tags/confirm/bulk`, { method: 'POST', body: { tag_ids: tagIds } })
-  }
-
   return {
     listItems, listItemsPage, createItem, getItem, updateItem, deleteItem,
-    getItemTags, getPendingItemTags, attachTag, detachTag,
-    listArchivedItems, getPendingReview, confirmItemTag, confirmItemTagsBulk,
+    getItemTags, attachTag, detachTag, listArchivedItems,
   }
 }
