@@ -46,6 +46,8 @@ const editor = useEditor({
 
 function setMarkdown(val: string | null | undefined) {
   if (!editor.value) return
+  const current = (editor.value as any).getMarkdown() as string
+  if (current === (val ?? '')) return
   const parsed = (editor.value as any).markdown.parse(val ?? '')
   editor.value.commands.setContent(parsed, false)
 }
