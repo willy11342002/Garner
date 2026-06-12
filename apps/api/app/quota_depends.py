@@ -28,7 +28,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import CurrentUser, DbSession
-from app.models.content_object import ContentObject, SourceType
 from app.models.plan_feature_limit import PlanFeatureLimit
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user_feature_usage import UserFeatureUsage
@@ -166,7 +165,7 @@ async def _count_monthly_saves(db: AsyncSession, user_id: UUID) -> int:
             UserItem.user_id == user_id,
             UserItem.saved_at >= month_start,
             UserItem.deleted_at.is_(None),
-            UserItem.source_type != SourceType.note.value,
+            UserItem.source_type != "note",
         )
     )
     return result.scalar_one()

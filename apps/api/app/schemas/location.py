@@ -66,7 +66,6 @@ class LocationMapPoint(BaseModel):
     lat: float
     lng: float
     source: str
-    content_id: UUID
     item_id: UUID
     item_title: str | None = None
     item_thumbnail: str | None = None

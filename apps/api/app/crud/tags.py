@@ -132,7 +132,6 @@ async def get_items_by_tag(
             ItemTag.tag_id == tag_id,
             UserItem.deleted_at.is_(None),
         )
-        .options(joinedload(UserItem.content))
         .order_by(UserItem.saved_at.desc())
     )
     return list(result.unique().scalars().all())

@@ -23,7 +23,7 @@ async def list_item_locations(item_id: UUID, current_user: CurrentUser, db: DbSe
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    return await crud_locations.list_by_content_id(db, user_item.content_id)
+    return await crud_locations.list_by_user_item_id(db, user_item.id)
 
 
 @router.post("/items/{item_id}/locations", response_model=ContentLocationRead, status_code=status.HTTP_201_CREATED)
@@ -38,7 +38,7 @@ async def create_item_location(
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    existing = await crud_locations.list_by_content_id(db, user_item.content_id)
+    existing = await crud_locations.list_by_user_item_id(db, user_item.id)
     next_order = max((l.order_index for l in existing), default=-1) + 1
 
     lat, lng = data.lat, data.lng
@@ -48,7 +48,7 @@ async def create_item_location(
 
     loc = await crud_locations.create_location(
         db,
-        content_id=user_item.content_id,
+        user_item_id=user_item.id,
         name=data.name,
         source="user",
         order_index=next_order,
@@ -77,12 +77,10 @@ async def update_item_location(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     loc = await crud_locations.get_one(db, location_id)
-    if loc is None or loc.content_id != user_item.content_id:
+    if loc is None or loc.user_item_id != user_item.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    updated = await crud_locations.update_location(
-        db, location_id, name=data.name
-    )
+    updated = await crud_locations.update_location(db, location_id, name=data.name)
     return updated
 
 
@@ -102,7 +100,7 @@ async def delete_item_location(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     loc = await crud_locations.get_one(db, location_id)
-    if loc is None or loc.content_id != user_item.content_id:
+    if loc is None or loc.user_item_id != user_item.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     await crud_locations.delete_location(db, location_id)
@@ -120,36 +118,22 @@ async def extract_item_locations(
     current_user: CurrentUser,
     db: DbSession,
 ):
-    """Run AI location extraction on an existing item using stored raw_data.
-
-    Text source priority (same logic as process_item):
-    - article : raw_data.text / raw_data.markdown  (full original text)
-    - youtube : raw_data.title + raw_data.description
-    - ig      : raw_data.caption
-    - note    : notes_md (raw_data is empty for internal notes)
-
-    Deletes previous AI-extracted locations, re-extracts, geocodes, and returns results.
-    Metadata-sourced locations (IG locationName) are preserved.
-    """
+    """Run AI location extraction on an existing item using stored raw_data."""
     user_id = UUID(current_user["sub"])
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    content_id = user_item.content_id
-    raw_data: dict = (user_item.content.raw_data or {}) if user_item.content else {}
+    raw_data: dict = user_item.raw_data or {}
     source_type = user_item.source_type
 
-    # Clear old AI-extracted locations; preserve metadata-sourced ones
-    await crud_locations.delete_ai_locations(db, content_id)
+    await crud_locations.delete_ai_locations(db, user_item.id)
 
-    # Source 1: IG metadata locationName (mirrors worker logic)
     locations_to_save: list[dict] = []
     metadata_name = raw_data.get("locationName")
     if metadata_name and isinstance(metadata_name, str):
         locations_to_save.append({"name": metadata_name, "order": 0, "source": "metadata"})
 
-    # Source 2: AI extraction from raw_data text
     text = _build_extract_text(raw_data, source_type, user_item.notes_md)
     if text:
         metadata_names = {loc["name"] for loc in locations_to_save}
@@ -167,7 +151,7 @@ async def extract_item_locations(
     for loc_data in locations_to_save:
         loc_obj = await crud_locations.create_location(
             db,
-            content_id=content_id,
+            user_item_id=user_item.id,
             name=loc_data["name"],
             source=loc_data["source"],
             order_index=loc_data.get("order", 0),
@@ -182,7 +166,7 @@ async def extract_item_locations(
         loc_obj.lng = lng
 
     await db.commit()
-    return await crud_locations.list_by_content_id(db, content_id)
+    return await crud_locations.list_by_user_item_id(db, user_item.id)
 
 
 def _build_extract_text(
@@ -190,10 +174,8 @@ def _build_extract_text(
     source_type: str | None,
     notes_md: str | None,
 ) -> str:
-    """Reconstruct the best available text for location extraction from stored data."""
     if source_type == "article":
         return (raw_data.get("text") or raw_data.get("markdown") or "")[:16000]
-
     if source_type == "youtube":
         parts: list[str] = []
         title = raw_data.get("title")
@@ -203,11 +185,8 @@ def _build_extract_text(
         if desc:
             parts.append(f"[說明]\n{desc[:4000]}")
         return "\n\n".join(parts)
-
     if source_type == "ig":
         return (raw_data.get("caption") or raw_data.get("text") or "")[:4000]
-
-    # note (internal) or unknown: raw_data is empty, fall back to notes_md
     return (notes_md or "")[:8000]
 
 
@@ -238,19 +217,16 @@ async def get_map_locations(
 
 
 # ── Google Places cache ────────────────────────────────────────────────────────
-# IMPORTANT: specific routes (/places/photo, /places/lookup) must be declared
-# BEFORE the parameterized route (/places/{place_id}) or FastAPI will swallow them.
 
 
 @router.get("/places/search", response_model=list[PlaceSearchResult])
 async def search_places(
     current_user: CurrentUser,
     q: str = Query(min_length=2),
-    lat: float | None = Query(default=None, description="Map center latitude — biases results toward this location"),
-    lng: float | None = Query(default=None, description="Map center longitude"),
-    radius: int = Query(default=5000, ge=500, le=50000, description="Search bias radius in metres"),
+    lat: float | None = Query(default=None),
+    lng: float | None = Query(default=None),
+    radius: int = Query(default=5000, ge=500, le=50000),
 ):
-    """Search places via Google Places Text Search. Returns up to 5 results with coordinates."""
     return await place_service.text_search_places(q, lat=lat, lng=lng, radius=radius)
 
 
@@ -259,7 +235,6 @@ async def proxy_place_photo(
     ref: str = Query(description="Photo reference name (places/.../photos/...)"),
     max_width: int = Query(default=800, ge=100, le=4096),
 ):
-    """Proxy a Google Places photo so the API key stays server-side. No auth required."""
     if not settings.google_maps_api_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Maps API key not configured")
 
@@ -284,7 +259,6 @@ async def lookup_place_details(
     lat: float = Query(),
     lng: float = Query(),
 ):
-    """Find a place by name + coordinates via Google Text Search, return cached details."""
     return await place_service.lookup_place(name, lat, lng, db)
 
 
@@ -294,7 +268,6 @@ async def get_place_details(
     current_user: CurrentUser,
     db: DbSession,
 ):
-    """Return cached Google Places details for a place_id (7-day TTL)."""
     result = await place_service.get_place_details(place_id, db)
     if result is None or not result.name:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Place not found")

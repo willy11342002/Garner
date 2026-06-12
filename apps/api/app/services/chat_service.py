@@ -42,7 +42,6 @@ async def rag_retrieve(
     query: str,
     limit: int = 8,
 ) -> list[tuple[UserItem, float]]:
-    from sqlalchemy.orm import joinedload
     from sqlalchemy import select
 
     cutoff = await _get_search_cutoff(db)
@@ -54,10 +53,8 @@ async def rag_retrieve(
         for chunk, dist in chunk_hits:
             result = await db.execute(
                 select(UserItem)
-                .options(joinedload(UserItem.content))
-                .join(UserItem.content)
                 .where(
-                    UserItem.content_id == chunk.content_id,
+                    UserItem.id == chunk.user_item_id,
                     UserItem.user_id == user_id,
                     UserItem.deleted_at.is_(None),
                 )
@@ -134,10 +131,10 @@ _TOOL_HANDLERS = {
 def _to_chat_source(ui: UserItem, distance: float | None = None) -> ChatSource:
     return ChatSource(
         id=ui.id,
-        url=ui.url or ui.content.url,
+        url=ui.url,
         title=ui.title,
         thumbnail_url=ui.thumbnail_url,
-        source_type=ui.content.source_type.value if ui.content.source_type else None,
+        source_type=ui.source_type,
         distance=round(distance, 4) if distance is not None else None,
     )
 
@@ -241,7 +238,7 @@ async def stream_reply(
         tool_result = {
             "tool": name,
             "count": len(new_hits),
-            "titles": [ui.title or ui.url or ui.content.url for ui, _ in new_hits[:3]],
+            "titles": [ui.title or ui.url for ui, _ in new_hits[:3]],
         }
         process_steps.append({"toolCall": tool_payload, "toolResult": tool_result})
         yield _sse("tool_result", tool_result)
@@ -265,13 +262,13 @@ async def stream_reply(
     query_embedding = await ai_service.embed(user_content)
     chunk_hits = await crud_chunks.semantic_search(db, user_id, query_embedding, limit=12, cutoff=cutoff)
 
-    # 建立 content_id → title 的 mapping
-    content_titles = {ui.content.id: ui.title for ui, _ in all_items}
+    # 建立 user_item_id → title 的 mapping
+    item_titles = {ui.id: ui.title for ui, _ in all_items}
 
     if chunk_hits:
         llm_items = [
             {
-                "title": content_titles.get(c.content_id, "(無標題)"),
+                "title": item_titles.get(c.user_item_id, "(無標題)"),
                 "summary": c.text,
             }
             for c, _ in chunk_hits

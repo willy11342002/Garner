@@ -10,7 +10,6 @@ from app.crud import chunks as crud_chunks
 from app.crud import locations as crud_locations
 from app.crud import notifications as crud_notifications
 from app.crud import tags as crud_tags
-from app.models.content_object import ContentObject
 from app.models.user_item import UserItem
 from app.models.item_tag import TagSource
 from app.models.notification import NotificationType
@@ -24,14 +23,13 @@ logger = logging.getLogger(__name__)
 
 async def process_item(
     db: AsyncSession,
-    content_id: UUID,
     user_id: UUID,
     user_item_id: UUID,
     url: str,
     max_video_sec: int = 1200,
 ) -> None:
-    content, user_item = await _load_content_and_item(db, content_id, user_item_id)
-    if content is None or user_item is None:
+    user_item = await _load_item(db, user_item_id)
+    if user_item is None:
         return
 
     provider = get_provider(url)
@@ -41,7 +39,7 @@ async def process_item(
     try:
         info = await provider.fetch_info(
             url,
-            str(content_id),
+            str(user_item_id),
             content_md=user_item.notes_md,
         )
     except Exception:
@@ -50,7 +48,7 @@ async def process_item(
         return
 
     # commit #1: 立即儲存 provider metadata（title/thumbnail 等）
-    await _save_fetch_info(db, content, user_item, info)
+    await _save_fetch_info(db, user_item, info)
 
     # ArticleProvider 直接提供 raw_content，跳過 fetch_content
     if info.raw_content is not None:
@@ -86,7 +84,6 @@ async def process_item(
         await _fail(db, user_id, user_item_id, user_item, url)
         return
 
-    # 清理 provider 提供的 title（移除 hashtag），或由 AI 從摘要生成
     raw_title = user_item.title or info.title
     title = await ai_service.generate_title(summary_md, raw_title=raw_title or None)
 
@@ -119,72 +116,49 @@ async def process_item(
         await _fail(db, user_id, user_item_id, user_item, url)
         return
 
-    # commit #2: AI 結果 + parsed_at（同時更新 ContentObject 與 UserItem snapshot）
+    # commit #2: AI 結果 + parsed_at
     await _save_analysis(
-        db, content_id, content, user_item, user_id, user_item_id, url,
+        db, user_item, user_id, user_item_id, url,
         title, analysis, summary_embedding, chunk_records,
     )
 
-    # Stage: locating — save extracted locations and geocode（"done" event已發出，此步驟不影響 UI）
+    # Stage: locating
     try:
-        await _save_locations(db, content_id, content, analysis)
+        await _save_locations(db, user_item_id, user_item, analysis)
     except Exception:
-        logger.exception("Failed to save locations for content_id=%s", content_id)
+        logger.exception("Failed to save locations for user_item_id=%s", user_item_id)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-async def _load_content_and_item(
-    db: AsyncSession,
-    content_id: UUID,
-    user_item_id: UUID,
-) -> tuple[ContentObject | None, UserItem | None]:
-    content_result = await db.execute(
-        select(ContentObject).where(ContentObject.id == content_id)
-    )
-    content = content_result.scalar_one_or_none()
-
-    item_result = await db.execute(
-        select(UserItem).where(UserItem.id == user_item_id)
-    )
-    user_item = item_result.scalar_one_or_none()
-
-    if content is None or user_item is None:
+async def _load_item(db: AsyncSession, user_item_id: UUID) -> UserItem | None:
+    result = await db.execute(select(UserItem).where(UserItem.id == user_item_id))
+    user_item = result.scalar_one_or_none()
+    if user_item is None:
         events.notify(str(user_item_id))
-    return content, user_item
+    return user_item
 
 
 async def _save_fetch_info(
     db: AsyncSession,
-    content: ContentObject,
     user_item: UserItem,
     info: FetchInfo,
 ) -> None:
-    """commit #1: 儲存 provider 抓到的 metadata。
-    title / thumbnail 同時寫進 UserItem snapshot。
-    """
-    if info.title:
-        if not content.title:
-            content.title = info.title
-        if not user_item.title:
-            user_item.title = info.title     # UserItem snapshot
+    """commit #1: 儲存 provider 抓到的 metadata。"""
+    if info.title and not user_item.title:
+        user_item.title = info.title
+    if info.thumbnail_url and not user_item.thumbnail_url:
+        user_item.thumbnail_url = info.thumbnail_url
     if info.duration_sec is not None:
-        content.duration_sec = info.duration_sec
-    if info.thumbnail_url:
-        if not content.thumbnail_url:
-            content.thumbnail_url = info.thumbnail_url
-        if not user_item.thumbnail_url:
-            user_item.thumbnail_url = info.thumbnail_url
+        user_item.duration_sec = info.duration_sec
     if info.raw_data:
-        content.raw_data = info.raw_data
+        user_item.raw_data = info.raw_data
     await db.commit()
 
 
 async def _save_analysis(
     db: AsyncSession,
-    content_id: UUID,
-    content: ContentObject,
     user_item: UserItem,
     user_id: UUID,
     user_item_id: UUID,
@@ -194,25 +168,17 @@ async def _save_analysis(
     summary_embedding: list[float],
     chunk_records: list[dict],
 ) -> None:
-    """commit #2: AI 結果、embedding、chunks、tags、parsed_at。
-    ContentObject 存 embedding（向量搜尋用）；
-    UserItem 存 notes_md / title（顯示用 snapshot）。
-    """
+    """commit #2: AI 結果、embedding、chunks、tags、parsed_at。"""
     notes_md = analysis.get("summary_md", {}).get("zh-TW", "")
     tags_i18n = analysis.get("tags", {})
     now = datetime.now(timezone.utc)
 
-    # ── ContentObject：embedding ──────────────────────────────────────────────
-    content.embedding = summary_embedding
-    content.parsed_at = now
-    content.title = title
-
-    # ── UserItem snapshot ─────────────────────────────────────────────────────
     user_item.title = title
     user_item.notes_md = notes_md
+    user_item.embedding = summary_embedding
     user_item.parsed_at = now
 
-    await crud_chunks.replace_chunks(db, content_id, chunk_records)
+    await crud_chunks.replace_chunks(db, user_item_id, chunk_records)
 
     zh_tags = tags_i18n.get("zh-TW", [])
     en_tags = tags_i18n.get("en", [])
@@ -237,25 +203,19 @@ async def _save_analysis(
 
 async def _save_locations(
     db: AsyncSession,
-    content_id: UUID,
-    content: ContentObject,
+    user_item_id: UUID,
+    user_item: UserItem,
     analysis: dict,
 ) -> None:
-    """Save extracted locations and geocode them.
-
-    Sources (in priority order):
-    1. IG metadata: content.raw_data.locationName  (source="metadata")
-    2. AI extraction: analysis["locations"]          (source="ai")
-    """
     locations_to_save: list[dict] = []
 
     # Source 1: IG metadata locationName
-    raw_data = content.raw_data or {}
+    raw_data = user_item.raw_data or {}
     metadata_name = raw_data.get("locationName")
     if metadata_name and isinstance(metadata_name, str):
         locations_to_save.append({"name": metadata_name, "order": 0, "source": "metadata"})
 
-    # Source 2: AI-extracted locations (skip duplicates already from metadata)
+    # Source 2: AI-extracted locations
     metadata_names = {s["name"] for s in locations_to_save}
     for loc in analysis.get("locations", []):
         if not isinstance(loc, dict):
@@ -271,19 +231,18 @@ async def _save_locations(
     if not locations_to_save:
         return
 
-    # Create records, then geocode and update
     created = []
     for loc_data in locations_to_save:
         loc_obj = await crud_locations.create_location(
             db,
-            content_id=content_id,
+            user_item_id=user_item_id,
             name=loc_data["name"],
             source=loc_data["source"],
             order_index=loc_data["order"],
         )
         created.append(loc_obj)
 
-    await db.flush()  # assign IDs before geocoding
+    await db.flush()
 
     for loc_obj in created:
         lat, lng = await geocoding_service.geocode(loc_obj.name)

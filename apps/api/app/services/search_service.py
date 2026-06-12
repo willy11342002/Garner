@@ -2,9 +2,8 @@ from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload
 
-from app.models.content_object import ContentObject
 from app.models.item_tag import ItemTag
 from app.models.tag import Tag
 from app.models.user_item import UserItem, UserItemStatus
@@ -18,12 +17,9 @@ _ACTIVE_FILTERS = (
 
 
 def _to_item_read(ui: UserItem) -> ItemRead:
-    """snapshot 欄位直讀 UserItem，不再需要 ui.content 做 display。"""
-    content = ui.content  # 仍需 content_id
     return ItemRead(
         id=ui.id,
-        content_id=content.id if content else None,
-        url=ui.url or (content.url if content else ""),
+        url=ui.url,
         title=ui.title,
         notes_md=None,
         thumbnail_url=ui.thumbnail_url,
@@ -44,12 +40,11 @@ async def _text_search_raw(db: AsyncSession, user_id: UUID, query: str) -> list[
     pattern = f"%{query}%"
     result = await db.execute(
         select(UserItem)
-        .options(joinedload(UserItem.content))
         .where(
             UserItem.user_id == user_id,
             *_ACTIVE_FILTERS,
             or_(
-                UserItem.title.ilike(pattern),       # snapshot 欄位
+                UserItem.title.ilike(pattern),
                 UserItem.notes_md.ilike(pattern),
                 UserItem.item_tags.any(
                     ItemTag.tag.has(Tag.name.ilike(pattern))
@@ -69,17 +64,14 @@ async def semantic_search(
 ) -> PaginatedResult[ItemRead]:
     query_embedding = await ai_service.embed(query)
     offset = (page - 1) * _SEMANTIC_PAGE_SIZE
-    # embedding 仍在 ContentObject，JOIN 必要
     result = await db.execute(
         select(UserItem)
-        .options(joinedload(UserItem.content))
-        .join(UserItem.content)
         .where(
             UserItem.user_id == user_id,
             *_ACTIVE_FILTERS,
-            ContentObject.embedding.is_not(None),
+            UserItem.embedding.is_not(None),
         )
-        .order_by(ContentObject.embedding.cosine_distance(query_embedding))
+        .order_by(UserItem.embedding.cosine_distance(query_embedding))
         .offset(offset)
         .limit(_SEMANTIC_PAGE_SIZE + 1)
     )

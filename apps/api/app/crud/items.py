@@ -1,11 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import defer, joinedload, selectinload
+from sqlalchemy.orm import defer, selectinload
 
-from app.models.content_object import ContentObject
 from app.models.item_tag import ItemTag
 from app.models.tag import Tag
 from app.models.user_item import UserItem, UserItemStatus
@@ -20,10 +19,8 @@ async def get_all(db: AsyncSession, user_id: UUID) -> list[UserItem]:
             UserItem.status == UserItemStatus.active,
         )
         .options(
-            # notes_md 是重欄位，list 查詢時 defer
             defer(UserItem.notes_md),
-            # embedding 放 ContentObject，list 不需要，joinedload 僅作關聯用
-            joinedload(UserItem.content).options(defer(ContentObject.embedding)),
+            defer(UserItem.embedding),
             selectinload(UserItem.item_tags).joinedload(ItemTag.tag),
         )
         .order_by(UserItem.saved_at.desc())
@@ -39,7 +36,6 @@ async def get_archived(db: AsyncSession, user_id: UUID) -> list[UserItem]:
             UserItem.deleted_at.is_(None),
             UserItem.status == UserItemStatus.archived,
         )
-        .options(joinedload(UserItem.content))
         .order_by(UserItem.saved_at.desc())
     )
     return list(result.scalars().all())
@@ -53,7 +49,6 @@ async def get_one(db: AsyncSession, user_id: UUID, item_id: UUID) -> UserItem | 
             UserItem.user_id == user_id,
             UserItem.deleted_at.is_(None),
         )
-        .options(joinedload(UserItem.content))
     )
     return result.scalar_one_or_none()
 
@@ -69,26 +64,29 @@ async def get_by_ids(db: AsyncSession, user_id: UUID, item_ids: list[UUID]) -> l
             UserItem.user_id == user_id,
             UserItem.deleted_at.is_(None),
         )
-        .options(joinedload(UserItem.content))
     )
     items = {ui.id: ui for ui in result.scalars().all()}
     return [items[iid] for iid in item_ids if iid in items]
 
 
-async def get_by_content_id(
-    db: AsyncSession, user_id: UUID, content_id: UUID, include_deleted: bool = False
+async def get_by_url(
+    db: AsyncSession, user_id: UUID, url: str, include_deleted: bool = False
 ) -> UserItem | None:
-    filters = [UserItem.content_id == content_id, UserItem.user_id == user_id]
+    filters = [UserItem.user_id == user_id, UserItem.url == url]
     if not include_deleted:
         filters.append(UserItem.deleted_at.is_(None))
-    result = await db.execute(
-        select(UserItem).options(joinedload(UserItem.content)).where(*filters)
-    )
+    result = await db.execute(select(UserItem).where(*filters))
     return result.scalar_one_or_none()
 
 
-async def create(db: AsyncSession, user_id: UUID, content: ContentObject) -> UserItem:
-    user_item = UserItem(user_id=user_id, content_id=content.id)
+async def create(
+    db: AsyncSession,
+    user_id: UUID,
+    url: str,
+    source_type: str,
+    title: str | None = None,
+) -> UserItem:
+    user_item = UserItem(user_id=user_id, url=url, source_type=source_type, title=title)
     db.add(user_item)
     await db.flush()
     await db.refresh(user_item)
@@ -175,7 +173,7 @@ async def get_page(
         .where(UserItem.id.in_(ids))
         .options(
             defer(UserItem.notes_md),
-            joinedload(UserItem.content).options(defer(ContentObject.embedding)),
+            defer(UserItem.embedding),
             selectinload(UserItem.item_tags).joinedload(ItemTag.tag),
         )
     )
@@ -221,14 +219,13 @@ async def semantic_search(
     saved_before: datetime | None = None,
     saved_after: datetime | None = None,
     exclude_ids: list[UUID] | None = None,
-    exclude_content_ids: list[UUID] | None = None,
     cutoff: float = 0.45,
 ) -> list[tuple[UserItem, float]]:
-    """向量搜尋，回傳 (UserItem, cosine_distance) 清單。可由多個 service 複用。"""
+    """向量搜尋，回傳 (UserItem, cosine_distance) 清單。"""
     filters = [
         UserItem.user_id == user_id,
         *_NON_DELETED,
-        ContentObject.embedding.is_not(None),
+        UserItem.embedding.is_not(None),
     ]
     if saved_before:
         filters.append(UserItem.saved_at < saved_before)
@@ -236,14 +233,10 @@ async def semantic_search(
         filters.append(UserItem.saved_at >= saved_after)
     if exclude_ids:
         filters.append(UserItem.id.not_in(exclude_ids))
-    if exclude_content_ids:
-        filters.append(UserItem.content_id.not_in(exclude_content_ids))
 
-    distance_col = ContentObject.embedding.cosine_distance(embedding).label("distance")
+    distance_col = UserItem.embedding.cosine_distance(embedding).label("distance")
     result = await db.execute(
         select(UserItem, distance_col)
-        .options(joinedload(UserItem.content))
-        .join(UserItem.content)
         .where(*filters, distance_col <= cutoff)
         .order_by(distance_col)
         .limit(limit)
@@ -256,12 +249,10 @@ async def get_forgotten(db: AsyncSession, user_id: UUID, limit: int = 3) -> list
     threshold = datetime.now(timezone.utc) - timedelta(days=90)
     result = await db.execute(
         select(UserItem)
-        .options(joinedload(UserItem.content))
-        .join(UserItem.content)
         .where(
             UserItem.user_id == user_id,
             *_NON_DELETED,
-            ContentObject.embedding.is_not(None),
+            UserItem.embedding.is_not(None),
             (UserItem.last_opened_at.is_(None)) | (UserItem.last_opened_at < threshold),
             UserItem.saved_at < threshold,
         )
@@ -278,12 +269,10 @@ async def get_recent_with_embedding(
     cutoff = datetime.now(timezone.utc) - timedelta(days=14)
     result = await db.execute(
         select(UserItem)
-        .options(joinedload(UserItem.content))
-        .join(UserItem.content)
         .where(
             UserItem.user_id == user_id,
             *_NON_DELETED,
-            ContentObject.embedding.is_not(None),
+            UserItem.embedding.is_not(None),
             UserItem.saved_at >= cutoff,
         )
         .order_by(UserItem.saved_at.desc())
@@ -298,12 +287,10 @@ async def get_random_with_embedding(
     """從所有有 embedding 的 items 中隨機取樣（DB 層 ORDER BY RANDOM()）。"""
     result = await db.execute(
         select(UserItem)
-        .options(joinedload(UserItem.content))
-        .join(UserItem.content)
         .where(
             UserItem.user_id == user_id,
             *_NON_DELETED,
-            ContentObject.embedding.is_not(None),
+            UserItem.embedding.is_not(None),
         )
         .order_by(func.random())
         .limit(limit)
@@ -330,15 +317,9 @@ async def structured_filter(
     if saved_before:
         filters.append(UserItem.saved_at < saved_before)
     if source_type:
-        # source_type 已 snapshot 到 UserItem，不需要 JOIN ContentObject
         filters.append(UserItem.source_type == source_type)
 
-    q = (
-        select(UserItem)
-        .options(joinedload(UserItem.content))
-        .join(UserItem.content)
-        .where(*filters)
-    )
+    q = select(UserItem).where(*filters)
 
     if tags:
         q = (
@@ -400,5 +381,5 @@ async def get_tag_trends(
     return [
         (r.name, r.cnt, prev30_map.get(r.name, 0))
         for r in last30_rows
-        if r.cnt * 100 // total >= 5  # 至少佔 5% 才顯示
+        if r.cnt * 100 // total >= 5
     ]

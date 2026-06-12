@@ -3,7 +3,7 @@ from typing import Generic, TypeVar
 from uuid import UUID
 
 from fastapi import HTTPException
-from pydantic import BaseModel, HttpUrl, model_validator
+from pydantic import BaseModel, model_validator
 
 T = TypeVar("T")
 
@@ -19,7 +19,6 @@ class ItemCreate(BaseModel):
     @model_validator(mode="after")
     def validate_url(self) -> "ItemCreate":
         if self.url is not None:
-            # external URLs must be http(s)
             if not self.url.startswith("http://") and not self.url.startswith("https://"):
                 raise HTTPException(status_code=422, detail="invalid_url")
         return self
@@ -27,7 +26,6 @@ class ItemCreate(BaseModel):
 
 class ItemRead(BaseModel):
     id: UUID
-    content_id: UUID | None = None
     url: str
     title: str | None
     notes_md: str | None = None
@@ -64,5 +62,3 @@ class ItemPage(BaseModel):
     total: int
     page: int
     page_size: int
-
-

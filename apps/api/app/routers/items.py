@@ -77,7 +77,6 @@ async def create_item(
         q = events.register(item_id_str)
         asyncio.create_task(
             item_service._run_process_item(
-                create_result.content_id,
                 user_id,
                 create_result.user_item_id,
                 create_result.url,

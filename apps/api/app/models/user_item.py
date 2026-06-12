@@ -2,10 +2,14 @@ import enum
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Text, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+EMBEDDING_DIM = 1536
 
 
 class UserItemStatus(str, enum.Enum):
@@ -16,12 +20,12 @@ class UserItemStatus(str, enum.Enum):
 
 class UserItem(Base):
     __tablename__ = "user_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "url", name="uq_user_items_user_id_url"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    content_id: Mapped[UUID] = mapped_column(
-        ForeignKey("content_objects.id"), nullable=False, index=True
-    )
     fork_from_item_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("user_items.id"), nullable=True
     )
@@ -37,8 +41,8 @@ class UserItem(Base):
     last_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # ── Snapshot 欄位（從 ContentObject 複製，讀取不需 JOIN）─────────────────
-    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ── Snapshot / content fields ────────────────────────────────────────────
+    url: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str | None] = mapped_column(
@@ -48,9 +52,19 @@ class UserItem(Base):
     notes_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ── AI fields ────────────────────────────────────────────────────────────
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     user: Mapped["User"] = relationship(back_populates="user_items")
-    content: Mapped["ContentObject"] = relationship(back_populates="user_items")
     fork_source: Mapped["UserItem | None"] = relationship(
         "UserItem", remote_side="UserItem.id", foreign_keys=[fork_from_item_id]
     )
     item_tags: Mapped[list["ItemTag"]] = relationship(back_populates="user_item")
+    chunks: Mapped[list["ContentChunk"]] = relationship(
+        back_populates="user_item", cascade="all, delete-orphan"
+    )
+    locations: Mapped[list["ContentLocation"]] = relationship(
+        back_populates="user_item", cascade="all, delete-orphan"
+    )
