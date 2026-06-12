@@ -128,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-definePageMeta({ layout: false })
+definePageMeta({})
 const { t } = useI18n()
 useHead({ title: t('connected.page_title') })
 
@@ -235,7 +235,7 @@ async function copyIosToken() {
 
 <style scoped>
 .connected {
-  min-height: 100vh;
+  min-height: calc(100vh - 120px);
   display: flex;
   align-items: center;
   justify-content: center;
