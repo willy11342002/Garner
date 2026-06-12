@@ -297,26 +297,58 @@ const tagRemoving = ref<Record<string, boolean>>({})
 const tagAdding = ref(false)
 const tagInputRef = ref<HTMLInputElement | null>(null)
 
+// ── Inline title editing ─────────────────────────────────────────────────────
+const isEditingTitle = ref(false)
+const editingTitle = ref('')
+const savingTitle = ref(false)
+const titleInputRef = ref<HTMLInputElement | null>(null)
+
+function startEditTitle() {
+  if (readonly.value) return
+  editingTitle.value = (item.value as Item)?.title ?? ''
+  isEditingTitle.value = true
+  nextTick(() => titleInputRef.value?.focus())
+}
+
+async function saveTitle() {
+  if (!item.value) return
+  const trimmed = editingTitle.value.trim()
+  isEditingTitle.value = false
+  if (trimmed === ((item.value as Item)?.title ?? '')) return
+  savingTitle.value = true
+  try {
+    await updateArticle(item.value.id, { title: trimmed || null })
+    if (fetchedItem.value) fetchedItem.value = { ...fetchedItem.value, title: trimmed || null }
+  } finally {
+    savingTitle.value = false
+  }
+}
+
+function cancelEditTitle() {
+  isEditingTitle.value = false
+  editingTitle.value = ''
+}
+
 // ── Inline note editing ───────────────────────────────────────────────────────
 const isEditingNotes = ref(false)
 const editingNotesMd = ref('')
-const savingNotes = ref(false)
 
 function startEditNotes() {
   editingNotesMd.value = (item.value as Item)?.notes_md ?? ''
   isEditingNotes.value = true
+  editingTitle.value = (item.value as Item)?.title ?? ''
+  isEditingTitle.value = true
+  nextTick(() => titleInputRef.value?.focus())
 }
 
 async function saveNotes() {
   if (!item.value) return
-  savingNotes.value = true
-  try {
-    await updateArticle(item.value.id, { notes_md: editingNotesMd.value })
-    if (fetchedItem.value) fetchedItem.value = { ...fetchedItem.value, notes_md: editingNotesMd.value }
-    isEditingNotes.value = false
-  } finally {
-    savingNotes.value = false
-  }
+  const titleTrimmed = editingTitle.value.trim() || null
+  const notesMd = editingNotesMd.value
+  if (fetchedItem.value) fetchedItem.value = { ...fetchedItem.value, notes_md: notesMd, title: titleTrimmed }
+  isEditingNotes.value = false
+  isEditingTitle.value = false
+  updateArticle(item.value.id, { notes_md: notesMd, title: titleTrimmed })
 }
 
 // ── Archive ───────────────────────────────────────────────────────────────────
@@ -405,6 +437,8 @@ function doClose() {
   showArchiveConfirm.value = false
   isEditingNotes.value = false
   editingNotesMd.value = ''
+  isEditingTitle.value = false
+  editingTitle.value = ''
   emit('close')
 }
 
@@ -491,15 +525,22 @@ async function confirmArchive() {
           <div class="id-body">
             <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
             <div class="id-body__header">
-              <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
+              <input
+                v-if="isEditingTitle"
+                ref="titleInputRef"
+                v-model="editingTitle"
+                class="id-body__title-input"
+                @keydown.enter.prevent="() => {}"
+                @keydown.esc.stop="cancelEditTitle"
+              />
+              <h1 v-else class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
               <div class="id-body__actions">
                 <button
                   v-if="!readonly && activeTab === 'info'"
                   class="btn btn--accent"
-                  :disabled="savingNotes"
                   @click="isEditingNotes ? saveNotes() : startEditNotes()"
                 >
-                  {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
+                  {{ isEditingNotes ? '保存' : '編輯筆記' }}
                 </button>
                 <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
@@ -660,7 +701,15 @@ async function confirmArchive() {
 
           <div class="idp-body">
             <div v-if="(item as Item).saved_at" class="id-body__meta mono">{{ relativeTime((item as Item).saved_at) }}</div>
-            <h1 class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
+              <input
+                v-if="isEditingTitle"
+                ref="titleInputRef"
+                v-model="editingTitle"
+                class="id-body__title-input"
+                @keydown.enter.prevent="() => {}"
+                @keydown.esc.stop="cancelEditTitle"
+              />
+              <h1 v-else class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
 
             <div v-if="!readonly" class="id-body__tags">
               <span
