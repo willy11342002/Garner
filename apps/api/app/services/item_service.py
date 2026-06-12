@@ -256,6 +256,9 @@ async def list_articles(db: AsyncSession, user_id: UUID) -> list[ItemRead]:
 async def update_article(
     db: AsyncSession, user_id: UUID, item_id: UUID, data: ArticleUpdate
 ) -> ItemRead:
+    from app.services import ai_service
+    from app.crud import chunks as crud_chunks
+
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
@@ -263,6 +266,19 @@ async def update_article(
         user_item.title = data.title
     if data.notes_md is not None:
         user_item.notes_md = data.notes_md
+        title = user_item.title or ""
+        embed_text = f"{title}\n\n{data.notes_md}"
+        try:
+            embedding = await ai_service.embed(embed_text)
+            user_item.embedding = embedding
+            chunk_texts = ai_service.chunk_text(data.notes_md)
+            chunk_records = [
+                {"text": c, "embedding": await ai_service.embed(c)}
+                for c in chunk_texts
+            ]
+            await crud_chunks.replace_chunks(db, item_id, chunk_records)
+        except Exception:
+            pass
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
