@@ -54,11 +54,10 @@ SELECT
     -- saves：直接 count user_items，不走 user_feature_usage
     (SELECT COUNT(*)::int
      FROM user_items ui
-     JOIN content_objects co ON co.id = ui.content_id
      WHERE ui.user_id  = :user_id
        AND ui.saved_at >= :month_start
        AND ui.deleted_at IS NULL
-       AND co.source_type != 'article'
+       AND ui.source_type != 'article'
     ) AS saves_used,
     -- usage（各走 unique index point lookup）
     COALESCE((SELECT ufu.count FROM user_feature_usage ufu

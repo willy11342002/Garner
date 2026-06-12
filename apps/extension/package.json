@@ -1,7 +1,7 @@
 {
   "name": "garner-extension",
   "displayName": "Garner — 一鍵收藏，AI 幫你整理",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "scripts": {
     "gen-icon": "node scripts/gen-icon.mjs",
