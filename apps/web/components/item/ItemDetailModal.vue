@@ -176,6 +176,7 @@ async function extractLocations() {
   try {
     itemLocations.value = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations/extract`, { method: 'POST' })
     renderItemMarkers()
+    gmap.notifyLocationChange()
   } finally {
     extractingLocations.value = false
   }

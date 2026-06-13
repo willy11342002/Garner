@@ -10,6 +10,7 @@ let containerEl: HTMLElement | null = null
 let initPromise: Promise<void> | null = null
 
 const currentOwner = ref<string | null>(null)
+const locationVersion = ref(0)
 const markerRegistry = new Set<LeafletMarker>()
 const activeListenerCleanups: Array<() => void> = []
 
@@ -121,6 +122,9 @@ export function useGlobalMap() {
   return {
     /** Reactive — watch this to know when another component has taken the map. */
     currentOwner: readonly(currentOwner),
+    /** Increment to signal that locations have changed and map should refresh. */
+    locationVersion: readonly(locationVersion),
+    notifyLocationChange: () => { locationVersion.value++ },
     claim,
     release,
     onMoveEnd,

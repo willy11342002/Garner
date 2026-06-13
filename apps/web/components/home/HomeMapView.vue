@@ -73,6 +73,7 @@ async function extractLocations(itemId: string) {
     if (locs.length > 0) {
       allLocatedItemIds.value = new Set([...allLocatedItemIds.value, itemId])
       await loadLocationsInBounds()
+      gmap.notifyLocationChange()
     }
   } catch {}
   finally {
@@ -237,6 +238,12 @@ onUnmounted(() => {
 watch(gmap.currentOwner, async (owner) => {
   if (owner !== null || !isMounted.value) return
   await reclaimMap()
+})
+
+// Refresh map pins when any component reports new locations
+watch(gmap.locationVersion, () => {
+  if (gmap.currentOwner.value !== 'home' || !isMounted.value) return
+  loadLocationsInBounds()
 })
 </script>
 
