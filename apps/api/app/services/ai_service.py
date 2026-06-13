@@ -434,6 +434,73 @@ _PLAN_SYSTEM = """\
 """
 
 
+_REFLECT_SYSTEM = """\
+你是 Garner 知識助理的反思引擎。用戶問了一個問題，我們已執行搜尋並取得結果。
+請判斷目前結果是否足夠回答用戶的問題。
+
+輸出 JSON（只輸出 JSON，不要 markdown fences）：
+
+若結果足夠：
+{"sufficient": true, "reasoning": "一句說明"}
+
+若結果不足（例如：結果數為 0、或找到的內容與問題明顯無關）：
+{"sufficient": false, "reasoning": "一句說明", "follow_up": {"name": "search", "query": "...", "tags": [...], "locations": [...], "limit": 6}}
+
+follow_up 規則：
+- 只用 search 工具
+- query 換一個角度或更寬泛的描述句
+- tags / locations 選填，只在有把握時才加
+- 若第一輪已有 query，第二輪換詞或放寬；若第一輪無 query，補一個語意 query
+"""
+
+_REFLECT_TEMPLATE = """\
+用戶問題：{query}
+
+已執行的搜尋：
+{tools_summary}
+
+搜尋結果（共 {count} 筆）：
+{results_summary}
+"""
+
+
+async def reflect_results(
+    query: str,
+    executed_tools: list[dict],
+    result_titles: list[str],
+) -> dict:
+    """判斷搜尋結果是否足夠，不足時回傳補搜參數。"""
+    tools_summary = "\n".join(
+        f"- {t.get('name')}: query={t.get('query', '')!r} tags={t.get('tags')} locations={t.get('locations')}"
+        for t in executed_tools
+    ) or "（無搜尋）"
+    results_summary = "\n".join(f"- {t}" for t in result_titles) or "（無結果）"
+    prompt = _REFLECT_TEMPLATE.format(
+        query=query,
+        tools_summary=tools_summary,
+        count=len(result_titles),
+        results_summary=results_summary,
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json={
+                "model": _llm(),
+                "messages": [
+                    {"role": "system", "content": _REFLECT_SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
+            },
+            timeout=20,
+        )
+        if resp.status_code == 401:
+            raise RuntimeError("OpenRouter service unavailable")
+        resp.raise_for_status()
+    raw = resp.json()["choices"][0]["message"]["content"].strip()
+    return _parse_json(raw)
+
+
 async def plan_tools(query: str, history: list[dict], today: str) -> dict:
     """分析用戶問題，回傳 reasoning + tool 清單。"""
     history_text = "\n".join(

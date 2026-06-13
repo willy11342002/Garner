@@ -248,6 +248,39 @@ async def stream_reply(
         process_steps.append({"toolCall": tool_payload, "toolResult": tool_result})
         yield _sse("tool_result", tool_result)
 
+    # ── Step 2.5：Reflect — 判斷結果是否足夠，不足補搜一輪 ──────────────────────
+    # 只在有執行過 search 工具且沒有 create_article 時才 reflect
+    executed_searches = [s["toolCall"] for s in process_steps if s["toolCall"].get("name") == "search"]
+    if executed_searches and not created_article:
+        result_titles = [ui.title or ui.url for ui, _ in all_items]
+        try:
+            reflect = await ai_service.reflect_results(user_content, executed_searches, result_titles)
+        except Exception:
+            reflect = {"sufficient": True}
+
+        yield _sse("thinking", {"text": reflect.get("reasoning", "")})
+
+        if not reflect.get("sufficient", True) and reflect.get("follow_up"):
+            follow_up = reflect["follow_up"]
+            yield _sse("tool_call", follow_up)
+            try:
+                extra_hits = await _exec_search(db, user_id, follow_up)
+            except Exception:
+                extra_hits = []
+
+            new_hits = [(ui, dist) for ui, dist in extra_hits if ui.id not in seen_ids]
+            for ui, dist in new_hits:
+                seen_ids.add(ui.id)
+                all_items.append((ui, dist))
+
+            tool_result = {
+                "tool": "search",
+                "count": len(new_hits),
+                "titles": [ui.title or ui.url for ui, _ in new_hits[:3]],
+            }
+            process_steps.append({"toolCall": follow_up, "toolResult": tool_result})
+            yield _sse("tool_result", tool_result)
+
     # 最多取 10 筆
     all_items = all_items[:10]
     sources = [_to_chat_source(ui, dist) for ui, dist in all_items]
