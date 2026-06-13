@@ -57,13 +57,13 @@
                   <p v-if="processMap[msg.id].thinking" class="process-body__reasoning">{{ processMap[msg.id].thinking }}</p>
                   <div v-for="(step, i) in processMap[msg.id].steps" :key="i" class="process-body__step">
                     <div class="process-body__tool-call">
-                      <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
+                      <span class="process-body__step-icon">🔍</span>
                       <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                       <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                     </div>
                     <div v-if="step.toolResult" class="process-body__tool-result">
                       <span class="process-body__step-icon">✓</span>
-                      <span>{{ step.toolCall.name === 'filter_sources' ? t('fab.relevant', { n: step.toolResult.count }) : t('fab.found', { n: step.toolResult.count }) }}</span>
+                      <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
                     </div>
                     <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
                       <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
@@ -96,20 +96,20 @@
               <p v-if="liveProcess.thinking" class="process-body__reasoning">{{ liveProcess.thinking }}</p>
               <div v-for="(step, i) in liveProcess.steps" :key="i" class="process-body__step">
                 <div class="process-body__tool-call">
-                  <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
+                  <span class="process-body__step-icon">🔍</span>
                   <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                   <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                 </div>
                 <div v-if="step.toolResult" class="process-body__tool-result">
                   <span class="process-body__step-icon">✓</span>
-                  <span>{{ step.toolCall.name === 'filter_sources' ? t('fab.relevant', { n: step.toolResult.count }) : `找到 ${step.toolResult.count} 筆` }}</span>
+                  <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
                 </div>
                 <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
                   <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
                 </div>
                 <div v-else-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                   <span class="process-body__step-icon">⋯</span>
-                  <span>{{ step.toolCall.name === 'filter_sources' ? '篩選中' : t('fab.searching') }}</span>
+                  <span>{{ t('fab.searching') }}</span>
                 </div>
               </div>
             </div>
@@ -119,7 +119,7 @@
           <span></span><span></span><span></span>
         </div>
         <div v-if="streamingText" class="msg__bubble msg__bubble--streaming">
-          {{ streamingText }}<span class="cursor">▍</span>
+          <TiptapEditor :model-value="streamingText" readonly class="streaming-md" />
         </div>
       </div>
     </div>
@@ -329,7 +329,7 @@ async function send() {
           await nextTick(); scrollBottom()
         } else if (event === 'tool_result') {
           const steps = liveProcess.value.steps
-          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
+          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, all_count: data.all_count, titles: data.titles }
           await nextTick(); scrollBottom()
         } else if (event === 'sources') {
           liveProcess.value.sources = data as ChatSource[]
@@ -610,4 +610,13 @@ function sourceLabel(type: string | null) {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
+
+/* streaming 游標 */
+:deep(.streaming-md .tiptap-root p:last-child::after) {
+  content: '▍';
+  display: inline;
+  color: var(--accent);
+  animation: blink 1s step-start infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
 </style>

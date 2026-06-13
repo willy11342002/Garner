@@ -386,83 +386,6 @@ async def analyze_full_chain(items: list[dict]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-_PLAN_SYSTEM = """\
-你是 Garner 知識助理的規劃引擎。分析用戶問題，決定要呼叫哪些工具來查詢個人知識庫或產生文章。
-
-可用工具：
-
-1. search
-   搜尋知識庫，所有參數皆選填，可自由組合：
-   - query（str）：語意搜尋描述句，完整描述想找的概念或主題（不要只寫關鍵字，盡量用完整句子）
-   - source_type（str）：按來源類型，值為 "youtube" / "article" / "ig"
-   - start_date（str）：儲存日期下限，格式 YYYY-MM-DD
-   - end_date（str）：儲存日期上限，格式 YYYY-MM-DD
-   - limit（int）：回傳筆數，預設 6，最多 15
-   - offset（int）：跳過前 N 筆，用於換頁（預設 0）
-   參數：{{"name": "search", "query": "...", "source_type": "...", "start_date": "...", "end_date": "...", "limit": 6, "offset": 0}}
-
-2. create_article
-   根據對話脈絡或知識庫內容，建立一篇 AI 草稿文章、規劃、指南或清單。
-   觸發時機：用戶明確要求「產出內容」，包含但不限於：
-   「寫文章」「整理成文章」「幫我寫一篇」「生成...規劃/計畫/攻略/指南/清單/總結/摘要」
-   「幫我規劃」「做一份」「產生草稿」「整理一下」「寫一個行程」等。
-   關鍵判斷：用戶想要 AI **產出一份結構化內容**，而不只是回答問題。
-   可以和 search 搭配（先查知識庫，再撰寫文章）。
-   title：文章標題（繁體中文，簡潔有力）
-   content：完整內容，使用 markdown 格式（標題用 ##/###、列表用 -、重點用 **粗體**）
-   summary：50 字以內的內容摘要
-   參數：{{"name": "create_article", "title": "文章標題", "content": "完整 markdown 內容", "summary": "摘要"}}
-
-規則：
-- search 省略的參數代表不限制該維度；至少要有一個參數
-- create_article 僅在用戶有明確產出需求時才呼叫，不要主動建立
-- 若同時查詢知識庫又要產出內容，兩個工具可以一起呼叫
-- query 寫成完整描述句，清楚描述想找的概念或主題，不要直接複製用戶的問句
-- 若用戶問的是對話歷史、上一句話、閒聊、打招呼、或可直接從脈絡回答的問題，tools 回傳空陣列 []，不需要呼叫任何工具
-- 只輸出 JSON，不要 markdown fences
-
-今天日期：{today}
-
-輸出格式：
-{{
-  "reasoning": "2-3 句分析推理，繁體中文",
-  "tools": [
-    {{"name": "工具名稱", ...其他參數}}
-  ]
-}}
-"""
-
-
-_REFLECT_SYSTEM = """\
-你是 Garner 知識助理的反思引擎。用戶問了一個問題，我們已執行搜尋並取得結果。
-請判斷目前結果是否足夠回答用戶的問題。
-
-輸出 JSON（只輸出 JSON，不要 markdown fences）：
-
-若結果足夠：
-{"sufficient": true, "reasoning": "一句說明"}
-
-若結果不足（例如：結果數為 0、或找到的內容與問題明顯無關）：
-{"sufficient": false, "reasoning": "一句說明", "follow_up": {"name": "search", "query": "...", "limit": 6, "offset": 0}}
-
-follow_up 規則：
-- 只用 search 工具
-- query 換一個角度或更寬泛的描述句
-- 若第一輪已有 query，第二輪換詞或放寬；若第一輪無 query，補一個語意 query
-- offset 用於換頁：若第一輪 limit=6 offset=0，第二輪可用 offset=6 取下一頁
-"""
-
-_REFLECT_TEMPLATE = """\
-用戶問題：{query}
-
-已執行的搜尋：
-{tools_summary}
-
-搜尋結果（共 {count} 筆）：
-{results_summary}
-"""
-
-
 _FILTER_SYSTEM = "你是知識庫助手，幫助判斷哪些知識筆記與用戶問題真正相關。只輸出 JSON，不要 markdown fences。"
 
 _FILTER_TEMPLATE = """\
@@ -482,7 +405,7 @@ _FILTER_TEMPLATE = """\
 """
 
 
-async def filter_sources(query: str, items: list[dict]) -> list[int]:
+async def filter_relevant(query: str, items: list[dict]) -> list[int]:
     """回傳與 query 真正相關的 item indices（0-based）。items 每筆需有 title 欄位。"""
     if not items:
         return []
@@ -510,74 +433,7 @@ async def filter_sources(query: str, items: list[dict]) -> list[int]:
         indices = result.get("relevant_indices", [])
         return [i for i in indices if isinstance(i, int) and 0 <= i < len(items)]
     except Exception:
-        return []
-
-
-async def reflect_results(
-    query: str,
-    executed_tools: list[dict],
-    result_titles: list[str],
-) -> dict:
-    """判斷搜尋結果是否足夠，不足時回傳補搜參數。"""
-    tools_summary = "\n".join(
-        f"- {t.get('name')}: query={t.get('query', '')!r} tags={t.get('tags')} locations={t.get('locations')}"
-        for t in executed_tools
-    ) or "（無搜尋）"
-    results_summary = "\n".join(f"- {t}" for t in result_titles) or "（無結果）"
-    prompt = _REFLECT_TEMPLATE.format(
-        query=query,
-        tools_summary=tools_summary,
-        count=len(result_titles),
-        results_summary=results_summary,
-    )
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            OPENROUTER_URL,
-            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
-            json={
-                "model": _llm(),
-                "messages": [
-                    {"role": "system", "content": _REFLECT_SYSTEM},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=20,
-        )
-        if resp.status_code == 401:
-            raise RuntimeError("OpenRouter service unavailable")
-        resp.raise_for_status()
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
-    return _parse_json(raw)
-
-
-async def plan_tools(query: str, history: list[dict], today: str) -> dict:
-    """分析用戶問題，回傳 reasoning + tool 清單。"""
-    history_text = "\n".join(
-        f"{'用戶' if m['role'] == 'user' else '助理'}：{m['content']}"
-        for m in history[-4:]
-    ) if history else ""
-    prompt = f"對話脈絡：\n{history_text}\n\n用戶最新問題：{query}" if history_text else f"用戶問題：{query}"
-    system = _PLAN_SYSTEM.format(today=today)
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            OPENROUTER_URL,
-            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
-            json={
-                "model": _llm(),
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=30,
-        )
-        if resp.status_code == 401:
-            raise RuntimeError("OpenRouter service unavailable")
-        resp.raise_for_status()
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1].lstrip("json").strip()
-    return json.loads(raw)
+        return list(range(len(items)))
 
 
 _CHAT_SYSTEM = """\
@@ -682,6 +538,249 @@ async def chat_stream(
                         yield delta
                 except Exception:
                     continue
+
+
+_AGENTIC_SYSTEM = """\
+你是 Garner 知識助理。用戶把網頁文章和 YouTube 影片存在個人知識庫裡。
+你的工作是根據用戶的問題，使用工具查詢他的知識庫，再根據查到的內容給出具體有洞察力的回答。
+
+規則：
+- 需要查知識庫時主動呼叫 search，可以多次呼叫、換角度搜尋
+- 詢問「來源」「出處」「哪篇」時，一定要呼叫 search，不能憑記憶回答
+- 如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造
+- 如果問題超出知識庫範圍（閒聊、一般常識、數學計算等），簡短說明你只能幫助探索知識庫
+- 用繁體中文回答，自然簡潔，不過度列舉
+- 只輸出你自己的回覆，不要模擬用戶的後續回應
+"""
+
+_AGENTIC_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "搜尋用戶的個人知識庫。可以用語意查詢、或按來源類型、日期範圍過濾。可多次呼叫換角度搜尋。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "語意搜尋描述句，完整描述想找的概念或主題（用完整句子，不要只寫關鍵字）",
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "enum": ["youtube", "article", "ig"],
+                        "description": "按來源類型過濾",
+                    },
+                    "start_date": {"type": "string", "description": "儲存日期下限，格式 YYYY-MM-DD"},
+                    "end_date": {"type": "string", "description": "儲存日期上限，格式 YYYY-MM-DD"},
+                    "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 15"},
+                    "offset": {"type": "integer", "description": "跳過前 N 筆，用於換頁"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_article",
+            "description": "根據知識庫內容或對話脈絡，建立一篇 AI 草稿文章、規劃、指南或清單。只在用戶明確要求產出內容時呼叫。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "文章標題（繁體中文，簡潔有力）"},
+                    "content": {"type": "string", "description": "完整內容，使用 markdown 格式"},
+                    "summary": {"type": "string", "description": "50 字以內的內容摘要"},
+                },
+                "required": ["title", "content"],
+            },
+        },
+    },
+]
+
+
+def _sse(event: str, data) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def agentic_chat_stream(
+    user_content: str,
+    history: list[dict],
+    context_summary: str | None,
+    execute_tool,  # async callable(tool_name, tool_args) -> dict
+):
+    """
+    Native tool-calling agentic loop. Yields SSE event strings.
+
+    Emits: thinking | tool_call | tool_result | sources | cited_sources | delta | done
+    execute_tool(name, args) must return:
+      search       → {"items": [...ChatSource dicts...], "chunks": [...chunk dicts...]}
+      create_article → {"draft": {...}, "ok": bool}
+    """
+    import json as _json
+
+    today = __import__("datetime").date.today().isoformat()
+    system = _AGENTIC_SYSTEM + f"\n今天日期：{today}"
+    if context_summary:
+        system += f"\n\n【對話摘要（早期）】\n{context_summary}"
+
+    messages: list[dict] = []
+    for m in history:
+        messages.append({"role": m["role"], "content": m["content"]})
+    messages.append({"role": "user", "content": user_content})
+
+    all_sources: list[dict] = []
+    all_chunks: list[dict] = []
+    process_steps: list[dict] = []
+    seen_source_ids: set[str] = set()
+    accumulated_text = ""
+
+    MAX_ROUNDS = 6
+    for _round in range(MAX_ROUNDS):
+        request_body: dict = {
+            "model": _llm(),
+            "stream": True,
+            "messages": messages,
+            "tools": _AGENTIC_TOOLS,
+        }
+        # Inject retrieved context as system note before final reply
+        if all_chunks or all_sources:
+            def _fmt(c: dict) -> str:
+                parts = [f"標題：{c.get('title') or '(無標題)'}"]
+                if c.get("tags"):
+                    parts.append(f"標籤：{', '.join(c['tags'])}")
+                if c.get("locations"):
+                    parts.append(f"地點：{', '.join(c['locations'])}")
+                parts.append(f"內容：{c.get('summary') or c.get('text') or '(無內容)'}")
+                return "\n".join(parts)
+
+            ctx_items = all_chunks if all_chunks else all_sources
+            context_block = "【已找到的知識庫內容】\n" + "\n\n".join(
+                f"[{i+1}] " + _fmt(c) for i, c in enumerate(ctx_items)
+            )
+            # Inject as the last user turn addendum
+            injected_messages = messages[:-1] + [
+                {"role": "user", "content": context_block + "\n\n" + user_content}
+            ]
+            request_body["messages"] = injected_messages
+
+        accumulated_text = ""
+        tool_calls_raw: dict[int, dict] = {}  # index → {id, name, arguments_str}
+
+        async with httpx.AsyncClient(timeout=90) as client:
+            async with client.stream(
+                "POST", OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                json=request_body,
+            ) as resp:
+                if resp.status_code == 401:
+                    raise RuntimeError("OpenRouter service unavailable")
+                resp.raise_for_status()
+
+                finish_reason = None
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line[6:]
+                    if raw == "[DONE]":
+                        break
+                    try:
+                        chunk = _json.loads(raw)
+                        choice = chunk["choices"][0]
+                        finish_reason = choice.get("finish_reason") or finish_reason
+                        delta = choice.get("delta", {})
+
+                        # Text delta
+                        if delta.get("content"):
+                            accumulated_text += delta["content"]
+                            yield _sse("delta", {"text": delta["content"]})
+
+                        # Tool call deltas
+                        for tc in delta.get("tool_calls", []):
+                            idx = tc.get("index", 0)
+                            if idx not in tool_calls_raw:
+                                tool_calls_raw[idx] = {"id": "", "name": "", "arguments_str": ""}
+                            if tc.get("id"):
+                                tool_calls_raw[idx]["id"] = tc["id"]
+                            if tc.get("function", {}).get("name"):
+                                tool_calls_raw[idx]["name"] = tc["function"]["name"]
+                            if tc.get("function", {}).get("arguments"):
+                                tool_calls_raw[idx]["arguments_str"] += tc["function"]["arguments"]
+                    except Exception:
+                        continue
+
+        # No tool calls → final answer
+        if not tool_calls_raw:
+            break
+
+        # Append assistant message with tool_calls
+        assistant_msg: dict = {"role": "assistant", "content": accumulated_text or None, "tool_calls": []}
+        for idx in sorted(tool_calls_raw):
+            tc = tool_calls_raw[idx]
+            assistant_msg["tool_calls"].append({
+                "id": tc["id"],
+                "type": "function",
+                "function": {"name": tc["name"], "arguments": tc["arguments_str"]},
+            })
+        messages.append(assistant_msg)
+
+        # Execute each tool call
+        for idx in sorted(tool_calls_raw):
+            tc = tool_calls_raw[idx]
+            name = tc["name"]
+            try:
+                args = _json.loads(tc["arguments_str"]) if tc["arguments_str"] else {}
+            except Exception:
+                args = {}
+
+            tool_payload = {"name": name, **args}
+            yield _sse("tool_call", tool_payload)
+
+            result = await execute_tool(name, args)
+
+            if name == "search":
+                new_items = [s for s in result.get("items", []) if s["id"] not in seen_source_ids]
+                for s in new_items:
+                    seen_source_ids.add(s["id"])
+                    all_sources.append(s)
+                all_chunks.extend(result.get("chunks", []))
+                tool_result_data = {
+                    "tool": name,
+                    "count": len(new_items),
+                    "all_count": result.get("all_count", len(new_items)),
+                    "titles": [s.get("title") or s.get("url") or "" for s in new_items],
+                }
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            elif name == "create_article":
+                draft = result.get("draft")
+                if draft:
+                    yield _sse("article_draft", draft)
+                    tool_result_data = {"tool": name, "created": True, "article_id": draft["id"], "title": draft["title"]}
+                    process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data, "articleDraft": draft})
+                else:
+                    tool_result_data = {"tool": name, "created": False}
+                    process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            # Return tool result to model
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "content": _json.dumps(tool_result_data, ensure_ascii=False),
+            })
+
+    yield _sse("sources", all_sources)
+    yield _sse("done", {})
+
+    # Return final reply text and process metadata for caller to persist
+    # (yielded via a sentinel — caller collects via a shared list passed in,
+    #  or we use a different pattern. Here we use a final meta event.)
+    yield _sse("__meta__", {
+        "reply": accumulated_text,
+        "process_steps": process_steps,
+        "cited_ids": list(seen_source_ids),
+    })
 
 
 async def compress_memory(

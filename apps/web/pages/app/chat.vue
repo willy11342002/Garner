@@ -129,11 +129,8 @@
                         <template v-if="step.toolCall.name === 'create_article'">
                           <span>文章已建立：{{ step.toolResult.title }}</span>
                         </template>
-                        <template v-else-if="step.toolCall.name === 'filter_sources'">
-                          <span>篩選出 {{ step.toolResult.count }} 筆相關</span>
-                        </template>
                         <template v-else>
-                          <span>找到 {{ step.toolResult.count }} 筆</span>
+                          <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
                         </template>
                       </div>
                       <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'" class="process-body__tool-titles">
@@ -216,11 +213,8 @@
                     <template v-if="step.toolCall.name === 'create_article'">
                       <span>文章已建立：{{ step.toolResult.title }}</span>
                     </template>
-                    <template v-else-if="step.toolCall.name === 'filter_sources'">
-                      <span>篩選出 {{ step.toolResult.count }} 筆相關</span>
-                    </template>
                     <template v-else>
-                      <span>找到 {{ step.toolResult.count }} 筆</span>
+                      <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
                     </template>
                   </div>
                   <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'" class="process-body__tool-titles">
@@ -244,7 +238,7 @@
               class="msg__bubble msg__bubble--streaming"
               :class="{ 'msg__bubble--has-sources': liveProcess.sources.length }"
             >
-              {{ streamingText }}<span class="cursor">▍</span>
+              <TiptapEditor :model-value="streamingText" readonly class="streaming-md" />
               <button
                 v-if="liveProcess.sources.length"
                 class="src-badge"
@@ -606,7 +600,7 @@ async function send() {
         } else if (event === 'tool_result') {
           if (!isActive()) continue
           const steps = liveProcess.value.steps
-          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
+          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, all_count: data.all_count, titles: data.titles }
           await nextTick(); scrollBottom()
 
         } else if (event === 'article_draft') {
@@ -708,4 +702,13 @@ function sourceLabel(type: string | null) {
 
 <style scoped>
 :deep(.app-footer) { display: none; }
+
+/* streaming 游標：附在最後一個段落之後 */
+:deep(.streaming-md .tiptap-root p:last-child::after) {
+  content: '▍';
+  display: inline;
+  color: var(--accent);
+  animation: blink 1s step-start infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
 </style>
