@@ -259,6 +259,7 @@
     display: block;
     position: relative;
     overflow: hidden;
+    height: calc(100dvh - var(--nav-h, 56px));
   }
 
   .chat-list,
