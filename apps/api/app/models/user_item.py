@@ -58,6 +58,27 @@ class UserItem(Base):
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     extract: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # ── Pipeline stage tracking ──────────────────────────────────────────────
+    fetch_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fetch_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fetch_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    assets_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assets_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assets_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    note_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    landmarks_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    landmarks_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    landmarks_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    embedding_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    embedding_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     user: Mapped["User"] = relationship(back_populates="user_items")
     fork_source: Mapped["UserItem | None"] = relationship(
         "UserItem", remote_side="UserItem.id", foreign_keys=[fork_from_item_id]
