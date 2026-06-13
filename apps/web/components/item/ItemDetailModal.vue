@@ -60,6 +60,48 @@ let _searchPins: import('leaflet').Marker[] = []
 // Owner key changes with each item so re-opening a different item always re-claims
 const mapOwnerKey = computed(() => `modal:${props.itemId ?? ''}`)
 
+// ── Selected location (place panel) ──────────────────────────────────────────
+interface PlaceDetails {
+  place_id: string
+  name: string | null
+  rating: number | null
+  reviews: Array<{ author: string | null; author_photo: string | null; rating: number | null; text: string | null; relative_time: string | null }> | null
+  photos: string[] | null
+  address: string | null
+  phone: string | null
+  opening_hours: { open_now: boolean; weekday_descriptions: string[] } | null
+  maps_url: string | null
+}
+
+const selectedLoc = ref<typeof itemLocations.value[0] | null>(null)
+const placeData = ref<PlaceDetails | null>(null)
+const placeLoading = ref(false)
+const placeError = ref('')
+
+async function selectLocation(loc: typeof itemLocations.value[0]) {
+  selectedLoc.value = loc
+  placeData.value = null
+  placeError.value = ''
+  if (!loc.lat || !loc.lng) return
+  placeLoading.value = true
+  try {
+    const result = await apiFetch<PlaceDetails | null>(
+      `/places/lookup?name=${encodeURIComponent(loc.name)}&lat=${loc.lat}&lng=${loc.lng}`
+    )
+    placeData.value = result ?? null
+  } catch {
+    placeError.value = '無法載入地點資訊'
+  } finally {
+    placeLoading.value = false
+  }
+}
+
+function clearSelectedLoc() {
+  selectedLoc.value = null
+  placeData.value = null
+  placeError.value = ''
+}
+
 async function switchToMapTab() {
   activeTab.value = 'map'
   await nextTick()  // wait for mapSlotEl to mount via v-if
@@ -70,6 +112,7 @@ async function switchToMapTab() {
 
 function switchToInfoTab() {
   clearSearch()   // also calls clearSearchPins()
+  clearSelectedLoc()
   gmap.release(mapOwnerKey.value)
   activeTab.value = 'info'
 }
@@ -107,10 +150,7 @@ function renderItemMarkers() {
       iconAnchor: [12, 32],
     })
     const m = L.marker([loc.lat!, loc.lng!], { icon }).addTo(map)
-    m.bindPopup(
-      L.popup({ closeButton: false, className: 'id-loc-popup', offset: [0, -18] })
-        .setContent(buildLocPopup(loc, m))
-    )
+    m.on('click', () => selectLocation(loc))
     gmap.registerMarker(m)
     markerList.push(m)
   }
@@ -121,37 +161,12 @@ function renderItemMarkers() {
   }
 }
 
-function buildLocPopup(loc: ItemLocation, marker: import('leaflet').Marker): HTMLElement {
-  const root = document.createElement('div')
-  root.className = 'id-loc-popup__inner'
-
-  const name = document.createElement('div')
-  name.className = 'id-loc-popup__name'
-  name.textContent = loc.name
-  root.appendChild(name)
-
-  const actions = document.createElement('div')
-  actions.className = 'id-loc-popup__actions'
-
-  const deleteBtn = document.createElement('button')
-  deleteBtn.className = 'id-loc-popup__btn id-loc-popup__btn--delete'
-  deleteBtn.textContent = '刪除'
-  deleteBtn.addEventListener('click', async () => {
-    deleteBtn.disabled = true
-    deleteBtn.textContent = '刪除中…'
-    await deleteLocation(loc)
-    marker.closePopup()
-  })
-  actions.appendChild(deleteBtn)
-  root.appendChild(actions)
-
-  return root
-}
 
 async function deleteLocation(loc: ItemLocation) {
   if (!props.itemId) return
   await apiFetch(`/items/${props.itemId}/locations/${loc.id}`, { method: 'DELETE' })
   itemLocations.value = itemLocations.value.filter(l => l.id !== loc.id)
+  if (selectedLoc.value?.id === loc.id) clearSelectedLoc()
   renderItemMarkers()
 }
 
@@ -656,38 +671,52 @@ async function confirmArchive() {
               <!-- Map container: global Leaflet instance gets appended here -->
               <div ref="mapSlotEl" class="id-map-slot" />
 
-              <!-- Locations list -->
-              <div class="id-map-locations">
-                <div v-if="loadingLocations" class="id-map-locations__loading">載入地點中…</div>
-                <template v-else-if="itemLocations.length">
-                  <div v-for="loc in itemLocations" :key="loc.id" class="id-map-loc">
-                    <svg class="id-map-loc__pin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                      <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/>
-                    </svg>
-                    <span class="id-map-loc__name">{{ loc.name }}</span>
-                    <span v-if="!loc.lat" class="id-map-loc__nogeo">無座標</span>
-                    <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
-                      {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? '手動' : 'AI' }}
-                    </span>
-                    <div class="id-map-loc__actions">
-                      <button
-                        class="id-map-loc__btn id-map-loc__btn--delete"
-                        @click="deleteLocation(loc)"
-                      >刪除</button>
-                    </div>
-                  </div>
-                </template>
-                <div v-else class="id-map-locations__empty">
-                  <span>此內容尚無地點資訊</span>
-                  <button
-                    class="id-map-loc__btn id-map-loc__btn--extract"
-                    :disabled="extractingLocations"
-                    @click="extractLocations"
-                  >
-                    {{ extractingLocations ? '抽取中…' : '補抓地點' }}
+              <!-- Place info panel (shown when a marker is selected) -->
+              <template v-if="selectedLoc">
+                <div class="id-map-place-header">
+                  <button class="id-map-place-back" @click="clearSelectedLoc">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    所有地標
                   </button>
+                  <span class="id-map-place-name">{{ selectedLoc.name }}</span>
                 </div>
-              </div>
+                <PlaceInfoPanel
+                  :place-data="placeData"
+                  :place-loading="placeLoading"
+                  :place-error="placeError"
+                  show-delete
+                  @delete="deleteLocation(selectedLoc)"
+                />
+              </template>
+
+              <!-- Locations list (default) -->
+              <template v-else>
+                <div class="id-map-locations">
+                  <div v-if="loadingLocations" class="id-map-locations__loading">載入地點中…</div>
+                  <template v-else-if="itemLocations.length">
+                    <div v-for="loc in itemLocations" :key="loc.id" class="id-map-loc" @click="selectLocation(loc)">
+                      <svg class="id-map-loc__pin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/>
+                      </svg>
+                      <span class="id-map-loc__name">{{ loc.name }}</span>
+                      <span v-if="!loc.lat" class="id-map-loc__nogeo">無座標</span>
+                      <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
+                        {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? '手動' : 'AI' }}
+                      </span>
+                    </div>
+                  </template>
+                  <div v-else class="id-map-locations__empty">
+                    <span>此內容尚無地點資訊</span>
+                    <button
+                      class="id-map-loc__btn id-map-loc__btn--extract"
+                      :disabled="extractingLocations"
+                      @click="extractLocations"
+                    >
+                      {{ extractingLocations ? '抽取中…' : '補抓地點' }}
+                    </button>
+                  </div>
+                </div>
+              </template>
             </template>
 
           </div>

@@ -377,6 +377,41 @@
   font-size: 13px;
 }
 
+/* ── Place info panel header ── */
+.id-map-place-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.id-map-place-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-mid);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.id-map-place-back:hover { background: var(--surface2); }
+.id-map-place-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
 .id-map-loc {
   display: flex;
   align-items: center;
@@ -386,7 +421,10 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   min-width: 0;
+  cursor: pointer;
+  transition: border-color 0.12s;
 }
+.id-map-loc:hover { border-color: var(--accent-bdr); }
 
 .id-map-loc__pin {
   color: var(--text-dim);
