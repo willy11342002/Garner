@@ -132,10 +132,19 @@
                         <template v-else>
                           <span>找到 {{ step.toolResult.count }} 筆</span>
                         </template>
+                        <button
+                          v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'"
+                          class="process-body__step-toggle"
+                          @click="toggleStep(msg.id, i)"
+                        >
+                          <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`${msg.id}-${i}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
                       </div>
-                      <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'" class="process-body__tool-titles">
-                        <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
-                      </div>
+                      <Transition name="thinking">
+                        <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article' && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
+                          <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                        </div>
+                      </Transition>
                     </div>
                   </div>
                   </Transition>
@@ -214,13 +223,22 @@
                       <span>文章已建立：{{ step.toolResult.title }}</span>
                     </template>
                     <template v-else>
-                      <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
+                      <span>找到 {{ step.toolResult.count }} 筆</span>
                     </template>
+                    <button
+                      v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'"
+                      class="process-body__step-toggle"
+                      @click="toggleStep('live', i)"
+                    >
+                      <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`live-${i}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
                   </div>
-                  <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'" class="process-body__tool-titles">
-                    <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
-                  </div>
-                  <div v-else-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
+                  <Transition name="thinking">
+                    <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article' && openSteps.has(`live-${i}`)" class="process-body__tool-titles">
+                      <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                    </div>
+                  </Transition>
+                  <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                     <span class="process-body__step-icon">⋯</span>
                     <span>{{ step.toolCall.name === 'create_article' ? '生成中' : step.toolCall.name === 'filter_sources' ? '篩選中' : '搜尋中' }}</span>
                   </div>
@@ -327,7 +345,15 @@ const streamingText = ref('')
 const mobileView = ref<'list' | 'chat'>('list')
 
 const openThinking = ref<Set<string>>(new Set(['live']))
+const openSteps = ref<Set<string>>(new Set())
 const openContexts = ref<Set<string>>(new Set())
+
+function toggleStep(msgId: string, stepIdx: number) {
+  const key = `${msgId}-${stepIdx}`
+  const s = openSteps.value
+  s.has(key) ? s.delete(key) : s.add(key)
+  openSteps.value = new Set(s)
+}
 const openSources = ref<Set<string>>(new Set())
 
 type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }

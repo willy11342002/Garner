@@ -141,6 +141,24 @@
   padding-left: 2px;
 }
 .process-body__tool-result--pending { color: var(--text-dim); }
+.process-body__step-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 0;
+  flex-shrink: 0;
+  transition: color .15s;
+}
+.process-body__step-toggle:hover { color: var(--text-mid); }
+.process-body__step-toggle svg { transition: transform .2s ease; }
+.process-body__step-chevron--open { transform: rotate(180deg); }
 .process-body__tool-titles {
   display: flex;
   flex-direction: column;

@@ -64,10 +64,19 @@
                     <div v-if="step.toolResult" class="process-body__tool-result">
                       <span class="process-body__step-icon">✓</span>
                       <span>找到 {{ step.toolResult.count }} 筆</span>
+                      <button
+                        v-if="step.toolResult?.titles?.length"
+                        class="process-body__step-toggle"
+                        @click="toggleStep(msg.id, i)"
+                      >
+                        <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`${msg.id}-${i}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                      </button>
                     </div>
-                    <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
-                      <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
-                    </div>
+                    <Transition name="thinking">
+                      <div v-if="step.toolResult?.titles?.length && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
+                        <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                      </div>
+                    </Transition>
                   </div>
                 </div>
               </Transition>
@@ -103,11 +112,20 @@
                 <div v-if="step.toolResult" class="process-body__tool-result">
                   <span class="process-body__step-icon">✓</span>
                   <span>找到 {{ step.toolResult.count }} 筆</span>
+                  <button
+                    v-if="step.toolResult?.titles?.length"
+                    class="process-body__step-toggle"
+                    @click="toggleStep('live', i)"
+                  >
+                    <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`live-${i}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
                 </div>
-                <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
-                  <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
-                </div>
-                <div v-else-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
+                <Transition name="thinking">
+                  <div v-if="step.toolResult?.titles?.length && openSteps.has(`live-${i}`)" class="process-body__tool-titles">
+                    <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                  </div>
+                </Transition>
+                <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                   <span class="process-body__step-icon">⋯</span>
                   <span>{{ t('fab.searching') }}</span>
                 </div>
@@ -215,7 +233,15 @@ const loading = ref(false)
 const streamingText = ref('')
 
 const openThinking = ref<Set<string>>(new Set(['live']))
+const openSteps = ref<Set<string>>(new Set())
 const openContexts = ref<Set<string>>(new Set())
+
+function toggleStep(msgId: string, stepIdx: number) {
+  const key = `${msgId}-${stepIdx}`
+  const s = openSteps.value
+  s.has(key) ? s.delete(key) : s.add(key)
+  openSteps.value = new Set(s)
+}
 const openSources = ref<Set<string>>(new Set())
 
 type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }
