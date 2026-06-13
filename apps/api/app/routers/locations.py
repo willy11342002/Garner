@@ -9,7 +9,7 @@ from app.crud import items as crud_items
 from app.crud import locations as crud_locations
 from app.dependencies import CurrentUser, DbSession
 from app.schemas.location import ContentLocationCreate, ContentLocationRead, ContentLocationUpdate, LocationMapPoint, PlaceCacheRead, PlaceSearchResult
-from app.services import ai_service, geocoding_service, place_service
+from app.services import geocoding_service, place_service
 
 router = APIRouter()
 
@@ -118,30 +118,39 @@ async def extract_item_locations(
     current_user: CurrentUser,
     db: DbSession,
 ):
-    """Run AI location extraction on an existing item using stored raw_data."""
+    """Re-run location extraction for an existing item.
+
+    If extract snapshot exists: uses stored raw_content + locations, skips AI re-run.
+    If extract snapshot is absent (legacy data): re-runs the full process_item pipeline.
+    """
     user_id = UUID(current_user["sub"])
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
+    if user_item.extract is None:
+        # Legacy item: re-run the full pipeline (re-fetches from provider)
+        from app.workers.process_item import process_item
+        await process_item(db, user_id, user_item.id, user_item.url)
+        return await crud_locations.list_by_user_item_id(db, user_item.id)
+
+    # Has extract snapshot: rebuild from stored data, geocoding only
+    extract: dict = user_item.extract
     raw_data: dict = user_item.raw_data or {}
-    source_type = user_item.source_type
 
     await crud_locations.delete_ai_locations(db, user_item.id)
 
     locations_to_save: list[dict] = []
+
     metadata_name = raw_data.get("locationName")
     if metadata_name and isinstance(metadata_name, str):
         locations_to_save.append({"name": metadata_name, "order": 0, "source": "metadata"})
 
-    text = _build_extract_text(raw_data, source_type, user_item.notes_md)
-    if text:
-        metadata_names = {loc["name"] for loc in locations_to_save}
-        ai_locations = await ai_service.extract_locations(text)
-        for loc_data in ai_locations:
-            name = loc_data.get("name")
-            if name and name not in metadata_names:
-                locations_to_save.append({"name": name, "order": loc_data.get("order", 0), "source": "ai"})
+    metadata_names = {loc["name"] for loc in locations_to_save}
+    for loc in extract.get("locations", []):
+        name = loc.get("name")
+        if name and name not in metadata_names:
+            locations_to_save.append({"name": name, "order": loc.get("order", 0), "source": "ai"})
 
     if not locations_to_save:
         await db.commit()
@@ -167,27 +176,6 @@ async def extract_item_locations(
 
     await db.commit()
     return await crud_locations.list_by_user_item_id(db, user_item.id)
-
-
-def _build_extract_text(
-    raw_data: dict,
-    source_type: str | None,
-    notes_md: str | None,
-) -> str:
-    if source_type == "article":
-        return (raw_data.get("text") or raw_data.get("markdown") or "")[:16000]
-    if source_type == "youtube":
-        parts: list[str] = []
-        title = raw_data.get("title")
-        if title:
-            parts.append(f"[標題]\n{title}")
-        desc = raw_data.get("description") or raw_data.get("text")
-        if desc:
-            parts.append(f"[說明]\n{desc[:4000]}")
-        return "\n\n".join(parts)
-    if source_type == "ig":
-        return (raw_data.get("caption") or raw_data.get("text") or "")[:4000]
-    return (notes_md or "")[:8000]
 
 
 # ── Map bounding box query ─────────────────────────────────────────────────────

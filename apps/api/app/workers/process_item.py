@@ -92,6 +92,14 @@ async def process_item(
     embed_text = analysis.get("embed_text") or summary_md[:500]
     summary_embedding = await ai_service.embed(embed_text)
 
+    # Store intermediate AI outputs for future re-runs (avoids re-fetching from provider)
+    extract_snapshot = {
+        "raw_content": raw_content,
+        "embed_text": embed_text,
+        "locations": analysis.get("locations", []),
+        "tags": analysis.get("tags", {"zh-TW": [], "en": []}),
+    }
+
     chunk_texts = ai_service.chunk_text(raw_content)
     chunk_records: list[dict] = []
     for chunk in chunk_texts:
@@ -119,12 +127,12 @@ async def process_item(
     # commit #2: AI 結果 + parsed_at
     await _save_analysis(
         db, user_item, user_id, user_item_id, url,
-        title, analysis, summary_embedding, chunk_records,
+        title, analysis, summary_embedding, chunk_records, extract_snapshot,
     )
 
     # Stage: locating
     try:
-        await _save_locations(db, user_item_id, user_item, analysis)
+        await _save_locations(db, user_item_id, user_item, extract_snapshot["locations"])
     except Exception:
         logger.exception("Failed to save locations for user_item_id=%s", user_item_id)
 
@@ -167,6 +175,7 @@ async def _save_analysis(
     analysis: dict,
     summary_embedding: list[float],
     chunk_records: list[dict],
+    extract_snapshot: dict,
 ) -> None:
     """commit #2: AI 結果、embedding、chunks、tags、parsed_at。"""
     notes_md = analysis.get("summary_md", {}).get("zh-TW", "")
@@ -177,6 +186,7 @@ async def _save_analysis(
     user_item.notes_md = notes_md
     user_item.embedding = summary_embedding
     user_item.parsed_at = now
+    user_item.extract = extract_snapshot
 
     await crud_chunks.replace_chunks(db, user_item_id, chunk_records)
 
@@ -205,7 +215,7 @@ async def _save_locations(
     db: AsyncSession,
     user_item_id: UUID,
     user_item: UserItem,
-    analysis: dict,
+    ai_locations: list[dict],
 ) -> None:
     locations_to_save: list[dict] = []
 
@@ -217,7 +227,7 @@ async def _save_locations(
 
     # Source 2: AI-extracted locations
     metadata_names = {s["name"] for s in locations_to_save}
-    for loc in analysis.get("locations", []):
+    for loc in ai_locations:
         if not isinstance(loc, dict):
             continue
         name = loc.get("name")

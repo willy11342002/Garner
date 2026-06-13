@@ -56,6 +56,7 @@ class UserItem(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extract: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="user_items")
     fork_source: Mapped["UserItem | None"] = relationship(

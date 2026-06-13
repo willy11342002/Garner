@@ -266,8 +266,10 @@ async def update_article(
         user_item.title = data.title
     if data.notes_md is not None:
         user_item.notes_md = data.notes_md
-        title = user_item.title or ""
-        embed_text = f"{title}\n\n{data.notes_md}"
+        # Use original AI embed_text if available (better semantic quality for search);
+        # fall back to title + notes_md for legacy items without extract snapshot.
+        extract = user_item.extract or {}
+        embed_text = extract.get("embed_text") or f"{user_item.title or ''}\n\n{data.notes_md}"
         try:
             embedding = await ai_service.embed(embed_text)
             user_item.embedding = embedding
