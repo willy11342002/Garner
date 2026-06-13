@@ -393,12 +393,14 @@ _PLAN_SYSTEM = """\
 
 1. search
    搜尋知識庫，所有參數皆選填，可自由組合：
-   - query（str）：語意搜尋關鍵字（2-6 字），用於概念性／主題性問題
+   - query（str）：語意搜尋描述句，完整描述想找的概念或主題（不要只寫關鍵字，盡量用完整句子）
    - tags（list[str]）：按標籤篩選，OR 邏輯，符合任一標籤即回傳
    - source_type（str）：按來源類型，值為 "youtube" / "article" / "ig"
    - start_date（str）：儲存日期下限，格式 YYYY-MM-DD
    - end_date（str）：儲存日期上限，格式 YYYY-MM-DD
-   參數：{{"name": "search", "query": "...", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "..."}}
+   - locations（list[str]）：按地點名稱篩選，OR 邏輯，符合任一地點即回傳（例如 ["台北", "東京"]）
+   - limit（int）：回傳筆數，預設 6，最多 15
+   參數：{{"name": "search", "query": "...", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "...", "locations": [...], "limit": 6}}
 
 2. create_article
    根據對話脈絡或知識庫內容，建立一篇 AI 草稿文章、規劃、指南或清單。
@@ -416,7 +418,7 @@ _PLAN_SYSTEM = """\
 - search 省略的參數代表不限制該維度；至少要有一個參數
 - create_article 僅在用戶有明確產出需求時才呼叫，不要主動建立
 - 若同時查詢知識庫又要產出內容，兩個工具可以一起呼叫
-- query 要精煉成 2-6 字的主題關鍵字，不要直接複製用戶的問句
+- query 寫成完整描述句，清楚描述想找的概念或主題，不要直接複製用戶的問句
 - 若用戶問的是對話歷史、上一句話、閒聊、打招呼、或可直接從脈絡回答的問題，tools 回傳空陣列 []，不需要呼叫任何工具
 - 只輸出 JSON，不要 markdown fences
 
@@ -503,9 +505,17 @@ async def chat_stream(
     created_article_title: str | None = None,
 ):
     """Yield text chunks from OpenRouter streaming response."""
-    items_text = "\n".join(
-        f"[{i+1}] 標題：{it['title'] or '(無標題)'}\n    摘要：{it['summary'] or '(無摘要)'}"
-        for i, it in enumerate(retrieved_items)
+    def _fmt_item(i: int, it: dict) -> str:
+        lines = [f"[{i+1}] 標題：{it.get('title') or '(無標題)'}"]
+        if it.get("tags"):
+            lines.append(f"    標籤：{', '.join(it['tags'])}")
+        if it.get("locations"):
+            lines.append(f"    地點：{', '.join(it['locations'])}")
+        lines.append(f"    內容：{it.get('summary') or '(無內容)'}")
+        return "\n".join(lines)
+
+    items_text = "\n\n".join(
+        _fmt_item(i, it) for i, it in enumerate(retrieved_items)
     ) if retrieved_items else "（未找到相關內容）"
 
     history_text = "\n".join(

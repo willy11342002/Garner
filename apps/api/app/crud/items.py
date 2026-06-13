@@ -305,9 +305,13 @@ async def structured_filter(
     source_type: str | None = None,
     saved_after: datetime | None = None,
     saved_before: datetime | None = None,
+    locations: list[str] | None = None,
+    item_ids: list[UUID] | None = None,
     limit: int = 8,
 ) -> list[UserItem]:
-    """結構化篩選：tag / source_type / 日期範圍，可自由組合。"""
+    """結構化篩選：tag / source_type / 日期範圍 / location / item_ids，可自由組合。"""
+    from app.models.content_location import ContentLocation
+
     filters = [
         UserItem.user_id == user_id,
         *_NON_DELETED,
@@ -318,6 +322,8 @@ async def structured_filter(
         filters.append(UserItem.saved_at < saved_before)
     if source_type:
         filters.append(UserItem.source_type == source_type)
+    if item_ids:
+        filters.append(UserItem.id.in_(item_ids))
 
     q = select(UserItem).where(*filters)
 
@@ -328,6 +334,15 @@ async def structured_filter(
             .where(Tag.name.in_(tags))
             .distinct()
         )
+
+    if locations:
+        loc_subq = (
+            select(ContentLocation.user_item_id)
+            .where(ContentLocation.name.in_(locations))
+            .distinct()
+            .subquery()
+        )
+        q = q.where(UserItem.id.in_(select(loc_subq.c.user_item_id)))
 
     q = q.order_by(UserItem.saved_at.desc()).limit(limit)
     result = await db.execute(q)

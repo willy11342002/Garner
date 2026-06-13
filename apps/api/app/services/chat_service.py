@@ -95,13 +95,16 @@ async def _exec_search(
     source_type = tool.get("source_type") or None
     saved_after = _parse_date(tool.get("start_date"))
     saved_before = _parse_date(tool.get("end_date"))
-    has_filters = any([tags, source_type, saved_after, saved_before])
+    locations = tool.get("locations") or None
+    item_ids = tool.get("item_ids") or None
+    limit = min(int(tool.get("limit") or 6), 15)
+    has_filters = any([tags, source_type, saved_after, saved_before, locations, item_ids])
 
     seen_ids: set[UUID] = set()
     results: list[ItemWithDist] = []
 
     if query:
-        for ui, dist in await rag_retrieve(db, user_id, query, limit=6):
+        for ui, dist in await rag_retrieve(db, user_id, query, limit=limit):
             if ui.id not in seen_ids:
                 seen_ids.add(ui.id)
                 results.append((ui, dist))
@@ -113,7 +116,9 @@ async def _exec_search(
             source_type=source_type,
             saved_after=saved_after,
             saved_before=saved_before,
-            limit=8,
+            locations=locations,
+            item_ids=item_ids,
+            limit=limit,
         )
         for ui in items:
             if ui.id not in seen_ids:
@@ -257,25 +262,47 @@ async def stream_reply(
     )
 
     # ── Step 3：Streaming 回覆 ────────────────────────────────────────────────
-    # 用 chunk 原文取代 summary，讓 AI 能回答細節問題
+    # chunk 搜尋限制在已取得的 sources 範圍內，cutoff 設 2.0（不過濾）
     cutoff = await _get_search_cutoff(db)
     query_embedding = await ai_service.embed(user_content)
-    chunk_hits = await crud_chunks.semantic_search(db, user_id, query_embedding, limit=12, cutoff=cutoff)
+    retrieved_ids = [ui.id for ui, _ in all_items] or None
+    chunk_hits = await crud_chunks.semantic_search(
+        db, user_id, query_embedding, limit=12, cutoff=cutoff, item_ids=retrieved_ids
+    )
 
-    # 建立 user_item_id → title 的 mapping
-    item_titles = {ui.id: ui.title for ui, _ in all_items}
+    # 建立 user_item_id → UserItem 的 mapping
+    item_map = {ui.id: ui for ui, _ in all_items}
+
+    def _item_tags(ui) -> list[str]:
+        try:
+            return [it.tag.name for it in (ui.item_tags or []) if it.tag]
+        except Exception:
+            return []
+
+    def _item_locations(ui) -> list[str]:
+        try:
+            return [loc.name for loc in sorted(ui.locations or [], key=lambda l: l.order_index)]
+        except Exception:
+            return []
 
     if chunk_hits:
         llm_items = [
             {
-                "title": item_titles.get(c.user_item_id, "(無標題)"),
+                "title": item_map.get(c.user_item_id, None) and item_map[c.user_item_id].title or "(無標題)",
                 "summary": c.text,
+                "tags": _item_tags(item_map[c.user_item_id]) if c.user_item_id in item_map else [],
+                "locations": _item_locations(item_map[c.user_item_id]) if c.user_item_id in item_map else [],
             }
             for c, _ in chunk_hits
         ]
     else:
         llm_items = [
-            {"title": ui.title, "summary": (ui.notes_md or "")[:500]}
+            {
+                "title": ui.title,
+                "summary": (ui.notes_md or "")[:800],
+                "tags": _item_tags(ui),
+                "locations": _item_locations(ui),
+            }
             for ui, _ in all_items
         ]
 
