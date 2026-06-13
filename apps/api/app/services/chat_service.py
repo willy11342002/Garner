@@ -41,12 +41,13 @@ async def rag_retrieve(
     user_id: UUID,
     query: str,
     limit: int = 8,
+    offset: int = 0,
 ) -> list[tuple[UserItem, float]]:
     from sqlalchemy import select
 
     cutoff = await _get_search_cutoff(db)
     embedding = await ai_service.embed(query)
-    chunk_hits = await crud_chunks.semantic_search(db, user_id, embedding, limit=limit * 2, cutoff=cutoff)
+    chunk_hits = await crud_chunks.semantic_search(db, user_id, embedding, limit=limit * 2, cutoff=cutoff, offset=offset)
 
     if chunk_hits:
         seen: dict[UUID, tuple[UserItem, float]] = {}
@@ -67,7 +68,7 @@ async def rag_retrieve(
                 break
         return list(seen.values())
 
-    return await crud_items.semantic_search(db, user_id, embedding, limit=limit, cutoff=cutoff)
+    return await crud_items.semantic_search(db, user_id, embedding, limit=limit, cutoff=cutoff, saved_after=None, saved_before=None, exclude_ids=None)
 
 
 # ---------------------------------------------------------------------------
@@ -91,20 +92,18 @@ async def _exec_search(
     db: AsyncSession, user_id: UUID, tool: dict
 ) -> list[ItemWithDist]:
     query = (tool.get("query") or "").strip()
-    tags = tool.get("tags") or None
     source_type = tool.get("source_type") or None
     saved_after = _parse_date(tool.get("start_date"))
     saved_before = _parse_date(tool.get("end_date"))
-    locations = tool.get("locations") or None
-    item_ids = tool.get("item_ids") or None
     limit = min(int(tool.get("limit") or 6), 15)
-    has_filters = any([tags, source_type, saved_after, saved_before, locations, item_ids])
+    offset = max(int(tool.get("offset") or 0), 0)
+    has_filters = any([source_type, saved_after, saved_before])
 
     seen_ids: set[UUID] = set()
     results: list[ItemWithDist] = []
 
     if query:
-        for ui, dist in await rag_retrieve(db, user_id, query, limit=limit):
+        for ui, dist in await rag_retrieve(db, user_id, query, limit=limit, offset=offset):
             if ui.id not in seen_ids:
                 seen_ids.add(ui.id)
                 results.append((ui, dist))
@@ -112,13 +111,11 @@ async def _exec_search(
     if has_filters:
         items = await crud_items.structured_filter(
             db, user_id,
-            tags=tags,
             source_type=source_type,
             saved_after=saved_after,
             saved_before=saved_before,
-            locations=locations,
-            item_ids=item_ids,
             limit=limit,
+            offset=offset,
         )
         for ui in items:
             if ui.id not in seen_ids:

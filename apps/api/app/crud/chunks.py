@@ -30,6 +30,7 @@ async def semantic_search(
     limit: int = 6,
     cutoff: float = 0.45,
     item_ids: list[UUID] | None = None,
+    offset: int = 0,
 ) -> list[tuple[ContentChunk, float]]:
     """在 content_chunks 做向量搜尋，回傳 (ContentChunk, distance)。
     只搜尋屬於該 user 未刪除 items 的 chunks。
@@ -53,6 +54,7 @@ async def semantic_search(
         .join(UserItem, UserItem.id == ContentChunk.user_item_id)
         .where(*where_clauses)
         .order_by(distance_col)
+        .offset(offset)
         .limit(limit)
     )
     return [(row.ContentChunk, row.distance) for row in result.all()]

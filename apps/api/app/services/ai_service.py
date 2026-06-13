@@ -394,13 +394,12 @@ _PLAN_SYSTEM = """\
 1. search
    搜尋知識庫，所有參數皆選填，可自由組合：
    - query（str）：語意搜尋描述句，完整描述想找的概念或主題（不要只寫關鍵字，盡量用完整句子）
-   - tags（list[str]）：按標籤篩選，OR 邏輯，符合任一標籤即回傳
    - source_type（str）：按來源類型，值為 "youtube" / "article" / "ig"
    - start_date（str）：儲存日期下限，格式 YYYY-MM-DD
    - end_date（str）：儲存日期上限，格式 YYYY-MM-DD
-   - locations（list[str]）：按地點名稱篩選，OR 邏輯，符合任一地點即回傳（例如 ["台北", "東京"]）
    - limit（int）：回傳筆數，預設 6，最多 15
-   參數：{{"name": "search", "query": "...", "tags": [...], "source_type": "...", "start_date": "...", "end_date": "...", "locations": [...], "limit": 6}}
+   - offset（int）：跳過前 N 筆，用於換頁（預設 0）
+   參數：{{"name": "search", "query": "...", "source_type": "...", "start_date": "...", "end_date": "...", "limit": 6, "offset": 0}}
 
 2. create_article
    根據對話脈絡或知識庫內容，建立一篇 AI 草稿文章、規劃、指南或清單。
@@ -444,13 +443,13 @@ _REFLECT_SYSTEM = """\
 {"sufficient": true, "reasoning": "一句說明"}
 
 若結果不足（例如：結果數為 0、或找到的內容與問題明顯無關）：
-{"sufficient": false, "reasoning": "一句說明", "follow_up": {"name": "search", "query": "...", "tags": [...], "locations": [...], "limit": 6}}
+{"sufficient": false, "reasoning": "一句說明", "follow_up": {"name": "search", "query": "...", "limit": 6, "offset": 0}}
 
 follow_up 規則：
 - 只用 search 工具
 - query 換一個角度或更寬泛的描述句
-- tags / locations 選填，只在有把握時才加
 - 若第一輪已有 query，第二輪換詞或放寬；若第一輪無 query，補一個語意 query
+- offset 用於換頁：若第一輪 limit=6 offset=0，第二輪可用 offset=6 取下一頁
 """
 
 _REFLECT_TEMPLATE = """\
