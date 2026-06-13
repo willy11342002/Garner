@@ -703,6 +703,7 @@ async function confirmArchive() {
                       <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
                         {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? '手動' : 'AI' }}
                       </span>
+                      <button class="id-map-loc__btn id-map-loc__btn--delete" @click.stop="deleteLocation(loc)">刪除</button>
                     </div>
                   </template>
                   <div v-else class="id-map-locations__empty">

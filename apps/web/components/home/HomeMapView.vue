@@ -668,4 +668,5 @@ watch(gmap.currentOwner, async (owner) => {
 }
 
 .map-pin { fill: #3b82f6; }
+.map-pin--search { fill: #f59e0b; }
 </style>
