@@ -37,6 +37,9 @@
 .msg--user { align-items: flex-end; }
 .msg--assistant { align-items: flex-start; }
 .msg__bubble { padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.msg--assistant .msg__bubble { white-space: normal; }
+.msg--assistant .msg__bubble .tiptap-wrap { font-size: 14px; line-height: 1.7; }
+.msg--assistant .msg__bubble .tiptap-root { position: static; }
 .msg--user .msg__bubble { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-bdr); }
 .msg--assistant .msg__bubble { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
 .msg__bubble--streaming { position: relative; width: 480px; max-width: 480px; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 11px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
@@ -138,9 +141,22 @@
   padding-left: 2px;
 }
 .process-body__tool-result--pending { color: var(--text-dim); }
-.process-body__result-titles {
+.process-body__tool-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 20px;
+  margin-top: 3px;
+}
+.process-body__tool-title {
+  font-size: 11px;
   color: var(--text-dim);
-  font-size: 10px;
+  padding: 2px 6px;
+  border-left: 2px solid var(--border2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
 }
 
 /* User context block（知識節點摺疊框，右對齊） */

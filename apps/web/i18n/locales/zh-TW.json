@@ -51,7 +51,8 @@
     "nodes": "{n} 個知識節點",
     "thinking": "思考中",
     "searching": "搜尋中",
-    "found": "找到 {n} 筆"
+    "found": "找到 {n} 筆",
+    "relevant": "篩選出 {n} 筆相關"
   },
   "chat": {
     "title": "AI Chat",

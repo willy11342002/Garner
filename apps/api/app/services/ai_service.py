@@ -463,6 +463,56 @@ _REFLECT_TEMPLATE = """\
 """
 
 
+_FILTER_SYSTEM = "你是知識庫助手，幫助判斷哪些知識筆記與用戶問題真正相關。只輸出 JSON，不要 markdown fences。"
+
+_FILTER_TEMPLATE = """\
+用戶問題：{query}
+
+以下是從知識庫搜到的筆記，請判斷哪些與問題真正相關（直接回答問題所需的知識）：
+
+{items_text}
+
+輸出 JSON：
+{{"relevant_indices": [0, 2, ...]}}
+
+規則：
+- relevant_indices 為相關筆記的 index（0-based）
+- 只保留真正有助於回答問題的筆記，寧可少不要多
+- 若完全無關，回傳空陣列
+"""
+
+
+async def filter_sources(query: str, items: list[dict]) -> list[int]:
+    """回傳與 query 真正相關的 item indices（0-based）。items 每筆需有 title 欄位。"""
+    if not items:
+        return []
+    items_text = "\n".join(f"{i}. {it.get('title', '(無標題)')}" for i, it in enumerate(items))
+    prompt = _FILTER_TEMPLATE.format(query=query, items_text=items_text)
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json={
+                "model": _llm(),
+                "messages": [
+                    {"role": "system", "content": _FILTER_SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
+            },
+            timeout=20,
+        )
+        if resp.status_code == 401:
+            raise RuntimeError("OpenRouter service unavailable")
+        resp.raise_for_status()
+    raw = resp.json()["choices"][0]["message"]["content"].strip()
+    try:
+        result = _parse_json(raw)
+        indices = result.get("relevant_indices", [])
+        return [i for i in indices if isinstance(i, int) and 0 <= i < len(items)]
+    except Exception:
+        return []
+
+
 async def reflect_results(
     query: str,
     executed_tools: list[dict],

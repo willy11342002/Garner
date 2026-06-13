@@ -17,6 +17,7 @@
             :key="s.id"
             :session="s"
             :active="activeSessionId === s.id"
+            :disabled="sessionLoading"
             @click="openSession(s.id)"
             @rename="(id, name) => renameSession(id, name)"
             @delete="deleteSession(s.id)"
@@ -114,7 +115,7 @@
                     <p v-if="processMap[msg.id].thinking" class="process-body__reasoning">{{ processMap[msg.id].thinking }}</p>
                     <div v-for="(step, i) in processMap[msg.id].steps" :key="i" class="process-body__step">
                       <div class="process-body__tool-call">
-                        <span class="process-body__step-icon">🔍</span>
+                        <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
                         <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                         <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                         <template v-if="step.toolCall.name === 'structured_filter'">
@@ -128,10 +129,15 @@
                         <template v-if="step.toolCall.name === 'create_article'">
                           <span>文章已建立：{{ step.toolResult.title }}</span>
                         </template>
+                        <template v-else-if="step.toolCall.name === 'filter_sources'">
+                          <span>篩選出 {{ step.toolResult.count }} 筆相關</span>
+                        </template>
                         <template v-else>
                           <span>找到 {{ step.toolResult.count }} 筆</span>
-                          <span v-if="step.toolResult.titles?.length" class="process-body__result-titles">{{ step.toolResult.titles.join('、') }}</span>
                         </template>
+                      </div>
+                      <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'" class="process-body__tool-titles">
+                        <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
                       </div>
                     </div>
                   </div>
@@ -143,7 +149,10 @@
                 class="msg__bubble"
                 :class="{ 'msg__bubble--has-sources': msg.role === 'assistant' && sourcesMap[msg.id]?.length }"
               >
-                {{ msg.content }}
+                <template v-if="msg.role === 'assistant'">
+                  <TiptapEditor :model-value="msg.content" readonly />
+                </template>
+                <template v-else>{{ msg.content }}</template>
                 <button
                   v-if="msg.role === 'assistant' && sourcesMap[msg.id]?.length"
                   class="src-badge"
@@ -193,7 +202,7 @@
                 <p v-if="liveProcess.thinking" class="process-body__reasoning">{{ liveProcess.thinking }}</p>
                 <div v-for="(step, i) in liveProcess.steps" :key="i" class="process-body__step">
                   <div class="process-body__tool-call">
-                    <span class="process-body__step-icon">🔍</span>
+                    <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
                     <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                     <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                     <template v-if="step.toolCall.name === 'structured_filter'">
@@ -207,14 +216,19 @@
                     <template v-if="step.toolCall.name === 'create_article'">
                       <span>文章已建立：{{ step.toolResult.title }}</span>
                     </template>
+                    <template v-else-if="step.toolCall.name === 'filter_sources'">
+                      <span>篩選出 {{ step.toolResult.count }} 筆相關</span>
+                    </template>
                     <template v-else>
                       <span>找到 {{ step.toolResult.count }} 筆</span>
-                      <span v-if="step.toolResult.titles?.length" class="process-body__result-titles">{{ step.toolResult.titles.join('、') }}</span>
                     </template>
                   </div>
-                  <div v-else class="process-body__tool-result process-body__tool-result--pending">
+                  <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'" class="process-body__tool-titles">
+                    <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                  </div>
+                  <div v-else-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                     <span class="process-body__step-icon">⋯</span>
-                    <span>{{ step.toolCall.name === 'create_article' ? '生成中' : '搜尋中' }}</span>
+                    <span>{{ step.toolCall.name === 'create_article' ? '生成中' : step.toolCall.name === 'filter_sources' ? '篩選中' : '搜尋中' }}</span>
                   </div>
                 </div>
               </div>
@@ -313,6 +327,7 @@ const messages = ref<ChatMessage[]>([])
 const sourcesMap = ref<Record<string, ChatSource[]>>({})
 const inputText = ref('')
 const loading = ref(false)
+const sessionLoading = ref(false)
 const streamingText = ref('')
 
 const mobileView = ref<'list' | 'chat'>('list')
@@ -395,6 +410,9 @@ async function newSession() {
 
 async function openSession(id: string) {
   if (activeSessionId.value === id) { mobileView.value = 'chat'; return }
+  if (sessionLoading.value) return
+  sessionLoading.value = true
+  activeSessionId.value = id
   try {
     const detail = await apiFetch<ChatSessionDetail>(`/chat/sessions/${id}`)
     activeSessionId.value = id
@@ -444,7 +462,9 @@ async function openSession(id: string) {
     mobileView.value = 'chat'
     await nextTick()
     scrollBottom()
-  } catch {}
+  } catch {} finally {
+    sessionLoading.value = false
+  }
 }
 
 async function renameSession(id: string, name: string) {

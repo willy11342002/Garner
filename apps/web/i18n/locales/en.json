@@ -51,7 +51,8 @@
     "nodes": "{n} knowledge nodes",
     "thinking": "Thinking",
     "searching": "Searching",
-    "found": "Found {n}"
+    "found": "Found {n}",
+    "relevant": "{n} relevant"
   },
   "chat": {
     "title": "AI Chat",

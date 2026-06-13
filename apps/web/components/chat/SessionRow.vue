@@ -1,8 +1,8 @@
 <template>
   <div
     class="session-row"
-    :class="{ 'session-row--active': active, 'session-row--indent': indent, 'session-row--editing': editing }"
-    @click="!editing && emit('click')"
+    :class="{ 'session-row--active': active, 'session-row--indent': indent, 'session-row--editing': editing, 'session-row--disabled': disabled || active }"
+    @click="!editing && !disabled && !active && emit('click')"
   >
     <!-- 改名模式 -->
     <input
@@ -39,6 +39,7 @@ const props = defineProps<{
   session: ChatSession
   active?: boolean
   indent?: boolean
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -89,6 +90,8 @@ function cancelRename() {
 .session-row--active { background: var(--accent-dim); }
 .session-row--indent { padding-left: 24px; }
 .session-row--editing { cursor: default; background: var(--surface2); }
+.session-row--disabled { cursor: default; pointer-events: none; }
+.session-row--disabled:not(.session-row--active) { opacity: 0.5; }
 
 .session-row__title {
   flex: 1;

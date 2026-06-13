@@ -57,13 +57,16 @@
                   <p v-if="processMap[msg.id].thinking" class="process-body__reasoning">{{ processMap[msg.id].thinking }}</p>
                   <div v-for="(step, i) in processMap[msg.id].steps" :key="i" class="process-body__step">
                     <div class="process-body__tool-call">
-                      <span class="process-body__step-icon">🔍</span>
+                      <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
                       <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                       <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                     </div>
                     <div v-if="step.toolResult" class="process-body__tool-result">
                       <span class="process-body__step-icon">✓</span>
-                      <span>{{ t('fab.found', { n: step.toolResult.count }) }}</span>
+                      <span>{{ step.toolCall.name === 'filter_sources' ? t('fab.relevant', { n: step.toolResult.count }) : t('fab.found', { n: step.toolResult.count }) }}</span>
+                    </div>
+                    <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
+                      <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
                     </div>
                   </div>
                 </div>
@@ -71,29 +74,12 @@
             </div>
           </template>
 
-          <div class="msg__bubble" :class="{ 'msg__bubble--has-sources': msg.role === 'assistant' && sourcesMap[msg.id]?.length }">
-            {{ msg.content }}
-            <button
-              v-if="msg.role === 'assistant' && sourcesMap[msg.id]?.length"
-              class="src-badge"
-              :class="{ 'src-badge--open': openSources.has(msg.id) }"
-              @click.stop="toggleSources(msg.id)"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
+          <div class="msg__bubble">
+            <template v-if="msg.role === 'assistant'">
+              <TiptapEditor :model-value="msg.content" readonly />
+            </template>
+            <template v-else>{{ msg.content }}</template>
           </div>
-          <Transition name="sources">
-            <div v-if="msg.role === 'assistant' && openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
-              <div v-for="src in sourcesMap[msg.id]" :key="src.id" class="src-card">
-                <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
-                <div v-else class="src-card__thumb src-card__thumb--empty"></div>
-                <div class="src-card__body">
-                  <span class="src-card__title">{{ src.title || src.url }}</span>
-                  <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
-                </div>
-              </div>
-            </div>
-          </Transition>
         </div>
       </template>
 
@@ -110,17 +96,20 @@
               <p v-if="liveProcess.thinking" class="process-body__reasoning">{{ liveProcess.thinking }}</p>
               <div v-for="(step, i) in liveProcess.steps" :key="i" class="process-body__step">
                 <div class="process-body__tool-call">
-                  <span class="process-body__step-icon">🔍</span>
+                  <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
                   <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                   <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                 </div>
                 <div v-if="step.toolResult" class="process-body__tool-result">
                   <span class="process-body__step-icon">✓</span>
-                  <span>找到 {{ step.toolResult.count }} 筆</span>
+                  <span>{{ step.toolCall.name === 'filter_sources' ? t('fab.relevant', { n: step.toolResult.count }) : `找到 ${step.toolResult.count} 筆` }}</span>
                 </div>
-                <div v-else class="process-body__tool-result process-body__tool-result--pending">
+                <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
+                  <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                </div>
+                <div v-else-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                   <span class="process-body__step-icon">⋯</span>
-                  <span>{{ t('fab.searching') }}</span>
+                  <span>{{ step.toolCall.name === 'filter_sources' ? '篩選中' : t('fab.searching') }}</span>
                 </div>
               </div>
             </div>
@@ -230,8 +219,8 @@ const openContexts = ref<Set<string>>(new Set())
 const openSources = ref<Set<string>>(new Set())
 
 type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }
-type ProcessLog = { thinking: string; steps: ProcessStep[] }
-const liveProcess = ref<ProcessLog & { sources: ChatSource[] }>({ thinking: '', steps: [], sources: [] })
+type ProcessLog = { thinking: string; steps: ProcessStep[]; sources: ChatSource[] }
+const liveProcess = ref<ProcessLog>({ thinking: '', steps: [], sources: [] })
 const processMap = ref<Record<string, ProcessLog>>({})
 
 const messagesEl = ref<HTMLElement | null>(null)
@@ -316,7 +305,7 @@ async function send() {
     const reader = resp.body!.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
-    let pendingSources: ChatSource[] = []
+    let pendingCitedSources: ChatSource[] = []
     const assistantId = crypto.randomUUID()
 
     while (true) {
@@ -343,13 +332,14 @@ async function send() {
           if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
           await nextTick(); scrollBottom()
         } else if (event === 'sources') {
-          pendingSources = data as ChatSource[]
-          liveProcess.value.sources = pendingSources
+          liveProcess.value.sources = data as ChatSource[]
+        } else if (event === 'cited_sources') {
+          pendingCitedSources = data as ChatSource[]
         } else if (event === 'delta') {
           streamingText.value += data.text
           await nextTick(); scrollBottom()
         } else if (event === 'done') {
-          processMap.value[assistantId] = { thinking: liveProcess.value.thinking, steps: liveProcess.value.steps }
+          processMap.value[assistantId] = { thinking: liveProcess.value.thinking, steps: liveProcess.value.steps, sources: liveProcess.value.sources }
           openThinking.value.delete('live')
           openThinking.value.add(assistantId)
 
@@ -357,13 +347,12 @@ async function send() {
             id: assistantId,
             role: 'assistant',
             content: streamingText.value,
-            cited_item_ids: pendingSources.map(s => s.id),
+            cited_item_ids: pendingCitedSources.map(s => s.id),
             created_at: new Date().toISOString(),
           }
           messages.value.push(assistantMsg)
-          if (pendingSources.length) {
-            sourcesMap.value[assistantId] = pendingSources
-            openSources.value = new Set([...openSources.value, assistantId])
+          if (pendingCitedSources.length) {
+            sourcesMap.value[assistantId] = pendingCitedSources
           }
 
           if (isFirstMessage && !activeSession.value?.title) {
@@ -499,6 +488,29 @@ function sourceLabel(type: string | null) {
   padding: 40px 20px;
 }
 .hcp__empty p { margin: 0; }
+
+/* Raw search result titles in process block */
+.process-body__tool-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 20px;
+  margin-top: 3px;
+}
+.process-body__tool-title {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  border-left: 2px solid var(--border2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tiptap in assistant bubble */
+.hcp .msg--assistant .msg__bubble { white-space: normal; }
+.hcp .msg--assistant .msg__bubble :deep(.tiptap-wrap) { font-size: 13px; line-height: 1.7; }
+.hcp .msg--assistant .msg__bubble :deep(.tiptap-root) { position: static; }
 
 /* Override bubble widths for panel */
 .hcp .msg__bubble,

@@ -240,7 +240,7 @@ async def stream_reply(
         tool_result = {
             "tool": name,
             "count": len(new_hits),
-            "titles": [ui.title or ui.url for ui, _ in new_hits[:3]],
+            "titles": [ui.title or ui.url for ui, _ in new_hits],
         }
         process_steps.append({"toolCall": tool_payload, "toolResult": tool_result})
         yield _sse("tool_result", tool_result)
@@ -273,7 +273,7 @@ async def stream_reply(
             tool_result = {
                 "tool": "search",
                 "count": len(new_hits),
-                "titles": [ui.title or ui.url for ui, _ in new_hits[:3]],
+                "titles": [ui.title or ui.url for ui, _ in new_hits],
             }
             process_steps.append({"toolCall": follow_up, "toolResult": tool_result})
             yield _sse("tool_result", tool_result)
@@ -281,9 +281,30 @@ async def stream_reply(
     # 最多取 10 筆
     all_items = all_items[:10]
     sources = [_to_chat_source(ui, dist) for ui, dist in all_items]
-    cited_ids = [s.id for s in sources]
+
+    # ── Step 2.7：filter_sources — AI 篩選真正相關的知識筆記 ──────────────────
+    cited_sources: list = sources
+    if sources and not created_article:
+        filter_tool_call = {"name": "filter_sources"}
+        yield _sse("tool_call", filter_tool_call)
+        try:
+            filter_items = [{"title": s.title or s.url} for s in sources]
+            relevant_indices = await ai_service.filter_sources(user_content, filter_items)
+            cited_sources = [sources[i] for i in relevant_indices]
+        except Exception:
+            cited_sources = sources
+        filter_tool_result = {
+            "tool": "filter_sources",
+            "count": len(cited_sources),
+            "titles": [s.title or s.url or "" for s in cited_sources],
+        }
+        process_steps.append({"toolCall": filter_tool_call, "toolResult": filter_tool_result})
+        yield _sse("tool_result", filter_tool_result)
+
+    cited_ids = [s.id for s in cited_sources]
 
     yield _sse("sources", [s.model_dump(mode="json") for s in sources])
+    yield _sse("cited_sources", [s.model_dump(mode="json") for s in cited_sources])
 
     # 儲存用戶訊息（若帶有知識節點，一起存入 cited_item_ids 供前端重建顯示）
     await crud_chat.add_message(
@@ -292,13 +313,17 @@ async def stream_reply(
     )
 
     # ── Step 3：Streaming 回覆 ────────────────────────────────────────────────
-    # chunk 搜尋限制在已取得的 sources 範圍內，cutoff 設 2.0（不過濾）
+    # chunk 搜尋只在 search 工具有找到 items 時才執行
+    # retrieved_ids 為空時不做搜尋，避免 item_ids=None 變成全庫搜尋洩漏給 LLM
     cutoff = await _get_search_cutoff(db)
-    query_embedding = await ai_service.embed(user_content)
-    retrieved_ids = [ui.id for ui, _ in all_items] or None
-    chunk_hits = await crud_chunks.semantic_search(
-        db, user_id, query_embedding, limit=12, cutoff=cutoff, item_ids=retrieved_ids
-    )
+    retrieved_ids = [ui.id for ui, _ in all_items]
+    if retrieved_ids:
+        query_embedding = await ai_service.embed(user_content)
+        chunk_hits = await crud_chunks.semantic_search(
+            db, user_id, query_embedding, limit=12, cutoff=cutoff, item_ids=retrieved_ids
+        )
+    else:
+        chunk_hits = []
 
     # 建立 user_item_id → UserItem 的 mapping
     item_map = {ui.id: ui for ui, _ in all_items}
