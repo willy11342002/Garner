@@ -11,12 +11,9 @@ from app.routers import admin, articles, auth, billing, chat, items, locations, 
 
 import logging
 import sys
-logging.basicConfig(level=logging.INFO)
-_httpx_handler = logging.StreamHandler(sys.stdout)
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 for _name in ("httpx", "httpcore"):
-    _log = logging.getLogger(_name)
-    _log.handlers = [_httpx_handler]
-    _log.propagate = False
+    logging.getLogger(_name).propagate = True
 
 if settings.sentry_dsn:
     sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.2)
