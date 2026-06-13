@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 
 import httpx
@@ -169,8 +170,8 @@ async def extract_item_locations(
 
     await db.flush()
 
-    for loc_obj in created:
-        lat, lng = await geocoding_service.geocode(loc_obj.name)
+    geo_results = await asyncio.gather(*[geocoding_service.geocode(loc_obj.name) for loc_obj in created])
+    for loc_obj, (lat, lng) in zip(created, geo_results):
         loc_obj.lat = lat
         loc_obj.lng = lng
 

@@ -11,6 +11,12 @@ from app.routers import admin, articles, auth, billing, chat, items, locations, 
 
 import logging
 logging.basicConfig(level=logging.INFO)
+_httpx_handler = logging.StreamHandler()
+_httpx_handler.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
+for _name in ("httpx", "httpcore"):
+    _log = logging.getLogger(_name)
+    _log.handlers = [_httpx_handler]
+    _log.propagate = False
 
 if settings.sentry_dsn:
     sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.2)
