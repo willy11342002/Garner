@@ -542,6 +542,17 @@ async function confirmArchive() {
                 >
                   {{ isEditingNotes ? '保存' : '編輯筆記' }}
                 </button>
+                <button
+                  v-if="!readonly && activeTab === 'map'"
+                  class="btn btn--accent"
+                  :disabled="extractingLocations"
+                  @click="extractLocations"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/>
+                  </svg>
+                  {{ extractingLocations ? '抓取中…' : '重新抓取地標' }}
+                </button>
                 <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
                     <template v-if="(item as Item).status === 'archived'">
