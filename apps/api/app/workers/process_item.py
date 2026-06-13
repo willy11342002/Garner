@@ -32,7 +32,6 @@ async def _stage_fetch(ctx: StageContext, url: str, max_video_sec: int) -> tuple
     user_item = ctx.user_item
     provider = get_provider(url)
 
-    events.emit(str(user_item.id), "fetching_info")
     info = await provider.fetch_info(url, str(user_item.id), content_md=user_item.notes_md)
 
     # Commit provider metadata immediately so title/thumbnail appear fast
@@ -49,11 +48,7 @@ async def _stage_fetch(ctx: StageContext, url: str, max_video_sec: int) -> tuple
     if info.raw_content is not None:
         return info, info.raw_content
 
-    events.emit(str(user_item.id), "fetching_content")
-    raw_content = await provider.fetch_content(
-        url, info,
-        stage_cb=lambda s: events.emit(str(user_item.id), s),
-    )
+    raw_content = await provider.fetch_content(url, info)
     return info, raw_content
 
 
@@ -68,7 +63,6 @@ async def _stage_assets(ctx: StageContext, raw_content: str | None) -> str:
 @stage("note", retries=2)
 async def _stage_note(ctx: StageContext, raw_content: str, user_id: UUID) -> dict:
     """Stage 3: LLM → notes_md + tags + embed_text + locations."""
-    events.emit(str(ctx.user_item.id), "analyzing")
     candidate_tags = await crud_tags.get_top_tags(ctx.db, user_id, limit=50)
     analysis = await ai_service.analyze_content(
         raw_content, candidate_tags=[t.name for t in candidate_tags]
@@ -140,17 +134,17 @@ async def _stage_landmarks(ctx: StageContext, ai_locations: list[dict]) -> None:
 @stage("embedding", retries=2)
 async def _stage_embedding(ctx: StageContext, analysis: dict, raw_content: str, user_id: UUID, user_item_id: UUID) -> None:
     """Stage 5: embed summary + chunks, save tags, send notification."""
-    events.emit(str(user_item_id), "embedding")
-
     embed_text = analysis.get("embed_text") or ctx.user_item.notes_md[:500]
-    summary_embedding = await ai_service.embed(embed_text)
-    ctx.user_item.embedding = summary_embedding
-
     chunk_texts = ai_service.chunk_text(raw_content)
-    chunk_records: list[dict] = []
-    for chunk in chunk_texts:
-        emb = await ai_service.embed(chunk)
-        chunk_records.append({"text": chunk, "embedding": emb})
+
+    all_texts = [embed_text] + chunk_texts
+    all_embeddings = await ai_service.embed_many(all_texts)
+
+    ctx.user_item.embedding = all_embeddings[0]
+    chunk_records = [
+        {"text": chunk, "embedding": emb}
+        for chunk, emb in zip(chunk_texts, all_embeddings[1:])
+    ]
 
     await crud_chunks.replace_chunks(ctx.db, user_item_id, chunk_records)
 

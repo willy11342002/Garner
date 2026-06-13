@@ -1,22 +1,18 @@
 <script setup lang="ts">
 const props = defineProps<{ itemId: string; sourceType: string }>()
 
+const { t } = useI18n()
 const itemStore = useItemStore()
-const stage = computed(() => itemStore.processingStages.get(props.itemId) ?? 'fetching')
+const stage = computed(() => itemStore.processingStages.get(props.itemId) ?? 'fetch')
 
-const LABELS: Record<string, string> = {
-  fetching:          '準備中...',
-  fetching_info:     '獲取影片資訊',
-  fetching_content:  '讀取內容',
-  analyzing:         'AI 分析中',
-  embedding:         '建立語意索引',
-  failed:            '處理失敗',
-  timeout:           '處理逾時',
-  error:             '發生錯誤',
-}
-
-const label = computed(() => LABELS[stage.value] ?? stage.value)
-const isFailed = computed(() => ['failed', 'timeout', 'error'].includes(stage.value))
+const STAGES = ['fetch', 'assets', 'note', 'landmarks', 'embedding']
+const label = computed(() => {
+  const s = stage.value
+  const key = `pipeline.${s}`
+  const translated = t(key)
+  return translated !== key ? translated : s
+})
+const isFailed = computed(() => ['failed', 'error'].includes(stage.value))
 </script>
 
 <template>

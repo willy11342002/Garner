@@ -35,12 +35,11 @@ const T = {
     aiCredits: (n: number) => `本月剩餘 ${n} 次 AI`,
     saved: (n: number) => `${n.toLocaleString()} 篇`,
     stageLabel: {
-      fetching_info: "讀取頁面資訊…",
-      fetching_content: "擷取內容…",
-      understanding: "解析內容…",
-      analyzing: "AI 分析中…",
-      embedding: "建立語意索引…",
-      validating: "驗證結果…",
+      fetch:      "取得資料…",
+      assets:     "讀取媒體…",
+      note:       "AI 分析筆記…",
+      landmarks:  "解析地標…",
+      embedding:  "建立語意索引…",
     },
   },
   en: {
@@ -71,12 +70,11 @@ const T = {
     aiCredits: (n: number) => `${n} AI credits left this month`,
     saved: (n: number) => `${n.toLocaleString()} saved`,
     stageLabel: {
-      fetching_info: "Reading page info…",
-      fetching_content: "Fetching content…",
-      understanding: "Parsing content…",
-      analyzing: "AI analyzing…",
-      embedding: "Building index…",
-      validating: "Validating…",
+      fetch:      "Fetching data…",
+      assets:     "Loading media…",
+      note:       "AI analyzing…",
+      landmarks:  "Resolving locations…",
+      embedding:  "Building index…",
     },
   },
 } as const
@@ -85,18 +83,15 @@ type Lang = "zh" | "en"
 
 // ── Types ─────────────────────────────────────────────────
 type Stage =
-  | "idle" | "fetching_info" | "fetching_content" | "understanding"
-  | "analyzing" | "embedding" | "validating"
+  | "idle" | "fetch" | "assets" | "note" | "landmarks" | "embedding"
   | "done" | "failed" | "duplicate" | "auth_expired" | "quota_exceeded"
 
 const STAGE_PROGRESS: Record<string, number> = {
-  fetching_info: 15, fetching_content: 30, understanding: 50,
-  analyzing: 65, embedding: 85, validating: 95, done: 100,
+  fetch: 10, assets: 30, note: 55, landmarks: 70, embedding: 85, done: 100,
 }
 
 const PROGRESS_STAGES = new Set([
-  "fetching_info", "fetching_content", "understanding",
-  "analyzing", "embedding", "validating",
+  "fetch", "assets", "note", "landmarks", "embedding",
 ])
 
 type SaveEntry = { key: string; url: string; title: string; stage: Stage; item?: any }
@@ -219,7 +214,7 @@ export default function SidePanel() {
     const token = await getFreshToken()
     if (!token) { setAuthExpired(true); return }
     const key = `${url}__${Date.now()}`
-    setEntries((prev) => [{ key, url, title, stage: "fetching_info" }, ...prev])
+    setEntries((prev) => [{ key, url, title, stage: "fetch" }, ...prev])
     if (activeTab === "paste") setPasteUrl("")
     try {
       const resp = await fetch(`${API}/items/`, {

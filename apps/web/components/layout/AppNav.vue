@@ -167,8 +167,8 @@
             </div>
             <ol class="add-modal__steps">
               <li
-                v-for="(key, i) in ['step1','step2','step3','step4']"
-                :key="key"
+                v-for="(s, i) in PIPELINE_STAGES"
+                :key="s"
                 class="add-modal__step"
                 :class="{
                   'add-modal__step--done': i < processingStep,
@@ -180,7 +180,7 @@
                   <span v-else-if="i === processingStep" class="add-modal__step-spinner"></span>
                   <span v-else class="add-modal__step-idle"></span>
                 </span>
-                {{ t(`add.${key}`) }}
+                {{ t(`pipeline.${s}`) }}
               </li>
             </ol>
             <p class="add-modal__hint">{{ t('add.processingHint') }}</p>
@@ -290,8 +290,7 @@ const addError = ref('')
 const addInput = ref<HTMLInputElement | null>(null)
 const addProcessingItemId = ref<string | null>(null)
 const processingStep = ref(0)
-const STEP_DELAYS = [2000, 5000, 8000]
-let stepTimer: ReturnType<typeof setTimeout> | null = null
+const PIPELINE_STAGES = ['fetch', 'assets', 'note', 'landmarks', 'embedding'] as const
 
 const addQuota = ref<UsageSummary | null>(null)
 const savesQuotaFull = computed(() => {
@@ -299,23 +298,9 @@ const savesQuotaFull = computed(() => {
   return !!q && q.limit !== null && q.used >= q.limit
 })
 
-function startStepTimer() {
-  processingStep.value = 0
-  let idx = 0
-  const advance = () => {
-    if (idx < STEP_DELAYS.length) {
-      stepTimer = setTimeout(() => {
-        processingStep.value = idx + 1
-        idx++
-        advance()
-      }, STEP_DELAYS[idx])
-    }
-  }
-  advance()
-}
-
-function clearStepTimer() {
-  if (stepTimer) { clearTimeout(stepTimer); stepTimer = null }
+function stageToStep(stage: string): number {
+  const idx = PIPELINE_STAGES.indexOf(stage as typeof PIPELINE_STAGES[number])
+  return idx >= 0 ? idx : 0
 }
 
 watch(addOpen, async (val) => {
@@ -326,15 +311,18 @@ watch(addOpen, async (val) => {
     addUrl.value = ''
     addError.value = ''
     addProcessingItemId.value = null
-    clearStepTimer()
     processingStep.value = 0
   }
 })
 
+// Drive step indicator from real SSE stage events
+watch(() => addProcessingItemId.value && itemStore.processingStages.get(addProcessingItemId.value), (stage) => {
+  if (stage) processingStep.value = stageToStep(stage)
+})
+
 watch(() => itemStore.recentlyProcessed, (itemId) => {
   if (itemId && itemId === addProcessingItemId.value) {
-    processingStep.value = 4
-    clearStepTimer()
+    processingStep.value = PIPELINE_STAGES.length
     notifStore.fetch()
     setTimeout(() => {
       addProcessingItemId.value = null
@@ -361,7 +349,6 @@ async function submitAdd() {
     const item = await itemStore.add({ url })
     addUrl.value = ''
     addProcessingItemId.value = item.id
-    startStepTimer()
     if (!route.path.startsWith('/app') || route.path === '/app/archive') {
       navigateTo('/app')
     }

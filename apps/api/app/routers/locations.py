@@ -134,71 +134,38 @@ async def extract_item_locations(
 ):
     """Re-run location extraction for an existing item.
 
-    Always returns immediately. For legacy items (no extract snapshot), signals
+    Deletes existing AI and metadata locations, then reruns the landmarks
+    pipeline stage in the background. Always returns immediately with
     extracting=True so the frontend can poll until locations appear.
-    For items with a snapshot, locations are saved with geocoding_status='pending'
-    and geocoded in the background.
     """
     user_id = UUID(current_user["sub"])
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    if user_item.extract is None:
-        # Legacy item: run full pipeline in background; frontend polls until locations appear
-        from app.workers.process_item import process_item as _process_item
-        async def _run_legacy() -> None:
-            async with AsyncSessionLocal() as bg_db:
-                await _process_item(bg_db, user_id, user_item.id, user_item.url)
-        background_tasks.add_task(_run_legacy)
-        current_locs = await crud_locations.list_by_user_item_id(db, user_item.id)
-        return ExtractLocationsResponse(locations=current_locs, extracting=True)
+    async def _run_landmarks() -> None:
+        from app.core.pipeline import StageContext
+        from app.workers.process_item import _stage_landmarks
+        from app.services import ai_service
 
-    # Has extract snapshot: rebuild from stored data
-    extract: dict = user_item.extract
-    raw_data: dict = user_item.raw_data or {}
+        async with AsyncSessionLocal() as bg_db:
+            from sqlalchemy import select
+            from app.models.user_item import UserItem
+            item = (await bg_db.execute(
+                select(UserItem).where(UserItem.id == user_item.id)
+            )).scalar_one()
 
-    await crud_locations.delete_ai_locations(db, user_item.id)
+            await crud_locations.delete_auto_locations(bg_db, item.id)
+            await bg_db.commit()
 
-    locations_to_save: list[dict] = []
+            ctx = StageContext(db=bg_db, user_item=item)
+            notes_md = item.notes_md or ""
+            ai_locations = await ai_service.extract_locations(notes_md)
+            await _stage_landmarks(ctx, ai_locations)
 
-    metadata_name = raw_data.get("locationName")
-    if metadata_name and isinstance(metadata_name, str):
-        locations_to_save.append({"name": metadata_name, "order": 0, "source": "metadata"})
-
-    metadata_names = {loc["name"] for loc in locations_to_save}
-    for loc in extract.get("locations", []):
-        name = loc.get("name")
-        if name and name not in metadata_names:
-            locations_to_save.append({"name": name, "order": loc.get("order", 0), "source": "ai"})
-
-    if not locations_to_save:
-        await db.commit()
-        return ExtractLocationsResponse(locations=[])
-
-    created = []
-    for loc_data in locations_to_save:
-        loc_obj = await crud_locations.create_location(
-            db,
-            user_item_id=user_item.id,
-            name=loc_data["name"],
-            source=loc_data["source"],
-            order_index=loc_data.get("order", 0),
-            geocoding_status="pending",
-        )
-        created.append(loc_obj)
-
-    await db.commit()
-
-    # Geocode in background — response returns immediately with geocoding_status="pending"
-    background_tasks.add_task(
-        _geocode_locations_bg,
-        [loc.id for loc in created],
-        [loc.name for loc in created],
-    )
-
-    locs = await crud_locations.list_by_user_item_id(db, user_item.id)
-    return ExtractLocationsResponse(locations=locs)
+    background_tasks.add_task(_run_landmarks)
+    current_locs = await crud_locations.list_by_user_item_id(db, user_item.id)
+    return ExtractLocationsResponse(locations=current_locs, extracting=True)
 
 
 # ── Map bounding box query ─────────────────────────────────────────────────────

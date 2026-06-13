@@ -106,6 +106,17 @@ async def delete_ai_locations(db: AsyncSession, user_item_id: UUID) -> None:
     )
 
 
+async def delete_auto_locations(db: AsyncSession, user_item_id: UUID) -> None:
+    """Delete AI and metadata locations, preserving user-added ones."""
+    from sqlalchemy import delete as sql_delete
+    await db.execute(
+        sql_delete(ContentLocation).where(
+            ContentLocation.user_item_id == user_item_id,
+            ContentLocation.source.in_(["ai", "metadata"]),
+        )
+    )
+
+
 async def get_by_bounds(
     db: AsyncSession,
     user_id: UUID,

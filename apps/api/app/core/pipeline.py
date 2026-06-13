@@ -18,10 +18,10 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Callable
-from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import events
 from app.models.user_item import UserItem
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ def stage(name: str, retries: int = 2, retry_delay: float = 2.0):
             setattr(item, f"{name}_status", "running")
             setattr(item, f"{name}_error", None)
             await db.commit()
+            events.emit(str(item.id), name)
 
             last_exc: Exception | None = None
             for attempt in range(retries + 1):

@@ -1,4 +1,13 @@
 {
+  "pipeline": {
+    "fetch":      "Fetching data",
+    "assets":     "Loading media",
+    "note":       "AI analysis",
+    "landmarks":  "Resolving locations",
+    "embedding":  "Building semantic index",
+    "failed":     "Processing failed",
+    "error":      "An error occurred"
+  },
   "add": {
     "label": "Save URL",
     "placeholder": "Paste any YouTube or web URL...",

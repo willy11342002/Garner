@@ -1,4 +1,13 @@
 {
+  "pipeline": {
+    "fetch":      "取得資料",
+    "assets":     "讀取媒體",
+    "note":       "AI 分析筆記",
+    "landmarks":  "解析地標",
+    "embedding":  "建立語意索引",
+    "failed":     "處理失敗",
+    "error":      "發生錯誤"
+  },
   "add": {
     "label": "存入 URL",
     "placeholder": "貼入任何 YouTube 或網頁 URL...",
