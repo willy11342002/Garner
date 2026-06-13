@@ -400,8 +400,7 @@ async function openSession(id: string) {
     messages.value = detail.messages
     sourcesMap.value = {}
     processMap.value = {}
-    const lastWithSources = [...detail.messages].reverse().find(m => m.role === 'assistant' && m.cited_item_ids?.length)
-    openSources.value = lastWithSources ? new Set([lastWithSources.id]) : new Set()
+    openSources.value = new Set()
     resetProcess()
 
     draftMap.value = {}
@@ -615,7 +614,6 @@ async function send() {
           messages.value.push(assistantMsg)
           if (pendingSources.length) {
             sourcesMap.value[assistantId] = pendingSources
-            openSources.value = new Set([...openSources.value, assistantId])
           }
 
           if (isFirstMessage && !activeSession.value?.title) {
