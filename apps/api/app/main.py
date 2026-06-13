@@ -10,8 +10,9 @@ from app.core.config import settings
 from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, pat, quota, search, tags
 
 import logging
+import sys
 logging.basicConfig(level=logging.INFO)
-_httpx_handler = logging.StreamHandler()
+_httpx_handler = logging.StreamHandler(sys.stdout)
 _httpx_handler.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
 for _name in ("httpx", "httpcore"):
     _log = logging.getLogger(_name)
