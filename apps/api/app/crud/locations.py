@@ -31,6 +31,7 @@ async def create_location(
     order_index: int,
     lat: float | None = None,
     lng: float | None = None,
+    geocoding_status: str = "done",
 ) -> ContentLocation:
     loc = ContentLocation(
         user_item_id=user_item_id,
@@ -39,9 +40,27 @@ async def create_location(
         order_index=order_index,
         lat=lat,
         lng=lng,
+        geocoding_status=geocoding_status,
     )
     db.add(loc)
     return loc
+
+
+async def update_geocoding_status(
+    db: AsyncSession,
+    location_id: UUID,
+    status: str,
+    lat: float | None = None,
+    lng: float | None = None,
+) -> None:
+    loc = await get_one(db, location_id)
+    if loc is None:
+        return
+    loc.geocoding_status = status
+    if lat is not None:
+        loc.lat = lat
+    if lng is not None:
+        loc.lng = lng
 
 
 async def update_lat_lng(

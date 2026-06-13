@@ -11,8 +11,14 @@ class ContentLocationRead(BaseModel):
     lng: float | None
     source: str
     order_index: int
+    geocoding_status: str  # "pending" | "done" | "failed"
 
     model_config = {"from_attributes": True}
+
+
+class ExtractLocationsResponse(BaseModel):
+    locations: list[ContentLocationRead]
+    extracting: bool = False  # True when full pipeline is running in background (legacy items)
 
 
 class ContentLocationUpdate(BaseModel):

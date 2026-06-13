@@ -445,6 +445,12 @@
   color: var(--text-dim);
   flex-shrink: 0;
 }
+.id-map-loc__nogeo--pending {
+  color: #b45309;
+}
+.id-map-loc__nogeo--failed {
+  color: #dc2626;
+}
 
 .id-map-loc__badge {
   font-size: 10px;

@@ -11,7 +11,7 @@ from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.crud import locations as crud_locations
 from app.dependencies import CurrentUser, DbSession
-from app.schemas.location import ContentLocationCreate, ContentLocationRead, ContentLocationUpdate, LocationMapPoint, PlaceCacheRead, PlaceSearchResult
+from app.schemas.location import ContentLocationCreate, ContentLocationRead, ContentLocationUpdate, ExtractLocationsResponse, LocationMapPoint, PlaceCacheRead, PlaceSearchResult
 from app.services import geocoding_service, place_service
 
 router = APIRouter()
@@ -116,17 +116,15 @@ async def _geocode_locations_bg(location_ids: list[UUID], names: list[str]) -> N
     """Geocode a batch of locations in the background using a fresh DB session."""
     async with AsyncSessionLocal() as db:
         results = await asyncio.gather(*[geocoding_service.geocode(name) for name in names])
-        for loc_id, (lat, lng) in zip(location_ids, results):
-            loc = await crud_locations.get_one(db, loc_id)
-            if loc is not None:
-                loc.lat = lat
-                loc.lng = lng
+        for loc_id, name, (lat, lng) in zip(location_ids, names, results):
+            final_status = "done" if lat is not None else "failed"
+            await crud_locations.update_geocoding_status(db, loc_id, status=final_status, lat=lat, lng=lng)
         await db.commit()
 
 
 @router.post(
     "/items/{item_id}/locations/extract",
-    response_model=list[ContentLocationRead],
+    response_model=ExtractLocationsResponse,
 )
 async def extract_item_locations(
     item_id: UUID,
@@ -136,8 +134,10 @@ async def extract_item_locations(
 ):
     """Re-run location extraction for an existing item.
 
-    Saves locations immediately (lat/lng may be null) and geocodes in the background
-    so the response always returns within a few seconds.
+    Always returns immediately. For legacy items (no extract snapshot), signals
+    extracting=True so the frontend can poll until locations appear.
+    For items with a snapshot, locations are saved with geocoding_status='pending'
+    and geocoded in the background.
     """
     user_id = UUID(current_user["sub"])
     user_item = await crud_items.get_one(db, user_id, item_id)
@@ -145,13 +145,14 @@ async def extract_item_locations(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     if user_item.extract is None:
-        # Legacy item: re-run the full pipeline in the background, return current locations
+        # Legacy item: run full pipeline in background; frontend polls until locations appear
         from app.workers.process_item import process_item as _process_item
         async def _run_legacy() -> None:
             async with AsyncSessionLocal() as bg_db:
                 await _process_item(bg_db, user_id, user_item.id, user_item.url)
         background_tasks.add_task(_run_legacy)
-        return await crud_locations.list_by_user_item_id(db, user_item.id)
+        current_locs = await crud_locations.list_by_user_item_id(db, user_item.id)
+        return ExtractLocationsResponse(locations=current_locs, extracting=True)
 
     # Has extract snapshot: rebuild from stored data
     extract: dict = user_item.extract
@@ -173,7 +174,7 @@ async def extract_item_locations(
 
     if not locations_to_save:
         await db.commit()
-        return []
+        return ExtractLocationsResponse(locations=[])
 
     created = []
     for loc_data in locations_to_save:
@@ -183,19 +184,21 @@ async def extract_item_locations(
             name=loc_data["name"],
             source=loc_data["source"],
             order_index=loc_data.get("order", 0),
+            geocoding_status="pending",
         )
         created.append(loc_obj)
 
     await db.commit()
 
-    # Geocode in background — response returns immediately with null lat/lng
+    # Geocode in background — response returns immediately with geocoding_status="pending"
     background_tasks.add_task(
         _geocode_locations_bg,
         [loc.id for loc in created],
         [loc.name for loc in created],
     )
 
-    return await crud_locations.list_by_user_item_id(db, user_item.id)
+    locs = await crud_locations.list_by_user_item_id(db, user_item.id)
+    return ExtractLocationsResponse(locations=locs)
 
 
 # ── Map bounding box query ─────────────────────────────────────────────────────

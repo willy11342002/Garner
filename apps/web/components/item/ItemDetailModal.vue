@@ -19,6 +19,7 @@ interface ItemLocation {
   lng: number | null
   source: 'ai' | 'metadata' | 'user'
   order_index: number
+  geocoding_status: 'pending' | 'done' | 'failed'
 }
 
 const props = defineProps<{
@@ -56,6 +57,46 @@ const searchHint = ref('')      // status text shown below search box
 const savingNewLoc = ref(false)
 let _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let _searchPins: import('leaflet').Marker[] = []
+let _geocodingPollTimer: ReturnType<typeof setTimeout> | null = null
+
+// waitForAny=true: legacy item, poll until at least one location appears then check pending
+// waitForAny=false: snapshot path, locations exist but may be pending geocoding
+function startGeocodingPoll(waitForAny = false, maxAttempts = 40) {
+  if (_geocodingPollTimer) return
+  let attempts = 0
+  async function poll() {
+    if (!props.itemId || attempts >= maxAttempts) {
+      _geocodingPollTimer = null
+      extractingLocations.value = false
+      return
+    }
+    attempts++
+    try {
+      const locs = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations`)
+      itemLocations.value = locs
+      const hasAny = locs.length > 0
+      const hasPending = locs.some(l => l.geocoding_status === 'pending')
+      const keepPolling = (waitForAny && !hasAny) || hasPending
+      if (keepPolling) {
+        _geocodingPollTimer = setTimeout(poll, 3000)
+      } else {
+        _geocodingPollTimer = null
+        extractingLocations.value = false
+        renderItemMarkers()
+        gmap.notifyLocationChange()
+      }
+    } catch {
+      _geocodingPollTimer = null
+      extractingLocations.value = false
+    }
+  }
+  _geocodingPollTimer = setTimeout(poll, 3000)
+}
+
+function stopGeocodingPoll() {
+  if (_geocodingPollTimer) { clearTimeout(_geocodingPollTimer); _geocodingPollTimer = null }
+  extractingLocations.value = false
+}
 
 // Owner key changes with each item so re-opening a different item always re-claims
 const mapOwnerKey = computed(() => `modal:${props.itemId ?? ''}`)
@@ -174,10 +215,22 @@ async function extractLocations() {
   if (!props.itemId) return
   extractingLocations.value = true
   try {
-    itemLocations.value = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations/extract`, { method: 'POST' })
+    const result = await apiFetch<{ locations: ItemLocation[], extracting: boolean }>(
+      `/items/${props.itemId}/locations/extract`, { method: 'POST' }
+    )
+    itemLocations.value = result.locations
     renderItemMarkers()
     gmap.notifyLocationChange()
-  } finally {
+    if (result.extracting) {
+      // Legacy item: full pipeline running in background, keep spinner and poll for locations
+      startGeocodingPoll(true)
+    } else if (result.locations.some(l => l.geocoding_status === 'pending')) {
+      // Snapshot path: locations saved, geocoding in background
+      startGeocodingPoll(false)
+    } else {
+      extractingLocations.value = false
+    }
+  } catch {
     extractingLocations.value = false
   }
 }
@@ -441,6 +494,7 @@ watch(() => props.item, (v) => {
 onUnmounted(() => {
   lockScroll(false)
   clearSearch()
+  stopGeocodingPoll()
   if (activeTab.value === 'map') gmap.release(mapOwnerKey.value)
 })
 
@@ -700,7 +754,8 @@ async function confirmArchive() {
                         <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/>
                       </svg>
                       <span class="id-map-loc__name">{{ loc.name }}</span>
-                      <span v-if="!loc.lat" class="id-map-loc__nogeo">無座標</span>
+                      <span v-if="loc.geocoding_status === 'pending'" class="id-map-loc__nogeo id-map-loc__nogeo--pending">座標取得中…</span>
+                      <span v-else-if="loc.geocoding_status === 'failed'" class="id-map-loc__nogeo id-map-loc__nogeo--failed">無法取得座標</span>
                       <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
                         {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? '手動' : 'AI' }}
                       </span>

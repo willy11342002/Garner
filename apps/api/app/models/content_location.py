@@ -17,8 +17,10 @@ class ContentLocation(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     lng: Mapped[float | None] = mapped_column(Float, nullable=True)
-    source: Mapped[str] = mapped_column(Text, nullable=False)  # "metadata" | "ai"
+    source: Mapped[str] = mapped_column(Text, nullable=False)  # "metadata" | "ai" | "user"
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # "pending" while background geocoding runs; "done" on success; "failed" on error
+    geocoding_status: Mapped[str] = mapped_column(Text, nullable=False, default="done", server_default="done")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user_item: Mapped["UserItem"] = relationship(back_populates="locations")
