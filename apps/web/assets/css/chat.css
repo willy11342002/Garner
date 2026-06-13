@@ -224,7 +224,7 @@
 .thinking-enter-to,
 .thinking-leave-from { max-height: 600px; opacity: 1; }
 
-.src-card { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; transition: all .15s ease; }
+.src-card { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; transition: all .15s ease; cursor: pointer; }
 .src-card:hover { border-color: var(--accent-bdr); }
 .src-card__thumb { width: 48px; height: 34px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
 .src-card__thumb--empty { background: var(--surface2); border: 1px solid var(--border); }

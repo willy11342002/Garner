@@ -155,11 +155,12 @@
               </div>
               <Transition name="sources">
                 <div v-if="msg.role === 'assistant' && openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
-                  <NuxtLink
+                  <div
                     v-for="src in sourcesMap[msg.id]"
                     :key="src.id"
                     class="src-card"
-                    :to="`/app/item/${src.id}`"
+                    role="button"
+                    @click="previewItemId = src.id"
                   >
                     <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
                     <div v-else class="src-card__thumb src-card__thumb--empty"></div>
@@ -167,7 +168,7 @@
                       <span class="src-card__title">{{ src.title || src.url }}</span>
                       <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
                     </div>
-                  </NuxtLink>
+                  </div>
                 </div>
               </Transition>
               <!-- 文章草稿卡片 -->
@@ -241,11 +242,12 @@
             </div>
             <Transition name="sources">
               <div v-if="openSources.has('live') && liveProcess.sources.length" class="sources-list">
-                <NuxtLink
+                <div
                   v-for="src in liveProcess.sources"
                   :key="src.id"
                   class="src-card"
-                  :to="`/app/item/${src.id}`"
+                  role="button"
+                  @click="previewItemId = src.id"
                 >
                   <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
                   <div v-else class="src-card__thumb src-card__thumb--empty"></div>
@@ -253,7 +255,7 @@
                     <span class="src-card__title">{{ src.title || src.url }}</span>
                     <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
                   </div>
-                </NuxtLink>
+                </div>
               </div>
             </Transition>
             <ChatArticleCard
