@@ -2,10 +2,12 @@ import asyncio
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.crud import locations as crud_locations
 from app.dependencies import CurrentUser, DbSession
@@ -110,19 +112,32 @@ async def delete_item_location(
 # ── Extract locations for existing item ───────────────────────────────────────
 
 
+async def _geocode_locations_bg(location_ids: list[UUID], names: list[str]) -> None:
+    """Geocode a batch of locations in the background using a fresh DB session."""
+    async with AsyncSessionLocal() as db:
+        results = await asyncio.gather(*[geocoding_service.geocode(name) for name in names])
+        for loc_id, (lat, lng) in zip(location_ids, results):
+            loc = await crud_locations.get_one(db, loc_id)
+            if loc is not None:
+                loc.lat = lat
+                loc.lng = lng
+        await db.commit()
+
+
 @router.post(
     "/items/{item_id}/locations/extract",
     response_model=list[ContentLocationRead],
 )
 async def extract_item_locations(
     item_id: UUID,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUser,
     db: DbSession,
 ):
     """Re-run location extraction for an existing item.
 
-    If extract snapshot exists: uses stored raw_content + locations, skips AI re-run.
-    If extract snapshot is absent (legacy data): re-runs the full process_item pipeline.
+    Saves locations immediately (lat/lng may be null) and geocodes in the background
+    so the response always returns within a few seconds.
     """
     user_id = UUID(current_user["sub"])
     user_item = await crud_items.get_one(db, user_id, item_id)
@@ -130,12 +145,15 @@ async def extract_item_locations(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     if user_item.extract is None:
-        # Legacy item: re-run the full pipeline (re-fetches from provider)
-        from app.workers.process_item import process_item
-        await process_item(db, user_id, user_item.id, user_item.url)
+        # Legacy item: re-run the full pipeline in the background, return current locations
+        from app.workers.process_item import process_item as _process_item
+        async def _run_legacy() -> None:
+            async with AsyncSessionLocal() as bg_db:
+                await _process_item(bg_db, user_id, user_item.id, user_item.url)
+        background_tasks.add_task(_run_legacy)
         return await crud_locations.list_by_user_item_id(db, user_item.id)
 
-    # Has extract snapshot: rebuild from stored data, geocoding only
+    # Has extract snapshot: rebuild from stored data
     extract: dict = user_item.extract
     raw_data: dict = user_item.raw_data or {}
 
@@ -168,14 +186,15 @@ async def extract_item_locations(
         )
         created.append(loc_obj)
 
-    await db.flush()
-
-    geo_results = await asyncio.gather(*[geocoding_service.geocode(loc_obj.name) for loc_obj in created])
-    for loc_obj, (lat, lng) in zip(created, geo_results):
-        loc_obj.lat = lat
-        loc_obj.lng = lng
-
     await db.commit()
+
+    # Geocode in background — response returns immediately with null lat/lng
+    background_tasks.add_task(
+        _geocode_locations_bg,
+        [loc.id for loc in created],
+        [loc.name for loc in created],
+    )
+
     return await crud_locations.list_by_user_item_id(db, user_item.id)
 
 
