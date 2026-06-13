@@ -386,55 +386,6 @@ async def analyze_full_chain(items: list[dict]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-_FILTER_SYSTEM = "你是知識庫助手，幫助判斷哪些知識筆記與用戶問題真正相關。只輸出 JSON，不要 markdown fences。"
-
-_FILTER_TEMPLATE = """\
-用戶問題：{query}
-
-以下是從知識庫搜到的筆記，請判斷哪些與問題真正相關（直接回答問題所需的知識）：
-
-{items_text}
-
-輸出 JSON：
-{{"relevant_indices": [0, 2, ...]}}
-
-規則：
-- relevant_indices 為相關筆記的 index（0-based）
-- 只保留真正有助於回答問題的筆記，寧可少不要多
-- 若完全無關，回傳空陣列
-"""
-
-
-async def filter_relevant(query: str, items: list[dict]) -> list[int]:
-    """回傳與 query 真正相關的 item indices（0-based）。items 每筆需有 title 欄位。"""
-    if not items:
-        return []
-    items_text = "\n".join(f"{i}. {it.get('title', '(無標題)')}" for i, it in enumerate(items))
-    prompt = _FILTER_TEMPLATE.format(query=query, items_text=items_text)
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            OPENROUTER_URL,
-            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
-            json={
-                "model": _llm(),
-                "messages": [
-                    {"role": "system", "content": _FILTER_SYSTEM},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=20,
-        )
-        if resp.status_code == 401:
-            raise RuntimeError("OpenRouter service unavailable")
-        resp.raise_for_status()
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
-    try:
-        result = _parse_json(raw)
-        indices = result.get("relevant_indices", [])
-        return [i for i in indices if isinstance(i, int) and 0 <= i < len(items)]
-    except Exception:
-        return list(range(len(items)))
-
 
 _CHAT_SYSTEM = """\
 你是 Garner 知識助理。用戶存了很多網頁文章和 YouTube 影片在知識庫裡。
@@ -634,7 +585,7 @@ async def agentic_chat_stream(
     seen_source_ids: set[str] = set()
     accumulated_text = ""
 
-    MAX_ROUNDS = 6
+    MAX_ROUNDS = 3
     for _round in range(MAX_ROUNDS):
         request_body: dict = {
             "model": _llm(),
@@ -746,7 +697,6 @@ async def agentic_chat_stream(
                 tool_result_data = {
                     "tool": name,
                     "count": len(new_items),
-                    "all_count": result.get("all_count", len(new_items)),
                     "titles": [s.get("title") or s.get("url") or "" for s in new_items],
                 }
                 process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})

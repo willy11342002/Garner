@@ -200,23 +200,17 @@ async def stream_reply(
             for ui, dist in new_hits:
                 seen_ids.add(ui.id)
 
-            all_items_out = [_to_chat_source(ui, dist).model_dump(mode="json") for ui, dist in new_hits]
+            items_out = [_to_chat_source(ui, dist).model_dump(mode="json") for ui, dist in new_hits]
 
-            # Filter to truly relevant items before injecting context
-            query_str = args.get("query") or user_content
-            relevant_indices = await ai_service.filter_relevant(query_str, all_items_out)
-            relevant_hits = [new_hits[i] for i in relevant_indices]
-            items_out = [all_items_out[i] for i in relevant_indices]
-
-            # Fetch chunk-level text for context injection (relevant items only)
-            item_ids = [ui.id for ui, _ in relevant_hits]
+            # Fetch chunk-level text for context injection
+            item_ids = [ui.id for ui, _ in new_hits]
             chunks_out: list[dict] = []
             if item_ids:
-                query_embedding = await ai_service.embed(query_str)
+                query_embedding = await ai_service.embed(args.get("query") or user_content)
                 chunk_hits = await crud_chunks.semantic_search(
                     db, user_id, query_embedding, limit=12, cutoff=cutoff, item_ids=item_ids
                 )
-                item_map = {ui.id: ui for ui, _ in relevant_hits}
+                item_map = {ui.id: ui for ui, _ in new_hits}
                 chunks_out = [
                     {
                         "title": item_map[c.user_item_id].title if c.user_item_id in item_map else "(無標題)",
@@ -226,7 +220,7 @@ async def stream_reply(
                     }
                     for c, _ in chunk_hits
                 ]
-            return {"items": items_out, "all_count": len(all_items_out), "chunks": chunks_out}
+            return {"items": items_out, "chunks": chunks_out}
 
         if name == "create_article":
             try:

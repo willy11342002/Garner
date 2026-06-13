@@ -63,7 +63,7 @@
                     </div>
                     <div v-if="step.toolResult" class="process-body__tool-result">
                       <span class="process-body__step-icon">✓</span>
-                      <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
+                      <span>找到 {{ step.toolResult.count }} 筆</span>
                     </div>
                     <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
                       <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
@@ -102,7 +102,7 @@
                 </div>
                 <div v-if="step.toolResult" class="process-body__tool-result">
                   <span class="process-body__step-icon">✓</span>
-                  <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
+                  <span>找到 {{ step.toolResult.count }} 筆</span>
                 </div>
                 <div v-if="step.toolResult?.titles?.length" class="process-body__tool-titles">
                   <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
@@ -329,7 +329,7 @@ async function send() {
           await nextTick(); scrollBottom()
         } else if (event === 'tool_result') {
           const steps = liveProcess.value.steps
-          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, all_count: data.all_count, titles: data.titles }
+          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
           await nextTick(); scrollBottom()
         } else if (event === 'sources') {
           liveProcess.value.sources = data as ChatSource[]

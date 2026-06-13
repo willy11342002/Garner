@@ -130,7 +130,7 @@
                           <span>文章已建立：{{ step.toolResult.title }}</span>
                         </template>
                         <template v-else>
-                          <span>搜到 {{ step.toolResult.all_count ?? step.toolResult.count }} 筆，篩出 {{ step.toolResult.count }} 筆相關</span>
+                          <span>找到 {{ step.toolResult.count }} 筆</span>
                         </template>
                       </div>
                       <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'" class="process-body__tool-titles">
@@ -600,7 +600,7 @@ async function send() {
         } else if (event === 'tool_result') {
           if (!isActive()) continue
           const steps = liveProcess.value.steps
-          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, all_count: data.all_count, titles: data.titles }
+          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
           await nextTick(); scrollBottom()
 
         } else if (event === 'article_draft') {
