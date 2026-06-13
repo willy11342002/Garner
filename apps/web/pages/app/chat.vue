@@ -499,10 +499,13 @@ async function send() {
   if (!inputText.value.trim() || loading.value || !activeSessionId.value || chatQuotaFull.value) return
 
   const content = inputText.value.trim()
+  const sessionId = activeSessionId.value  // capture，避免切換 session 後寫到錯的地方
   inputText.value = ''
   resetInputHeight()
   loading.value = true
   resetProcess()
+
+  const isActive = () => activeSessionId.value === sessionId
 
   const userMsg: ChatMessage = {
     id: crypto.randomUUID(),
@@ -529,6 +532,7 @@ async function send() {
       Promise.allSettled(
         itemIds.map(id => apiFetch<ChatSource>(`/items/${id}`))
       ).then(results => {
+        if (!isActive()) return
         const items = results
           .filter((r): r is PromiseFulfilledResult<ChatSource> => r.status === 'fulfilled')
           .map(r => r.value)
@@ -539,7 +543,7 @@ async function send() {
       })
     }
 
-    const resp = await fetch(`${apiBase}/chat/sessions/${activeSessionId.value}/messages`, {
+    const resp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -570,75 +574,92 @@ async function send() {
         const data = JSON.parse(lines[1].replace('data: ', ''))
 
         if (event === 'thinking') {
+          if (!isActive()) continue
           liveProcess.value.thinking = data.text
           await nextTick(); scrollBottom()
 
         } else if (event === 'tool_call') {
+          if (!isActive()) continue
           liveProcess.value.steps.push({ toolCall: data, toolResult: null })
           await nextTick(); scrollBottom()
 
         } else if (event === 'tool_result') {
+          if (!isActive()) continue
           const steps = liveProcess.value.steps
           if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
           await nextTick(); scrollBottom()
 
         } else if (event === 'article_draft') {
+          if (!isActive()) continue
           liveDraft.value = data as ArticleDraft
           await nextTick(); scrollBottom()
 
         } else if (event === 'sources') {
           pendingSources = data as ChatSource[]
-          liveProcess.value.sources = pendingSources
+          if (isActive()) liveProcess.value.sources = pendingSources
 
         } else if (event === 'delta') {
+          if (!isActive()) continue
           streamingText.value += data.text
           await nextTick(); scrollBottom()
 
         } else if (event === 'done') {
-          processMap.value[assistantId] = {
-            thinking: liveProcess.value.thinking,
-            steps: liveProcess.value.steps,
-          }
-          if (liveDraft.value) {
-            draftMap.value[assistantId] = liveDraft.value
-            liveDraft.value = null
-          }
-          openThinking.value.delete('live')
-          openThinking.value.add(assistantId)
+          // done 一定要處理，不管有沒有切 session，讓 loading 正確結束
+          if (isActive()) {
+            processMap.value[assistantId] = {
+              thinking: liveProcess.value.thinking,
+              steps: liveProcess.value.steps,
+            }
+            if (liveDraft.value) {
+              draftMap.value[assistantId] = liveDraft.value
+              liveDraft.value = null
+            }
+            openThinking.value.delete('live')
+            openThinking.value.add(assistantId)
 
-          const assistantMsg: ChatMessage = {
-            id: assistantId,
-            role: 'assistant',
-            content: streamingText.value,
-            cited_item_ids: pendingSources.map(s => s.id),
-            created_at: new Date().toISOString(),
-          }
-          messages.value.push(assistantMsg)
-          if (pendingSources.length) {
-            sourcesMap.value[assistantId] = pendingSources
-          }
+            const assistantMsg: ChatMessage = {
+              id: assistantId,
+              role: 'assistant',
+              content: streamingText.value,
+              cited_item_ids: pendingSources.map(s => s.id),
+              created_at: new Date().toISOString(),
+            }
+            messages.value.push(assistantMsg)
+            if (pendingSources.length) {
+              sourcesMap.value[assistantId] = pendingSources
+            }
 
-          if (isFirstMessage && !activeSession.value?.title) {
-            const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
-            if (activeSession.value) activeSession.value.title = title
-            const idx = sessions.value.findIndex(s => s.id === activeSessionId.value)
-            if (idx !== -1) sessions.value[idx].title = title
-          }
+            if (isFirstMessage && !activeSession.value?.title) {
+              const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
+              if (activeSession.value) activeSession.value.title = title
+              const idx = sessions.value.findIndex(s => s.id === sessionId)
+              if (idx !== -1) sessions.value[idx].title = title
+            }
 
-          resetProcess()
-          await nextTick(); scrollBottom()
+            resetProcess()
+            await nextTick(); scrollBottom()
+          } else {
+            // 已切到其他 session，靜默更新 session 列表標題即可
+            if (isFirstMessage) {
+              const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
+              const idx = sessions.value.findIndex(s => s.id === sessionId)
+              if (idx !== -1) sessions.value[idx].title = title
+            }
+          }
         }
       }
     }
   } catch {
-    resetProcess()
-    messages.value.push({
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: t('chat.error'),
-      cited_item_ids: null,
-      created_at: new Date().toISOString(),
-    })
+    if (isActive()) {
+      resetProcess()
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: t('chat.error'),
+        cited_item_ids: null,
+        created_at: new Date().toISOString(),
+      })
+    }
   } finally {
     loading.value = false
   }
