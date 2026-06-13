@@ -3,6 +3,7 @@ import json
 import httpx
 
 from app.core.config import settings
+from app.core.tracing import traced
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -180,6 +181,7 @@ async def suggest_tags(content: str, candidate_tags: list[str] | None = None) ->
     return data.get("tags", {"zh-TW": [], "en": []})
 
 
+@traced(op="ai", name="analyze_content")
 async def analyze_content(content: str, candidate_tags: list[str] | None = None) -> dict:
     """Returns {summary_md: {zh-TW: <markdown>}, embed_text: str, tags: {zh-TW, en}}."""
     import asyncio
@@ -1038,6 +1040,7 @@ async def extract_locations(text: str) -> list[dict]:
     return []
 
 
+@traced(op="ai", name="embed")
 async def embed(text: str) -> list[float]:
     from openai import AsyncOpenAI
 

@@ -3,12 +3,14 @@ import logging
 import httpx
 
 from app.core.config import settings
+from app.core.tracing import traced
 
 logger = logging.getLogger(__name__)
 
 GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
 
+@traced(op="geocoding", name="geocode")
 async def geocode(name: str) -> tuple[float | None, float | None]:
     """Call Google Maps Geocoding API for a place name.
 

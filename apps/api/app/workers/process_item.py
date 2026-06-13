@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+import sentry_sdk
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 async def process_item(
+    db: AsyncSession,
+    user_id: UUID,
+    user_item_id: UUID,
+    url: str,
+    max_video_sec: int = 1200,
+) -> None:
+    with sentry_sdk.start_transaction(op="task", name="process_item"):
+        await _process_item_inner(db, user_id, user_item_id, url, max_video_sec)
+
+
+async def _process_item_inner(
     db: AsyncSession,
     user_id: UUID,
     user_item_id: UUID,
