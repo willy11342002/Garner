@@ -175,6 +175,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 400px;
+  background: transparent;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  text-align: left;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.process-body__tool-title:hover {
+  color: var(--accent);
+  border-left-color: var(--accent);
 }
 
 /* User context block（知識節點摺疊框，右對齊） */

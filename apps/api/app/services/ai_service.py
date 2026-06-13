@@ -697,7 +697,7 @@ async def agentic_chat_stream(
                 tool_result_data = {
                     "tool": name,
                     "count": len(new_items),
-                    "titles": [s.get("title") or s.get("url") or "" for s in new_items],
+                    "titles": [{"id": s.get("id"), "title": s.get("title") or s.get("url") or ""} for s in new_items],
                 }
                 process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)

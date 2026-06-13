@@ -74,7 +74,7 @@
                     </div>
                     <Transition name="thinking">
                       <div v-if="step.toolResult?.titles?.length && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
-                        <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                        <button v-for="item in step.toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
                       </div>
                     </Transition>
                   </div>
@@ -174,6 +174,7 @@
       </div>
     </div>
   </div>
+  <ItemDetailModal :item-id="previewItemId" @close="previewItemId = null" />
 </template>
 
 <script setup lang="ts">
@@ -212,6 +213,7 @@ onMounted(async () => {
 })
 
 // ── Session ────────────────────────────────────────────────
+const previewItemId = ref<string | null>(null)
 const activeSessionId = ref<string | null>(null)
 const activeSession = ref<ChatSessionDetail | null>(null)
 const sessionTitle = computed(() => activeSession.value?.title || t('fab.title'))

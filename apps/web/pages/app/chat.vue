@@ -142,7 +142,7 @@
                       </div>
                       <Transition name="thinking">
                         <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article' && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
-                          <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                          <button v-for="item in step.toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
                         </div>
                       </Transition>
                     </div>
