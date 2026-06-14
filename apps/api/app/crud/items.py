@@ -115,6 +115,7 @@ async def get_page(
         UserItem.user_id == user_id,
         UserItem.deleted_at.is_(None),
         UserItem.status == UserItemStatus.active,
+        UserItem.title.is_not(None),
     ]
     if saved_after:
         base_filters.append(UserItem.saved_at >= saved_after)
