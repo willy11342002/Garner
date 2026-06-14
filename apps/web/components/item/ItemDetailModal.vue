@@ -37,6 +37,7 @@ const apiFetch = useApiFetch()
 const gmap = useGlobalMap()
 const { getItem, getItemTags, attachTag, detachTag, updateItem } = useItems()
 const { updateArticle } = useArticles()
+const { toggle: toggleChain, isInChain } = useChain()
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
@@ -666,6 +667,14 @@ async function confirmArchive() {
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
                   </svg>
                   {{ reanalyzing ? '分析中…' : '重新分析' }}
+                </button>
+                <button
+                  v-if="!readonly && activeTab === 'info' && !isEditingNotes && fetchedItem"
+                  class="btn"
+                  :class="{ 'btn--accent': isInChain(fetchedItem.id) }"
+                  @click="toggleChain(fetchedItem)"
+                >
+                  {{ isInChain(fetchedItem.id) ? '移出對話' : '加入對話' }}
                 </button>
                 <button
                   v-if="!readonly && activeTab === 'map'"

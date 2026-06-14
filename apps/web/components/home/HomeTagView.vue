@@ -408,6 +408,11 @@ onMounted(async () => {
 .card:hover .card-chain-btn {
   opacity: 1;
 }
+@media (hover: none) {
+  .card-chain-btn {
+    opacity: 1;
+  }
+}
 .card-chain-btn:hover {
   background: var(--accent);
   border-color: var(--accent);
