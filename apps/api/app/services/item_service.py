@@ -265,22 +265,29 @@ async def update_article(
     if data.title is not None:
         user_item.title = data.title
     if data.notes_md is not None:
+        import time
         user_item.notes_md = data.notes_md
         # Use original AI embed_text if available (better semantic quality for search);
         # fall back to title + notes_md for legacy items without extract snapshot.
         extract = user_item.extract or {}
         embed_text = extract.get("embed_text") or f"{user_item.title or ''}\n\n{data.notes_md}"
+        user_item.embedding_status = "running"
+        await db.commit()
+        t0 = time.monotonic()
         try:
-            embedding = await ai_service.embed(embed_text)
-            user_item.embedding = embedding
             chunk_texts = ai_service.chunk_text(data.notes_md)
+            all_embeddings = await ai_service.embed_many([embed_text] + chunk_texts)
+            user_item.embedding = all_embeddings[0]
             chunk_records = [
-                {"text": c, "embedding": await ai_service.embed(c)}
-                for c in chunk_texts
+                {"text": c, "embedding": e}
+                for c, e in zip(chunk_texts, all_embeddings[1:])
             ]
             await crud_chunks.replace_chunks(db, item_id, chunk_records)
+            user_item.embedding_status = "complete"
+            user_item.embedding_duration_ms = int((time.monotonic() - t0) * 1000)
         except Exception:
-            pass
+            user_item.embedding_status = "error"
+            user_item.embedding_duration_ms = int((time.monotonic() - t0) * 1000)
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)
@@ -400,23 +407,43 @@ async def create_article_draft(
         pass
 
     # ── Embedding + chunks ───────────────────────────────────────────────────
+    import time as _time
+    await db.execute(
+        _sa.update(UserItemModel)
+        .where(UserItemModel.id == item_id)
+        .values(embedding_status="running")
+    )
+    await db.commit()
+    t0 = _time.monotonic()
     try:
         now = datetime.now(timezone.utc)
         embed_text = f"{title}\n\n{content_markdown}"
-        embedding = await ai_service.embed(embed_text)
         chunk_texts = ai_service.chunk_text(content_markdown)
+        all_embeddings = await ai_service.embed_many([embed_text] + chunk_texts)
         chunk_records = [
-            {"text": c, "embedding": await ai_service.embed(c)}
-            for c in chunk_texts
+            {"text": c, "embedding": e}
+            for c, e in zip(chunk_texts, all_embeddings[1:])
         ]
         await db.execute(
             _sa.update(UserItemModel)
             .where(UserItemModel.id == item_id)
-            .values(embedding=embedding, parsed_at=now)
+            .values(
+                embedding=all_embeddings[0],
+                parsed_at=now,
+                embedding_status="complete",
+                embedding_duration_ms=int((_time.monotonic() - t0) * 1000),
+            )
         )
         await crud_chunks.replace_chunks(db, item_id, chunk_records)
     except Exception:
-        pass
+        await db.execute(
+            _sa.update(UserItemModel)
+            .where(UserItemModel.id == item_id)
+            .values(
+                embedding_status="error",
+                embedding_duration_ms=int((_time.monotonic() - t0) * 1000),
+            )
+        )
 
     await db.commit()
 
