@@ -753,6 +753,7 @@
     height: 92vh;
     max-height: 92vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
     animation: id-slide-up .3s cubic-bezier(0.32, 0.72, 0, 1) both;
   }
 

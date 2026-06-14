@@ -60,6 +60,58 @@ let _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let _searchPins: import('leaflet').Marker[] = []
 let _geocodingPollTimer: ReturnType<typeof setTimeout> | null = null
 
+// ── Swipe-down-to-close (mobile) ─────────────────────────────────────────────
+const panelRef = ref<HTMLElement | null>(null)
+let _swipeTouchStartY = 0
+let _swipeTouchStartScrollTop = 0
+let _swipeActive = false
+
+function onPanelTouchStart(e: TouchEvent) {
+  _swipeTouchStartY = e.touches[0].clientY
+  _swipeTouchStartScrollTop = (e.currentTarget as HTMLElement).scrollTop
+  _swipeActive = false
+}
+
+function onPanelTouchMove(e: TouchEvent) {
+  const el = panelRef.value
+  if (!el) return
+  const deltaY = e.touches[0].clientY - _swipeTouchStartY
+  const atTop = _swipeTouchStartScrollTop <= 0
+  if (!atTop || deltaY <= 0) {
+    if (_swipeActive) {
+      el.style.transition = ''
+      el.style.transform = ''
+      _swipeActive = false
+    }
+    return
+  }
+  _swipeActive = true
+  // resistance: drag feels heavier as you pull further
+  const drag = Math.pow(deltaY, 0.7)
+  el.style.transition = 'none'
+  el.style.transform = `translateY(${drag}px)`
+  el.style.opacity = String(Math.max(0.5, 1 - drag / 300))
+}
+
+function onPanelTouchEnd(e: TouchEvent) {
+  const el = panelRef.value
+  if (!el) return
+  const deltaY = e.changedTouches[0].clientY - _swipeTouchStartY
+  const atTop = _swipeTouchStartScrollTop <= 0
+  if (atTop && deltaY > 80) {
+    el.style.transition = 'transform .2s ease, opacity .2s ease'
+    el.style.transform = `translateY(100%)`
+    el.style.opacity = '0'
+    setTimeout(doClose, 200)
+  } else {
+    el.style.transition = 'transform .3s cubic-bezier(0.32,0.72,0,1), opacity .3s ease'
+    el.style.transform = ''
+    el.style.opacity = ''
+    setTimeout(() => { if (el) { el.style.transition = ''; el.style.transform = '' } }, 300)
+  }
+  _swipeActive = false
+}
+
 // waitForAny=true: legacy item, poll until at least one location appears then check pending
 // waitForAny=false: snapshot path, locations exist but may be pending geocoding
 function startGeocodingPoll(waitForAny = false, maxAttempts = 40) {
@@ -622,7 +674,13 @@ async function confirmArchive() {
         @keydown.esc="doClose"
         tabindex="-1"
       >
-        <div class="id-panel">
+        <div
+          ref="panelRef"
+          class="id-panel"
+          @touchstart.passive="onPanelTouchStart"
+          @touchmove.passive="onPanelTouchMove"
+          @touchend.passive="onPanelTouchEnd"
+        >
           <button class="id-close" @click="doClose">×</button>
           <div v-if="loading || error" class="id-spinner id-spinner--panel">
             {{ error ? '載入失敗，請重新整理' : '載入中...' }}
