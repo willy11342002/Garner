@@ -233,3 +233,52 @@ async def translate_item_notes(
 async def detach_tag(item_id: UUID, tag_id: UUID, current_user: CurrentUser, db: DbSession):
     await crud_tags.detach_tag(db, item_id, tag_id)
     await db.commit()
+
+
+@router.post("/{item_id}/reanalyze", status_code=status.HTTP_202_ACCEPTED)
+async def reanalyze_item_notes(
+    item_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Re-run stage 3 (note) → stage 5 (embedding) for an existing item.
+
+    Returns immediately. Caller can poll note_status / embedding_status to track progress.
+    """
+    user_id = UUID(current_user["sub"])
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if not user_item.extract or not user_item.extract.get("raw_content"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No raw content available for reanalysis",
+        )
+
+    async def _run() -> None:
+        from sqlalchemy import select
+        from app.core.pipeline import StageContext
+        from app.models.user_item import UserItem
+        from app.workers.process_item import _stage_note, _stage_embedding
+
+        async with AsyncSessionLocal() as bg_db:
+            item = (await bg_db.execute(
+                select(UserItem).where(UserItem.id == item_id)
+            )).scalar_one()
+
+            ctx = StageContext(db=bg_db, user_item=item)
+            raw_content = item.extract["raw_content"]
+
+            try:
+                analysis = await _stage_note(ctx, raw_content, user_id)
+            except Exception:
+                return
+
+            try:
+                await _stage_embedding(ctx, analysis, raw_content, user_id, item_id)
+            except Exception:
+                pass
+
+    background_tasks.add_task(_run)
+    return {"status": "accepted"}
