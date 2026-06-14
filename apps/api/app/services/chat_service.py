@@ -43,32 +43,40 @@ async def rag_retrieve(
     limit: int = 8,
     offset: int = 0,
 ) -> list[tuple[UserItem, float]]:
+    import asyncio
     from sqlalchemy import select
 
     cutoff = await _get_search_cutoff(db)
     embedding = await ai_service.embed(query)
-    chunk_hits = await crud_chunks.semantic_search(db, user_id, embedding, limit=limit * 2, cutoff=cutoff, offset=offset)
+    fetch_limit = limit * 3
 
-    if chunk_hits:
-        seen: dict[UUID, tuple[UserItem, float]] = {}
+    chunk_coro = crud_chunks.semantic_search(
+        db, user_id, embedding, limit=fetch_limit, cutoff=cutoff, offset=offset
+    )
+    article_coro = crud_items.semantic_search(
+        db, user_id, embedding, limit=fetch_limit, cutoff=cutoff,
+        saved_after=None, saved_before=None, exclude_ids=None,
+    )
+    chunk_hits, article_hits = await asyncio.gather(chunk_coro, article_coro)
+
+    merged: dict[UUID, tuple[UserItem, float]] = {}
+
+    for ui, dist in article_hits:
+        merged[ui.id] = (ui, dist)
+
+    # chunk 命中：若比整篇更近則更新
+    chunk_item_ids = list({c.user_item_id for c, _ in chunk_hits})
+    if chunk_item_ids:
+        chunk_items = {ui.id: ui for ui in await crud_items.get_by_ids(db, user_id, chunk_item_ids)}
         for chunk, dist in chunk_hits:
-            result = await db.execute(
-                select(UserItem)
-                .where(
-                    UserItem.id == chunk.user_item_id,
-                    UserItem.user_id == user_id,
-                    UserItem.deleted_at.is_(None),
-                )
-                .limit(1)
-            )
-            ui = result.scalar_one_or_none()
-            if ui and ui.id not in seen:
-                seen[ui.id] = (ui, dist)
-            if len(seen) >= limit:
-                break
-        return list(seen.values())
+            iid = chunk.user_item_id
+            if iid not in merged or dist < merged[iid][1]:
+                ui = chunk_items.get(iid)
+                if ui:
+                    merged[iid] = (ui, dist)
 
-    return await crud_items.semantic_search(db, user_id, embedding, limit=limit, cutoff=cutoff, saved_after=None, saved_before=None, exclude_ids=None)
+    sorted_results = sorted(merged.values(), key=lambda t: t[1])
+    return sorted_results[offset: offset + limit]
 
 
 # ---------------------------------------------------------------------------

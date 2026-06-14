@@ -59,23 +59,81 @@ async def _text_search_raw(db: AsyncSession, user_id: UUID, query: str) -> list[
 _SEMANTIC_PAGE_SIZE = 10
 
 
-async def semantic_search(
-    db: AsyncSession, user_id: UUID, query: str, page: int = 1
-) -> PaginatedResult[ItemRead]:
-    query_embedding = await ai_service.embed(query)
-    offset = (page - 1) * _SEMANTIC_PAGE_SIZE
+async def _get_cutoff(db: AsyncSession) -> float:
+    from sqlalchemy import select as sa_select
+    from app.models.app_setting import AppSetting
     result = await db.execute(
-        select(UserItem)
+        sa_select(AppSetting.value).where(AppSetting.key == "chain_distance_cutoff")
+    )
+    val = result.scalar_one_or_none()
+    try:
+        return float(val) if val is not None else 0.45
+    except (TypeError, ValueError):
+        return 0.45
+
+
+async def _merge_semantic(
+    db: AsyncSession,
+    user_id: UUID,
+    query_embedding: list[float],
+    fetch_limit: int,
+    cutoff: float,
+) -> dict[UUID, tuple[UserItem, float]]:
+    """並搜 chunk + 整篇，回傳 {item_id: (UserItem, best_distance)}。"""
+    import asyncio
+    from app.crud import chunks as crud_chunks
+
+    distance_col = UserItem.embedding.cosine_distance(query_embedding).label("distance")
+
+    chunk_coro = crud_chunks.semantic_search(
+        db, user_id, query_embedding, limit=fetch_limit, cutoff=cutoff
+    )
+    article_coro = db.execute(
+        select(UserItem, distance_col)
         .where(
             UserItem.user_id == user_id,
             *_ACTIVE_FILTERS,
             UserItem.embedding.is_not(None),
+            distance_col <= cutoff,
         )
-        .order_by(UserItem.embedding.cosine_distance(query_embedding))
-        .offset(offset)
-        .limit(_SEMANTIC_PAGE_SIZE + 1)
+        .order_by(distance_col)
+        .limit(fetch_limit)
     )
-    rows = result.scalars().all()
-    has_next = len(rows) > _SEMANTIC_PAGE_SIZE
-    items = [_to_item_read(ui) for ui in rows[:_SEMANTIC_PAGE_SIZE]]
+    chunk_hits, article_result = await asyncio.gather(chunk_coro, article_coro)
+
+    merged: dict[UUID, tuple[UserItem, float]] = {}
+
+    for row in article_result.all():
+        ui, dist = row.UserItem, row.distance
+        merged[ui.id] = (ui, dist)
+
+    # chunk 命中：若比整篇更近則更新
+    chunk_item_ids = list({c.user_item_id for c, _ in chunk_hits})
+    if chunk_item_ids:
+        from app.crud.items import get_by_ids
+        chunk_items = {ui.id: ui for ui in await get_by_ids(db, user_id, chunk_item_ids)}
+        for chunk, dist in chunk_hits:
+            iid = chunk.user_item_id
+            if iid not in merged or dist < merged[iid][1]:
+                ui = chunk_items.get(iid)
+                if ui:
+                    merged[iid] = (ui, dist)
+
+    return merged
+
+
+async def semantic_search(
+    db: AsyncSession, user_id: UUID, query: str, page: int = 1
+) -> PaginatedResult[ItemRead]:
+    query_embedding = await ai_service.embed(query)
+    cutoff = await _get_cutoff(db)
+    offset = (page - 1) * _SEMANTIC_PAGE_SIZE
+    fetch_limit = _SEMANTIC_PAGE_SIZE * 3
+
+    merged = await _merge_semantic(db, user_id, query_embedding, fetch_limit, cutoff)
+
+    sorted_items = sorted(merged.values(), key=lambda t: t[1])
+    page_slice = sorted_items[offset: offset + _SEMANTIC_PAGE_SIZE + 1]
+    has_next = len(page_slice) > _SEMANTIC_PAGE_SIZE
+    items = [_to_item_read(ui) for ui, _ in page_slice[:_SEMANTIC_PAGE_SIZE]]
     return PaginatedResult(items=items, page=page, page_size=_SEMANTIC_PAGE_SIZE, has_next=has_next)
