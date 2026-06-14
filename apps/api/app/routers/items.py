@@ -258,27 +258,16 @@ async def reanalyze_item_notes(
 
     async def _run() -> None:
         from sqlalchemy import select
-        from app.core.pipeline import StageContext
         from app.models.user_item import UserItem
-        from app.workers.process_item import _stage_note, _stage_embedding
+        from app.workers.process_item import _note_and_embedding
 
         async with AsyncSessionLocal() as bg_db:
-            item = (await bg_db.execute(
-                select(UserItem).where(UserItem.id == item_id)
-            )).scalar_one()
+            raw_content = (await bg_db.execute(
+                select(UserItem.extract).where(UserItem.id == item_id)
+            )).scalar_one()["raw_content"]
 
-            ctx = StageContext(db=bg_db, user_item=item)
-            raw_content = item.extract["raw_content"]
-
-            try:
-                analysis = await _stage_note(ctx, raw_content, user_id)
-            except Exception:
-                return
-
-            try:
-                await _stage_embedding(ctx, analysis, raw_content, user_id, item_id)
-            except Exception:
-                pass
+        # Each stage opens its own session; we only need raw_content + ids here.
+        await _note_and_embedding(item_id, raw_content, user_id)
 
     background_tasks.add_task(_run)
     return {"status": "accepted"}

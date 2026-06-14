@@ -47,27 +47,25 @@ def _emb() -> str:
 _NOTES_PROMPT = """\
 You are a knowledge base assistant. Read the following content and produce structured notes in Traditional Chinese Markdown.
 
-Use EXACTLY these section headers, in this order:
+Start with this FIXED section (always first, exactly this header):
 
 ## 核心主題
 One or two paragraphs explaining what this content is about and why it matters.
 
-## 重點整理
-- Key point 1
-- Key point 2
-(3–8 bullet points, each a complete, standalone insight)
-
-## 內容詳解
-Organize into 2–5 thematic subsections using ### headers. Each subsection captures a coherent chunk of ideas — organized knowledge, not a transcript. Omit filler and repetition.
-
-## 關鍵洞察
-- Insight or implication worth remembering
-(1–4 bullets on the deeper "so what")
+Then organize the rest of the notes into 2–5 sections using `## ` headers that YOU choose, picked to fit THIS content's type and structure. Do NOT reuse a generic template — the headers should reflect what this specific content actually is. For example:
+- A tutorial / how-to → e.g. 前置知識 / 步驟拆解 / 常見坑
+- A news / report → e.g. 發生什麼 / 背景脈絡 / 影響與後續
+- An opinion / essay → e.g. 核心論點 / 論證與證據 / 反方觀點
+- A recipe / itinerary → e.g. 食材清單 / 製作步驟 / 小提示
+- A concept / explainer → e.g. 關鍵概念 / 運作原理 / 應用場景
+These are only illustrations — invent whatever headers best capture this content. Use bullet lists or paragraphs within each section as appropriate, and `### ` sub-headers only if a section genuinely needs them.
 
 Rules:
 - Write entirely in Traditional Chinese
+- The `## 核心主題` section is mandatory and must come first; all other section headers are your choice
+- Pick 2–5 body sections — fewer for short/simple content, more for rich content
+- Be thorough but organized — capture ALL meaningful ideas and details from the source; organized knowledge, not a transcript. Omit only filler and repetition
 - Do NOT include the video/article title as a heading
-- Be thorough but organized — capture all meaningful ideas
 - Return ONLY the Markdown, no extra commentary, no code fences
 
 Content:
@@ -76,7 +74,7 @@ Content:
 _TAGS_PROMPT = """\
 Analyze the following content and return ONLY a JSON object:
 {
-  "embed_text": "A concise 2-3 sentence English description of the main topic, for semantic search",
+  "embed_text": "用繁體中文(zh-TW)寫一段 2-3 句、精煉描述主題的句子，供語意搜尋使用（必須是繁體中文，不要用英文）",
   "tags": {
     "zh-TW": ["標籤1", "標籤2", "標籤3"],
     "en": ["tag1", "tag2", "tag3"]
@@ -128,7 +126,7 @@ Rules for locations:
 
 Output format:
 {{
-  "embed_text": "A concise 2-3 sentence English description of the main topic, for semantic search",
+  "embed_text": "用繁體中文(zh-TW)寫一段 2-3 句、精煉描述主題的句子，供語意搜尋使用（必須是繁體中文，不要用英文）",
   "tags": {{
     "zh-TW": ["標籤1", "標籤2", "標籤3"],
     "en": ["tag1", "tag2", "tag3"]

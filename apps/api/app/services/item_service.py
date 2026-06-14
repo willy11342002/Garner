@@ -265,29 +265,33 @@ async def update_article(
     if data.title is not None:
         user_item.title = data.title
     if data.notes_md is not None:
-        import time
         user_item.notes_md = data.notes_md
-        # Use original AI embed_text if available (better semantic quality for search);
-        # fall back to title + notes_md for legacy items without extract snapshot.
         extract = user_item.extract or {}
-        embed_text = extract.get("embed_text") or f"{user_item.title or ''}\n\n{data.notes_md}"
-        user_item.embedding_status = "running"
-        await db.commit()
-        t0 = time.monotonic()
-        try:
-            chunk_texts = ai_service.chunk_text(data.notes_md)
-            all_embeddings = await ai_service.embed_many([embed_text] + chunk_texts)
-            user_item.embedding = all_embeddings[0]
-            chunk_records = [
-                {"text": c, "embedding": e}
-                for c, e in zip(chunk_texts, all_embeddings[1:])
-            ]
-            await crud_chunks.replace_chunks(db, item_id, chunk_records)
-            user_item.embedding_status = "complete"
-            user_item.embedding_duration_ms = int((time.monotonic() - t0) * 1000)
-        except Exception:
-            user_item.embedding_status = "error"
-            user_item.embedding_duration_ms = int((time.monotonic() - t0) * 1000)
+        # For fetched items the search index is built from the original
+        # raw_content (chunks) + the AI embed_text, NOT from the human-facing
+        # notes. Editing those notes must not touch the vector index, so skip
+        # re-embedding. Drafts / manual notes have no raw_content — there the
+        # notes ARE the source, so they still get re-embedded.
+        if not extract.get("raw_content"):
+            import time
+            embed_text = extract.get("embed_text") or f"{user_item.title or ''}\n\n{data.notes_md}"
+            user_item.embedding_status = "running"
+            await db.commit()
+            t0 = time.monotonic()
+            try:
+                chunk_texts = ai_service.chunk_text(data.notes_md)
+                all_embeddings = await ai_service.embed_many([embed_text] + chunk_texts)
+                user_item.embedding = all_embeddings[0]
+                chunk_records = [
+                    {"text": c, "embedding": e}
+                    for c, e in zip(chunk_texts, all_embeddings[1:])
+                ]
+                await crud_chunks.replace_chunks(db, item_id, chunk_records)
+                user_item.embedding_status = "complete"
+                user_item.embedding_duration_ms = int((time.monotonic() - t0) * 1000)
+            except Exception:
+                user_item.embedding_status = "error"
+                user_item.embedding_duration_ms = int((time.monotonic() - t0) * 1000)
     await db.commit()
     await db.refresh(user_item)
     return _item_to_read(user_item, user_id)

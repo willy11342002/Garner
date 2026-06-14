@@ -62,7 +62,12 @@ async def _stage_assets(ctx: StageContext, raw_content: str | None) -> str:
 
 @stage("note", retries=2)
 async def _stage_note(ctx: StageContext, raw_content: str, user_id: UUID) -> dict:
-    """Stage 3: LLM → notes_md + tags + embed_text + locations."""
+    """Stage 3: LLM → notes_md + tags + embed_text + locations.
+
+    Tags are saved here (right after the summary commits) so they appear
+    without waiting for the embedding stage. The tag save is guarded so a tag
+    failure never aborts this stage and soft-deletes the item.
+    """
     candidate_tags = await crud_tags.get_top_tags(ctx.db, user_id, limit=50)
     analysis = await ai_service.analyze_content(
         raw_content, candidate_tags=[t.name for t in candidate_tags]
@@ -85,6 +90,22 @@ async def _stage_note(ctx: StageContext, raw_content: str, user_id: UUID) -> dic
         "tags": analysis.get("tags", {"zh-TW": [], "en": []}),
     }
     await ctx.db.commit()
+
+    # ── Save tags (decoupled from embedding) ───────────────────────────────────
+    try:
+        tags_i18n = analysis.get("tags", {})
+        zh_tags = tags_i18n.get("zh-TW", [])
+        en_tags = tags_i18n.get("en", [])
+        for zh_name, en_name in zip(zh_tags, en_tags):
+            tag = await crud_tags.get_or_create(
+                ctx.db, user_id, name=zh_name,
+                name_i18n={"zh-TW": zh_name, "en": en_name},
+            )
+            await crud_tags.attach_tag(ctx.db, ctx.user_item.id, tag.id, source=TagSource.ai)
+        await ctx.db.commit()
+    except Exception:
+        await ctx.db.rollback()
+        logger.warning("tag save failed for item %s", ctx.user_item.id, exc_info=True)
 
     return analysis
 
@@ -132,31 +153,34 @@ async def _stage_landmarks(ctx: StageContext, ai_locations: list[dict]) -> None:
 
 
 @stage("embedding", retries=2)
-async def _stage_embedding(ctx: StageContext, analysis: dict, raw_content: str, user_id: UUID, user_item_id: UUID) -> None:
-    """Stage 5: embed summary + chunks, save tags, send notification."""
-    embed_text = analysis.get("embed_text") or ctx.user_item.notes_md[:500]
-    chunk_texts = ai_service.chunk_text(raw_content)
+async def _stage_embedding(
+    ctx: StageContext,
+    analysis: dict,
+    chunk_texts: list[str],
+    chunk_embeddings: list[list[float]] | None,
+    user_id: UUID,
+) -> None:
+    """Stage 5: embed the item main vector + persist chunk vectors + notify.
 
-    all_texts = [embed_text] + chunk_texts
-    all_embeddings = await ai_service.embed_many(all_texts)
+    `chunk_embeddings` is precomputed in parallel with the note stage (chunk
+    text comes from raw_content, which needs no LLM analysis). If it is None
+    (the parallel embed failed), this stage recomputes it so the retry path
+    still works. Tags are saved in the note stage, not here.
+    """
+    user_item_id = ctx.user_item.id
 
-    ctx.user_item.embedding = all_embeddings[0]
+    # Item main vector — from the (now zh-TW) embed_text, same language as queries.
+    embed_text = analysis.get("embed_text") or (ctx.user_item.notes_md or "")[:500]
+    ctx.user_item.embedding = await ai_service.embed(embed_text)
+
+    # Chunk vectors — reuse the precomputed embeddings, else recompute.
+    if chunk_embeddings is None:
+        chunk_embeddings = await ai_service.embed_many(chunk_texts) if chunk_texts else []
     chunk_records = [
         {"text": chunk, "embedding": emb}
-        for chunk, emb in zip(chunk_texts, all_embeddings[1:])
+        for chunk, emb in zip(chunk_texts, chunk_embeddings)
     ]
-
     await crud_chunks.replace_chunks(ctx.db, user_item_id, chunk_records)
-
-    tags_i18n = analysis.get("tags", {})
-    zh_tags = tags_i18n.get("zh-TW", [])
-    en_tags = tags_i18n.get("en", [])
-    for zh_name, en_name in zip(zh_tags, en_tags):
-        tag = await crud_tags.get_or_create(
-            ctx.db, user_id, name=zh_name,
-            name_i18n={"zh-TW": zh_name, "en": en_name},
-        )
-        await crud_tags.attach_tag(ctx.db, user_item_id, tag.id, source=TagSource.ai)
 
     await crud_notifications.create(
         ctx.db,
@@ -190,75 +214,111 @@ async def _run_pipeline(
     url: str,
     max_video_sec: int,
 ) -> None:
-    user_item = await _load_item(db, user_item_id)
-    if user_item is None:
+    if not await _item_exists(db, user_item_id):
         return
 
-    ctx = StageContext(db=db, user_item=user_item)
+    # Each stage now opens its own session (see app.core.pipeline), so stages
+    # are invoked with the item id rather than a shared context.
 
     # Stage 1: fetch metadata + raw_content
     try:
-        info, raw_content = await _stage_fetch(ctx, url, max_video_sec)
+        info, raw_content = await _stage_fetch(user_item_id, url, max_video_sec)
     except Exception:
-        await _fail(db, user_id, user_item_id, user_item, url)
+        await _fail(db, user_id, user_item_id, url)
         return
 
     # Stage 2: validate assets / content
     try:
-        raw_content = await _stage_assets(ctx, raw_content)
+        raw_content = await _stage_assets(user_item_id, raw_content)
     except Exception:
-        await _fail(db, user_id, user_item_id, user_item, url)
+        await _fail(db, user_id, user_item_id, url)
         return
 
-    # Stages 3+4 in parallel; stage 5 depends on stage 3
-    note_result: dict | None = None
+    # note (+chunk embed +main embed) and landmarks run concurrently, each in
+    # its own session. They write disjoint columns/tables, so this is safe.
     note_exc: Exception | None = None
 
-    async def _note_then_embedding():
-        nonlocal note_result, note_exc
-        try:
-            note_result = await _stage_note(ctx, raw_content, user_id)
-        except Exception as exc:
-            note_exc = exc
-            return
-        # Stage 5 only runs if stage 3 succeeded
-        try:
-            await _stage_embedding(ctx, note_result, raw_content, user_id, user_item_id)
-        except Exception:
-            pass  # embedding failure doesn't abort — item is already readable
+    async def _note_branch():
+        nonlocal note_exc
+        note_exc = await _note_and_embedding(user_item_id, raw_content, user_id)
 
-    async def _landmarks():
-        # ai_locations come from raw_content directly, not from extract,
-        # so this can safely run in parallel with _note_then_embedding
+    async def _landmarks_branch():
+        # ai_locations come from raw_content directly, so this is independent
+        # of the note stage and can run in parallel with it.
         try:
             raw = await ai_service.extract_locations(raw_content)
-            await _stage_landmarks(ctx, raw)
+            await _stage_landmarks(user_item_id, raw)
         except Exception:
             pass  # landmark failure is non-fatal
 
-    await asyncio.gather(_note_then_embedding(), _landmarks())
+    await asyncio.gather(_note_branch(), _landmarks_branch())
 
     if note_exc is not None:
-        await _fail(db, user_id, user_item_id, user_item, url)
+        await _fail(db, user_id, user_item_id, url)
+
+
+async def _note_and_embedding(
+    user_item_id: UUID, raw_content: str, user_id: UUID
+) -> Exception | None:
+    """Run the note stage and the embedding stage for an item with known
+    raw_content. The chunk embedding (pure network, no DB) is computed in
+    parallel with the note LLM call; the embedding stage then persists it.
+
+    Returns the note-stage exception if it failed (so the caller can mark the
+    item failed), else None. Embedding failure is swallowed — the item is
+    already readable once the note stage commits.
+    """
+    chunk_texts = ai_service.chunk_text(raw_content)
+    note_exc: Exception | None = None
+
+    async def _note():
+        nonlocal note_exc
+        try:
+            return await _stage_note(user_item_id, raw_content, user_id)
+        except Exception as exc:
+            note_exc = exc
+            return None
+
+    async def _chunk_embed():
+        # No DB access — safe to run alongside the note stage's own session.
+        try:
+            return await ai_service.embed_many(chunk_texts) if chunk_texts else []
+        except Exception:
+            return None  # embedding stage will recompute
+
+    analysis, chunk_embeddings = await asyncio.gather(_note(), _chunk_embed())
+
+    if note_exc is not None:
+        return note_exc
+
+    try:
+        await _stage_embedding(user_item_id, analysis, chunk_texts, chunk_embeddings, user_id)
+    except Exception:
+        pass  # embedding failure doesn't abort — item is already readable
+
+    return None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _load_item(db: AsyncSession, user_item_id: UUID) -> UserItem | None:
-    result = await db.execute(select(UserItem).where(UserItem.id == user_item_id))
-    user_item = result.scalar_one_or_none()
-    if user_item is None:
+async def _item_exists(db: AsyncSession, user_item_id: UUID) -> bool:
+    result = await db.execute(select(UserItem.id).where(UserItem.id == user_item_id))
+    if result.scalar_one_or_none() is None:
         events.notify(str(user_item_id))
-    return user_item
+        return False
+    return True
 
 
 async def _fail(
     db: AsyncSession,
     user_id: UUID,
     user_item_id: UUID,
-    user_item: UserItem,
     url: str,
 ) -> None:
+    user_item = await db.get(UserItem, user_item_id)
+    if user_item is None:
+        events.notify(str(user_item_id))
+        return
     user_item.deleted_at = datetime.now(timezone.utc)
 
     await crud_notifications.create(
