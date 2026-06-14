@@ -650,6 +650,13 @@ async function confirmArchive() {
               <h1 v-else class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
               <div class="id-body__actions">
                 <button
+                  v-if="!readonly && activeTab === 'info'"
+                  class="btn btn--accent"
+                  @click="isEditingNotes ? saveNotes() : startEditNotes()"
+                >
+                  {{ isEditingNotes ? '保存' : '編輯筆記' }}
+                </button>
+                <button
                   v-if="!readonly && activeTab === 'info' && !isEditingNotes"
                   class="btn"
                   :disabled="reanalyzing"
@@ -659,13 +666,6 @@ async function confirmArchive() {
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
                   </svg>
                   {{ reanalyzing ? '分析中…' : '重新分析' }}
-                </button>
-                <button
-                  v-if="!readonly && activeTab === 'info'"
-                  class="btn btn--accent"
-                  @click="isEditingNotes ? saveNotes() : startEditNotes()"
-                >
-                  {{ isEditingNotes ? '保存' : '編輯筆記' }}
                 </button>
                 <button
                   v-if="!readonly && activeTab === 'map'"
