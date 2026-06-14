@@ -8,7 +8,6 @@ const { open: openItemModal } = useItemModal()
 const { toggle: toggleChain, isInChain } = useChain()
 const { t } = useI18n()
 
-const processingHover = ref<string | null>(null)
 const selectedTagIds = ref(new Set<string>())
 
 // Drag-to-scroll for desktop
@@ -336,30 +335,6 @@ onMounted(async () => {
         </div>
         <div class="card__body">
           <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
-          <div class="card__footer">
-            <span class="mono">{{ relativeTime(item.saved_at) }}</span>
-            <span
-              v-if="!item.parsed_at && item.source_type !== 'note'"
-              class="processing-badge"
-              @mouseenter="processingHover = item.id"
-              @mouseleave="processingHover = null"
-            >
-              AI 處理中
-              <ProcessingStatus
-                v-if="processingHover === item.id"
-                :item-id="item.id"
-                :source-type="item.source_type"
-                class="processing-badge__panel"
-              />
-            </span>
-            <div v-else class="card__tags">
-              <span
-                v-for="tag in (item.tags ?? []).slice(0, 2)"
-                :key="tag.id"
-                :class="`tag-chip tag-chip--${getTagColor(tag.id)}`"
-              >{{ localize(tag.name_i18n, tag.name) }}</span>
-            </div>
-          </div>
         </div>
       </a>
       <div v-if="displayItems.length === 0" class="card-grid__empty">
