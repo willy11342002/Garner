@@ -62,54 +62,38 @@ let _geocodingPollTimer: ReturnType<typeof setTimeout> | null = null
 
 // ── Swipe-down-to-close (mobile) ─────────────────────────────────────────────
 const panelRef = ref<HTMLElement | null>(null)
-let _swipeTouchStartY = 0
-let _swipeTouchStartScrollTop = 0
-let _swipeActive = false
+const overlayRef = ref<HTMLElement | null>(null)
+let _touchStartY = 0
 
 function onPanelTouchStart(e: TouchEvent) {
-  _swipeTouchStartY = e.touches[0].clientY
-  _swipeTouchStartScrollTop = (e.currentTarget as HTMLElement).scrollTop
-  _swipeActive = false
+  _touchStartY = e.touches[0].clientY
 }
 
 function onPanelTouchMove(e: TouchEvent) {
-  const el = panelRef.value
-  if (!el) return
-  const deltaY = e.touches[0].clientY - _swipeTouchStartY
-  const atTop = _swipeTouchStartScrollTop <= 0
-  if (!atTop || deltaY <= 0) {
-    if (_swipeActive) {
-      el.style.transition = ''
-      el.style.transform = ''
-      _swipeActive = false
-    }
-    return
+  const panel = panelRef.value
+  if (!panel) return
+  const deltaY = e.touches[0].clientY - _touchStartY
+  if (panel.scrollTop <= 0 && deltaY > 0) {
+    panel.style.transition = 'none'
+    panel.style.bottom = `-${deltaY}px`
+  } else {
+    panel.style.transition = ''
+    panel.style.bottom = ''
   }
-  _swipeActive = true
-  // resistance: drag feels heavier as you pull further
-  const drag = Math.pow(deltaY, 0.7)
-  el.style.transition = 'none'
-  el.style.transform = `translateY(${drag}px)`
-  el.style.opacity = String(Math.max(0.5, 1 - drag / 300))
 }
 
 function onPanelTouchEnd(e: TouchEvent) {
-  const el = panelRef.value
-  if (!el) return
-  const deltaY = e.changedTouches[0].clientY - _swipeTouchStartY
-  const atTop = _swipeTouchStartScrollTop <= 0
-  if (atTop && deltaY > 80) {
-    el.style.transition = 'transform .2s ease, opacity .2s ease'
-    el.style.transform = `translateY(100%)`
-    el.style.opacity = '0'
+  const panel = panelRef.value
+  if (!panel) return
+  if (panel.scrollTop <= 0) {
+    panel.style.transition = 'transform .2s ease'
+    panel.style.transform = 'translateY(100%)'
     setTimeout(doClose, 200)
   } else {
-    el.style.transition = 'transform .3s cubic-bezier(0.32,0.72,0,1), opacity .3s ease'
-    el.style.transform = ''
-    el.style.opacity = ''
-    setTimeout(() => { if (el) { el.style.transition = ''; el.style.transform = '' } }, 300)
+    panel.style.transition = 'transform .3s cubic-bezier(0.32,0.72,0,1)'
+    panel.style.transform = ''
+    setTimeout(() => { if (panel) panel.style.transition = '' }, 300)
   }
-  _swipeActive = false
 }
 
 // waitForAny=true: legacy item, poll until at least one location appears then check pending
@@ -669,6 +653,7 @@ async function confirmArchive() {
     <template v-if="!page">
       <div
         v-if="isOpen"
+        ref="overlayRef"
         class="id-overlay"
         @click.self="doClose"
         @keydown.esc="doClose"
