@@ -43,8 +43,8 @@
 .id-panel {
   position: relative;
   cursor: default;
-  width: 70vw;
-  max-width: 70vw;
+  width: min(max(70vw, calc(432px + 40vw)), 100%);
+  max-width: min(max(70vw, calc(432px + 40vw)), 100%);
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(300px, 1fr);
   background: var(--surface);
