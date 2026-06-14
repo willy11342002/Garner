@@ -85,7 +85,8 @@ function onPanelTouchMove(e: TouchEvent) {
 function onPanelTouchEnd(e: TouchEvent) {
   const panel = panelRef.value
   if (!panel) return
-  if (panel.scrollTop <= 0) {
+  const deltaY = e.changedTouches[0].clientY - _touchStartY
+  if (panel.scrollTop <= 0 && deltaY > 80) {
     panel.style.transition = 'transform .2s ease'
     panel.style.transform = 'translateY(100%)'
     setTimeout(doClose, 200)
