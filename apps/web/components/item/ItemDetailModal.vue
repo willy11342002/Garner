@@ -669,14 +669,6 @@ async function confirmArchive() {
                   {{ reanalyzing ? '分析中…' : '重新分析' }}
                 </button>
                 <button
-                  v-if="!readonly && activeTab === 'info' && !isEditingNotes && fetchedItem"
-                  class="btn"
-                  :class="{ 'btn--accent': isInChain(fetchedItem.id) }"
-                  @click="toggleChain(fetchedItem)"
-                >
-                  {{ isInChain(fetchedItem.id) ? '移出對話' : '加入對話' }}
-                </button>
-                <button
                   v-if="!readonly && activeTab === 'map'"
                   class="btn btn--accent"
                   :disabled="extractingLocations"
