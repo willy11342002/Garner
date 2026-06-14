@@ -20,6 +20,9 @@ export interface Item {
   status: string | null
   source_type: string | null
   tags: Tag[]
+  note_status: string | null
+  embedding_status: string | null
+  landmarks_status: string | null
 }
 
 export interface ArticleUpdate {

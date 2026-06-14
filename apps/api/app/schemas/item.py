@@ -36,6 +36,9 @@ class ItemRead(BaseModel):
     status: str | None = None
     source_type: str | None = None
     tags: list[TagRead] = []
+    note_status: str | None = None
+    embedding_status: str | None = None
+    landmarks_status: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -398,6 +398,50 @@ function cancelEditTitle() {
   editingTitle.value = ''
 }
 
+// ── Reanalyze (stage 3 → 5) ──────────────────────────────────────────────────
+const reanalyzing = ref(false)
+let _reanalyzePollTimer: ReturnType<typeof setTimeout> | null = null
+
+async function reanalyze() {
+  if (!props.itemId) return
+  reanalyzing.value = true
+  try {
+    await apiFetch(`/items/${props.itemId}/reanalyze`, { method: 'POST' })
+    pollReanalyze()
+  } catch {
+    reanalyzing.value = false
+  }
+}
+
+function pollReanalyze(maxAttempts = 60) {
+  let attempts = 0
+  async function poll() {
+    if (!props.itemId || attempts >= maxAttempts) {
+      reanalyzing.value = false
+      _reanalyzePollTimer = null
+      return
+    }
+    attempts++
+    try {
+      const updated = await apiFetch<Item>(`/items/${props.itemId}`)
+      const done = updated.note_status === 'complete' && updated.embedding_status === 'complete'
+      const failed = updated.note_status === 'error'
+      if (done || failed) {
+        if (done) fetchedItem.value = updated
+        reanalyzing.value = false
+        _reanalyzePollTimer = null
+        return
+      }
+    } catch {}
+    _reanalyzePollTimer = setTimeout(poll, 2000)
+  }
+  poll()
+}
+
+onUnmounted(() => {
+  if (_reanalyzePollTimer) clearTimeout(_reanalyzePollTimer)
+})
+
 // ── Inline note editing ───────────────────────────────────────────────────────
 const isEditingNotes = ref(false)
 const editingNotesMd = ref('')
@@ -605,6 +649,17 @@ async function confirmArchive() {
               />
               <h1 v-else class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
               <div class="id-body__actions">
+                <button
+                  v-if="!readonly && activeTab === 'info' && !isEditingNotes"
+                  class="btn"
+                  :disabled="reanalyzing"
+                  @click="reanalyze"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+                  </svg>
+                  {{ reanalyzing ? '分析中…' : '重新分析' }}
+                </button>
                 <button
                   v-if="!readonly && activeTab === 'info'"
                   class="btn btn--accent"
