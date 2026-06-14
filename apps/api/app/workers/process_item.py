@@ -158,7 +158,6 @@ async def _stage_embedding(
     analysis: dict,
     chunk_texts: list[str],
     chunk_embeddings: list[list[float]] | None,
-    user_id: UUID,
 ) -> None:
     """Stage 5: embed the item main vector + persist chunk vectors + notify.
 
@@ -181,14 +180,6 @@ async def _stage_embedding(
         for chunk, emb in zip(chunk_texts, chunk_embeddings)
     ]
     await crud_chunks.replace_chunks(ctx.db, user_item_id, chunk_records)
-
-    await crud_notifications.create(
-        ctx.db,
-        user_id=user_id,
-        type=NotificationType.item_processed,
-        title=ctx.user_item.title or "",
-        item_id=user_item_id,
-    )
 
     await ctx.db.commit()
     events.notify(str(user_item_id))
@@ -233,6 +224,20 @@ async def _run_pipeline(
     except Exception:
         await _fail(db, user_id, user_item_id, url)
         return
+
+    # Content is secured — notify the user now (analysis continues in the
+    # background). The modal shows per-stage progress when opened. Best-effort.
+    try:
+        await crud_notifications.create(
+            db,
+            user_id=user_id,
+            type=NotificationType.item_processed,
+            title=info.title or url,
+            item_id=user_item_id,
+        )
+        await db.commit()
+    except Exception:
+        logger.warning("saved-notification failed for item %s", user_item_id, exc_info=True)
 
     # note (+chunk embed +main embed) and landmarks run concurrently, each in
     # its own session. They write disjoint columns/tables, so this is safe.
@@ -292,7 +297,7 @@ async def _note_and_embedding(
         return note_exc
 
     try:
-        await _stage_embedding(user_item_id, analysis, chunk_texts, chunk_embeddings, user_id)
+        await _stage_embedding(user_item_id, analysis, chunk_texts, chunk_embeddings)
     except Exception:
         pass  # embedding failure doesn't abort — item is already readable
 

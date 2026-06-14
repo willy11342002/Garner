@@ -480,6 +480,39 @@ onUnmounted(() => {
   if (_reanalyzePollTimer) clearTimeout(_reanalyzePollTimer)
 })
 
+// ── Initial-analysis polling (item opened while still being processed) ─────────
+let _analysisPollTimer: ReturnType<typeof setTimeout> | null = null
+
+function stopAnalysisPoll() {
+  if (_analysisPollTimer) { clearTimeout(_analysisPollTimer); _analysisPollTimer = null }
+}
+
+function pollAnalysis(maxAttempts = 90) {
+  stopAnalysisPoll()
+  let attempts = 0
+  async function poll() {
+    if (!props.itemId || attempts >= maxAttempts) { _analysisPollTimer = null; return }
+    attempts++
+    try {
+      const updated = await apiFetch<Item>(`/items/${props.itemId}`)
+      if (!isEditingNotes.value) fetchedItem.value = updated
+      if (updated.note_status === 'complete' || updated.note_status === 'error') {
+        _analysisPollTimer = null
+        return
+      }
+    } catch {}
+    _analysisPollTimer = setTimeout(poll, 2000)
+  }
+  _analysisPollTimer = setTimeout(poll, 2000)
+}
+
+// Item is still in its initial analysis (note stage not finished, no error).
+const isAnalyzing = computed(() => {
+  const it = item.value as Item | null
+  if (!it || readonly.value) return false
+  return !it.notes_md && it.note_status !== 'complete' && it.note_status !== 'error' && !it.parsed_at
+})
+
 // ── Inline note editing ───────────────────────────────────────────────────────
 const isEditingNotes = ref(false)
 const editingNotesMd = ref('')
@@ -534,11 +567,16 @@ async function load(id: string) {
   fetchedItem.value = null
   tags.value = []
   isEditingNotes.value = false
+  stopAnalysisPoll()
   try {
     const [fi, ft] = await Promise.all([getItem(id), getItemTags(id)])
     fetchedItem.value = fi
     tags.value = ft
     if (props.startInEdit) startEditNotes()
+    // Opened while still being analyzed → poll until the note stage finishes.
+    if (!fi.notes_md && fi.note_status !== 'complete' && fi.note_status !== 'error') {
+      pollAnalysis()
+    }
   } catch {
     error.value = true
   } finally {
@@ -577,6 +615,7 @@ onUnmounted(() => {
   lockScroll(false)
   clearSearch()
   stopGeocodingPoll()
+  stopAnalysisPoll()
   if (activeTab.value === 'map') gmap.release(mapOwnerKey.value)
 })
 
@@ -591,6 +630,7 @@ function doClose() {
   editingNotesMd.value = ''
   isEditingTitle.value = false
   editingTitle.value = ''
+  stopAnalysisPoll()
   emit('close')
 }
 
@@ -704,13 +744,13 @@ async function confirmArchive() {
                 <button
                   v-if="!readonly && activeTab === 'info' && !isEditingNotes"
                   class="btn"
-                  :disabled="reanalyzing"
+                  :disabled="reanalyzing || isAnalyzing"
                   @click="reanalyze"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
                   </svg>
-                  {{ reanalyzing ? '分析中…' : '重新分析' }}
+                  {{ (reanalyzing || isAnalyzing) ? '分析中…' : '重新分析' }}
                 </button>
                 <button
                   v-if="!readonly && activeTab === 'map'"
@@ -790,10 +830,20 @@ async function confirmArchive() {
                   :model-value="(item as Item).notes_md"
                   :readonly="true"
                 />
+                <div
+                  v-else-if="!readonly && (item as Item).note_status === 'error'"
+                  class="notes-analyzing notes-analyzing--err"
+                >
+                  筆記分析失敗，可點上方「重新分析」重試
+                </div>
+                <div
+                  v-else-if="!readonly && !(item as Item).parsed_at"
+                  class="notes-analyzing"
+                >
+                  <span class="notes-analyzing__spinner" />
+                  <span class="notes-analyzing__text">筆記分析中…</span>
+                </div>
                 <p v-else class="id-body__summary-empty">尚無筆記</p>
-              </div>
-              <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
-                <span class="processing-badge">AI 處理中...</span>
               </div>
             </template>
 
@@ -945,10 +995,20 @@ async function confirmArchive() {
                 :model-value="(item as Item).notes_md"
                 :readonly="true"
               />
+              <div
+                v-else-if="!readonly && (item as Item).note_status === 'error'"
+                class="notes-analyzing notes-analyzing--err"
+              >
+                筆記分析失敗，可點上方「重新分析」重試
+              </div>
+              <div
+                v-else-if="!readonly && !(item as Item).parsed_at"
+                class="notes-analyzing"
+              >
+                <span class="notes-analyzing__spinner" />
+                <span class="notes-analyzing__text">筆記分析中…</span>
+              </div>
               <p v-else class="id-body__summary-empty">尚無筆記</p>
-            </div>
-            <div v-if="!readonly && !(item as Item).parsed_at && !(item as Item).notes_md && !isEditingNotes">
-              <span class="processing-badge">AI 處理中...</span>
             </div>
 
             <div class="id-body__actions">

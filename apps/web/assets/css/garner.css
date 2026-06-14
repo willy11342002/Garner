@@ -488,14 +488,15 @@ input, textarea { font-family: inherit; color: inherit; }
   cursor: pointer;
   white-space: nowrap;
 }
-.btn:hover { background: var(--surface3); transform: translateY(-1px); }
+.btn:not(:disabled):hover { background: var(--surface3); transform: translateY(-1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .btn--accent {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: transparent;
   font-weight: 700;
 }
-.btn--accent:hover { background: var(--accent); filter: brightness(1.08); transform: translateY(-1px); }
+.btn--accent:not(:disabled):hover { background: var(--accent); filter: brightness(1.08); transform: translateY(-1px); }
 .btn--danger {
   background: var(--danger-dim);
   color: var(--danger);
