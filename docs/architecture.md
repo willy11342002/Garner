@@ -163,10 +163,16 @@ score = (clicks + saves*2 + related*1.5) / Math.pow(hoursSince + 2, 1.8)
 ## 商業模式
 
 ### 定價
-| 方案 | 價格 | 內容 |
+
+最新方案、價格與功能邊界以前端為**單一真相來源**：
+`apps/web/pages/pricing.vue` → `components/pricing/PricingPlans.vue`。
+
+目前分兩級：
+
+| 方案 | 價格 | 重點 |
 |------|------|------|
-| 免費版 | $0 | 每月限制查詢次數（約50次） |
-| 付費版 | $9–15/月 | 無限查詢 + 更多儲存空間 |
+| Free | $0 / 月 | 存入 + AI 摘要標籤、有限 Chat；無進階搜尋 |
+| Pro  | $12 / 月 | 無限 Chat、進階自然語言搜尋 |
 
 **付費牆位置：** 自動關聯體驗到之後——用戶感受到魔法，自然付費。
 
@@ -198,27 +204,20 @@ score = (clicks + saves*2 + related*1.5) / Math.pow(hoursSince + 2, 1.8)
 ---
 
 ## 技術選型
-- Frontend：Vue
-- Vector DB：Supabase pgvector 或 Pinecone
-- Embedding：OpenAI Embedding API
-- LLM：Claude / GPT
-- 縮圖：YouTube 直抓 / og:image / IG 第三方
+
+細節與選型理由見 `docs/tech-decisions.md`。定案：
+
+- Frontend：Nuxt 3（Vue 3 + Pinia）
+- Vector DB：Supabase pgvector（不另接 Pinecone）
+- Embedding：OpenAI text-embedding-3-small（1536 維）
+- LLM：Claude via OpenRouter（摘要）
+- 付費：Gumroad
+- 縮圖：YouTube 直抓 / og:image / IG 透過 Apify
 
 ---
 
-## UI 畫面清單
+## UI 現況
 
-### 已完成（HTML demo）
-- [x] 知識地圖（節點連線）
-- [x] 首頁（Netflix 卡片式）
-- [x] 最近新增（標籤批次管理）
+> 早期的「HTML demo 畫面清單」已過期移除。實際畫面以 codebase 為準，元件清單見 CLAUDE.md「現有模組地圖」。
 
-### 待開發
-- [ ] Hero Section 今日回顧
-- [ ] 首頁卡片加入真實縮圖
-- [ ] 存入後即時回饋畫面
-- [ ] 搜尋結果頁
-- [ ] 單一內容詳細頁 + 關聯內容
-- [ ] 分享集合流程（選擇 + 設定公開）
-- [ ] Fork 接收頁（預覽 + 選擇）
-- [ ] 公開探索頁
+首頁已實作多檢視切換（`components/home/HomeViewSwitcher.vue`）：標籤檢視、語意搜尋檢視、地圖檢視、Chat。Item 詳情彈窗、Pending Review、分享 / 探索集合等隨 codebase 演進，本文件不再維護逐項畫面清單。

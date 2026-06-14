@@ -1,0 +1,66 @@
+#!/bin/sh
+#
+# Garner pre-commit hook
+#
+#   1. 新增模組（service / router / crud / composable / store / util / component）
+#      時，強制 CLAUDE.md「現有模組地圖」一起更新。
+#   2. apps/extension/ 有變更時，強制 apps/extension/package.json 版本號遞增
+#      （Chrome Web Store 要求每次上傳版本必須大於已發布版本）。
+#
+# 確定要跳過檢查時：git commit --no-verify
+#
+
+added_files=$(git diff --cached --name-only --diff-filter=A)
+staged_files=$(git diff --cached --name-only)
+
+fail=0
+
+# 讀 stdin 的 package.json 並印出 .version（解析失敗印空字串）
+read_version() {
+  node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).version||""))}catch(e){}})'
+}
+
+# ---------- 1. 現有模組地圖同步檢查 ----------
+map_regex='^apps/api/app/(services|routers|crud)/|^apps/web/(composables|stores|utils)/|^apps/web/components/'
+
+new_modules=$(printf '%s\n' "$added_files" \
+  | grep -E "$map_regex" \
+  | grep -E '\.(py|ts|vue)$' \
+  | grep -vE '__init__|__pycache__' || true)
+
+if [ -n "$new_modules" ]; then
+  if ! printf '%s\n' "$staged_files" | grep -qx 'CLAUDE.md'; then
+    echo "✖ 偵測到新增模組，但 CLAUDE.md 沒有一起更新："
+    printf '%s\n' "$new_modules" | sed 's/^/      /'
+    echo ""
+    echo "  → 請更新 CLAUDE.md 的「現有模組地圖」後再 commit。"
+    echo "    若改動涉及技術選型 / 產品架構，請一併更新 docs/tech-decisions.md、docs/architecture.md。"
+    echo "    （確定不需更新可用 git commit --no-verify 跳過）"
+    echo ""
+    fail=1
+  fi
+fi
+
+# ---------- 2. extension 升版號檢查 ----------
+pkg='apps/extension/package.json'
+
+ext_changes=$(printf '%s\n' "$staged_files" \
+  | grep -E '^apps/extension/' \
+  | grep -vx "$pkg" || true)
+
+if [ -n "$ext_changes" ]; then
+  staged_ver=$(git show ":$pkg" 2>/dev/null | read_version)
+  head_ver=$(git show "HEAD:$pkg" 2>/dev/null | read_version)
+
+  if [ -n "$head_ver" ] && [ "$staged_ver" = "$head_ver" ]; then
+    echo "✖ apps/extension/ 有變更，但 package.json 版本號沒有提升（仍為 $head_ver）。"
+    echo ""
+    echo "  → 請更新 apps/extension/package.json 的 version（遵循 semver，patch 改第三位）。"
+    echo "    Chrome Web Store 要求每次上傳的版本必須大於已發布版本。"
+    echo "    （確定不需升版可用 git commit --no-verify 跳過）"
+    echo ""
+    fail=1
+  fi
+fi
+
+exit $fail

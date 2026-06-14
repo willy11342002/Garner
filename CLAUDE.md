@@ -29,6 +29,69 @@ garner/
 
 ---
 
+## 開發新功能前（強制流程）
+
+> 本專案常發生「重造已有功能」與「沒按結構/分支開」。動工前務必先跑完以下檢查：
+
+1. **先查地圖**：在下方「現有模組地圖」找有沒有相近的 service / composable / store / component。有 → 擴充它，不要新建。
+2. **再 grep 兜底**：地圖可能過期。用關鍵字搜尋確認沒有重複實作（例：做搜尋前先 `grep -ri "search" apps/`）。
+3. **確認分支**：從 `develop` 開 `feature/*`，不要直接在 `main` / `develop` 上改（分支規範見 `CONTRIBUTING.md`）。
+4. **遵守分層**：API 走 `router → service → crud`；Web 業務邏輯放 composable / store，不要塞進 page 或 component。
+5. **樣式**：global CSS 放 `assets/css/`，`.vue` 內只允許 `scoped`。
+
+完成後若新增了模組，**請同步更新下方「現有模組地圖」**，否則下一次又會被誤導。
+
+---
+
+## 現有模組地圖（動工前先掃，避免重造輪子）
+
+> 以實際 codebase 為準（非理想範本）。一句話描述職責，找相近的就擴充。
+
+### API services（`apps/api/app/services/`）
+- `item_service` — Item 建立與處理流程主入口
+- `ai_service` — OpenRouter 摘要 + OpenAI embedding 產生
+- `search_service` — 語意 / 關鍵字搜尋
+- `chat_service` — Agentic chat 對話處理
+- `place_service` — 地點實體處理
+- `geocoding_service` — 地理編碼（地址 ↔ 座標）
+- `billing_service` — 訂閱 / 付費額度邏輯
+- `gumroad_service` — Gumroad 金流串接
+- `apify_service` — 外部內容抓取（Apify）
+
+### API routers（`apps/api/app/routers/`）
+`items` · `articles` · `tags` · `search` · `chat` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）
+
+### API crud（`apps/api/app/crud/`）
+`items` · `tags` · `users` · `chat` · `chunks` · `places` · `locations` · `notifications` · `personal_access_tokens`
+
+### Web composables（`apps/web/composables/`）
+- `useItems` / `useItemStore` — Item 資料與狀態
+- `useArticles` — 文章資料
+- `useSearch` — 搜尋邏輯
+- `useItemModal` — Item 詳情彈窗開關
+- `useChain` — 關聯鏈
+- `useGlobalMap` — 地圖狀態
+- `useI18nContent` — 內容多語
+- `useTheme` — 主題切換
+
+### Web stores（`apps/web/stores/`）
+`useAuthStore` · `useItemStore` · `useTagStore` · `useNotificationStore`
+
+### Web components（按功能分資料夾 `apps/web/components/`）
+- `chat/` — ChatArticleCard, SessionRow
+- `home/` — HomeChatFab, HomeChatPanel, HomeMapView, HomeSemanticSearchView, HomeTagView, HomeViewSwitcher
+- `item/` — ItemDetailModal
+- `layout/` — AppNav, GuestNav, AppFooter
+- `place/` — PlaceInfoPanel
+- `pricing/` — PricingPlans
+- 根目錄 — TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus
+
+### Web utils（`apps/web/utils/`）
+- `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）
+- `text` — 文字處理工具
+
+---
+
 ## Tech Stack
 
 | 層 | 技術 |
@@ -39,22 +102,22 @@ garner/
 | 認證 | Supabase Auth（Google / GitHub SSO）|
 | AI | OpenRouter → Claude（摘要）+ OpenAI text-embedding-3-small（1536d）|
 | Object Storage | Cloudflare R2（縮圖快取）|
-| 付費 | Lemon Squeezy |
+| 付費 | Gumroad |
 | Extension | Plasmo（Manifest V3）|
 | 部署 | Vercel（前端）/ Railway 或 Fly.io（後端）|
 | 監控 | Sentry + PostHog |
+
+> **延伸閱讀**（屬同步對象，改到相關內容時一併更新）：
+> - 技術選型理由、成本、部署 → `docs/tech-decisions.md`
+> - 產品定位、商業模式、整體架構 → `docs/architecture.md`
+> - 最新訂閱方案與價格（單一真相來源）→ `apps/web/pages/pricing.vue`
 
 ---
 
 ## 分支策略（Git Flow）
 
-```
-main          # 生產環境，只接受來自 release/* 的 merge
-develop       # 整合分支，feature 都從這裡開
-feature/*     # 新功能，從 develop 開，完成後 PR 回 develop
-release/*     # 準備上線，從 develop 開，穩定後 merge 進 main + develop
-hotfix/*      # 緊急修復，從 main 開，完成後 merge 進 main + develop
-```
+新功能一律從 `develop` 開 `feature/*`，**不要直接在 `main` / `develop` 上改**。
+完整分支規範、命名範例、Commit message 格式為單一真相來源，見 `CONTRIBUTING.md`。
 
 ---
 
@@ -82,11 +145,11 @@ apps/api/
 │   │   ├── tags.py
 │   │   ├── search.py
 │   │   └── auth.py
-│   ├── services/            # 業務邏輯層：所有核心運算放這裡
+│   ├── services/            # 業務邏輯層：所有核心運算放這裡（完整清單見上方「現有模組地圖」）
 │   │   ├── item_service.py
 │   │   ├── ai_service.py    # OpenRouter 呼叫（摘要、embedding）
-│   │   ├── thumbnail_service.py
-│   │   └── search_service.py
+│   │   ├── search_service.py
+│   │   └── ...              # chat / place / geocoding / billing / gumroad / apify
 │   ├── crud/                # 資料庫操作層：只做 DB 讀寫，不放業務邏輯
 │   │   ├── items.py
 │   │   ├── tags.py
@@ -154,11 +217,13 @@ apps/web/
 │   ├── app/             # 登入後的 SPA 區域（ssr: false）
 │   │   ├── index.vue
 │   │   └── archive.vue
-├── components/          # 可重用元件
-│   ├── base/            # 基礎 UI 元件（BaseButton、BaseCard 等）
-│   ├── item/            # Item 相關元件（ItemCard、ItemList 等）
-│   ├── tag/             # Tag 相關元件
-│   └── layout/          # Layout 元件（Sidebar、Topbar 等）
+├── components/          # 可重用元件（完整清單見上方「現有模組地圖」）
+│   ├── home/            # 首頁各檢視（Map / SemanticSearch / Tag / Chat 等）
+│   ├── item/            # Item 相關元件（ItemDetailModal 等）
+│   ├── chat/            # Chat 相關元件
+│   ├── place/           # 地點相關元件
+│   ├── pricing/         # 付費方案元件
+│   └── layout/          # Layout 元件（AppNav、AppFooter 等）
 ├── composables/         # 可重用邏輯（useItems、useTags、useSearch）
 ├── stores/              # Pinia stores
 │   ├── useItemStore.ts
@@ -196,7 +261,7 @@ routeRules: {
 - **pages/** → 只做路由進入點，業務邏輯抽到 composables 或 store。
 - **composables/** → 可重用的有狀態邏輯。命名：`use` 前綴（`useItems`、`useSearch`）。
 - **stores/** → 跨元件共享狀態。命名：`use` 前綴（`useItemStore`）。
-- **components/** → 按功能分資料夾，base/ 放原子元件，其他放業務元件。
+- **components/** → 按功能分資料夾（`home/`、`item/`、`chat/`、`place/`、`pricing/`、`layout/`），跨功能共用的原子元件放根目錄。
 - **utils/** → 純函式，不依賴 Vue 響應式，可直接 import。
 
 ### CSS 規則

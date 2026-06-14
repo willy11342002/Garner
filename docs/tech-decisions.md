@@ -109,12 +109,12 @@ async def process_item(item_id, url):
 
 ---
 
-## 訂閱付費：Lemon Squeezy
+## 訂閱付費：Gumroad
 
 - Merchant of Record：代為處理全球 VAT / 稅務，個人開發者免去稅務申報負擔
-- 無月費，每筆交易抽 5% + $0.50
-- 沒有用戶付費就沒有成本
-- Webhook 整合訂閱狀態同步到 Supabase
+- 無月費，按筆交易抽成；沒有用戶付費就沒有成本
+- Webhook 整合訂閱狀態同步到後端（見 `gumroad_service.py` / `billing_service.py`）
+- **最新方案與價格以前端為單一真相來源**：`apps/web/pages/pricing.vue` → `components/pricing/PricingPlans.vue`
 
 ---
 
@@ -182,7 +182,7 @@ https://img.youtube.com/vi/{VIDEO_ID}/maxresdefault.jpg
 | Supabase | 500MB / 50K MAU | 超量或需要更多功能 |
 | Vercel | 100GB 流量 | 商業用途需升級 |
 | Railway | $5 免費額度/月 | 用完後按量計費 |
-| Lemon Squeezy | 無月費 | 每筆交易 5% + $0.50 |
+| Gumroad | 無月費 | 每筆交易抽成 |
 | OpenRouter | $19 已有額度 | 用完後按量充值（+5.5% 手續費）|
 
 **唯一從第一天就計費的是 AI API 呼叫。** 前 100 個用戶預估每月 $3–10 美金。

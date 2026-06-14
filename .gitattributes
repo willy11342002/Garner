@@ -1,0 +1,2 @@
+# Hook scripts must stay LF so Git-for-Windows' sh can execute them
+.githooks/** text eol=lf
