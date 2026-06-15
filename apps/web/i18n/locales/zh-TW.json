@@ -133,6 +133,10 @@
     "tool_call": "搜尋知識庫",
     "tool_result": "找到 {count} 筆相關內容",
     "sources": "{count} 筆來源",
+    "group_today": "今天",
+    "group_week": "本週",
+    "group_earlier": "更早",
+    "quota_label": "剩餘額度",
     "quota_full": "今日對話額度已用完，升級 Pro 可獲得更多。"
   },
   "security": {

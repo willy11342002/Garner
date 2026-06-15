@@ -3,17 +3,26 @@
     <!-- 左側：session 列表 -->
     <aside class="chat-list" :class="{ 'chat-list--hidden-mobile': mobileView === 'chat' }">
       <div class="chat-list__head">
-        <span v-if="quota?.chat" class="chat-list__quota" :class="{ 'chat-list__quota--warn': chatQuotaFull }">
-          {{ chatQuotaRemaining }}<template v-if="quota.chat.limit !== null"> / {{ quota.chat.limit }}</template>
-        </span>
+        <div v-if="quota?.chat" class="chat-quota" :class="{ 'chat-quota--warn': chatQuotaFull }">
+          <div class="chat-quota__top">
+            <span class="chat-quota__nums">
+              <span class="chat-quota__remain">{{ chatQuotaRemaining }}</span><template v-if="quota.chat.limit !== null"> <span class="chat-quota__limit">/ {{ quota.chat.limit }}</span></template>
+            </span>
+            <span class="chat-quota__label">{{ t('chat.quota_label') }}</span>
+          </div>
+          <div v-if="quota.chat.limit !== null" class="chat-quota__bar">
+            <div class="chat-quota__fill" :style="{ width: chatQuotaPct + '%' }"></div>
+          </div>
+        </div>
         <button class="chat-icon-btn" :title="t('chat.new')" @click="newSession">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
       <div class="chat-list__body">
-        <div v-if="unfoldered.length" class="session-group">
+        <div v-for="g in timeGroups" :key="g.key" class="session-group">
+          <div class="time-label">{{ g.label }}</div>
           <ChatSessionRow
-            v-for="s in unfoldered"
+            v-for="s in g.sessions"
             :key="s.id"
             :session="s"
             :active="activeSessionId === s.id"
@@ -378,6 +387,27 @@ const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article:
 // ── Computed ──────────────────────────────────────────────────────────────────
 const unfoldered = computed(() => sessions.value.filter(s => !s.folder_id))
 const sessionsInFolder = (folderId: string) => sessions.value.filter(s => s.folder_id === folderId)
+
+// 依 updated_at 把未分類對話切成「今天 / 本週 / 更早」三段
+const timeGroups = computed(() => {
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startWeek = startToday - 6 * 86400000 // 含今天往前 7 天
+  const today: ChatSession[] = []
+  const week: ChatSession[] = []
+  const earlier: ChatSession[] = []
+  for (const s of unfoldered.value) {
+    const ts = new Date(s.updated_at || s.created_at).getTime()
+    if (ts >= startToday) today.push(s)
+    else if (ts >= startWeek) week.push(s)
+    else earlier.push(s)
+  }
+  return [
+    { key: 'today', label: t('chat.group_today'), sessions: today },
+    { key: 'week', label: t('chat.group_week'), sessions: week },
+    { key: 'earlier', label: t('chat.group_earlier'), sessions: earlier },
+  ].filter(g => g.sessions.length)
+})
 const chatQuotaFull = computed(() => {
   const q = quota.value?.chat
   return !!q && q.limit !== null && q.used >= q.limit
@@ -386,6 +416,11 @@ const chatQuotaRemaining = computed(() => {
   const q = quota.value?.chat
   if (!q || q.limit === null) return '∞'
   return Math.max(0, q.limit - q.used)
+})
+const chatQuotaPct = computed(() => {
+  const q = quota.value?.chat
+  if (!q || q.limit === null || q.limit === 0) return 100
+  return Math.max(0, Math.min(100, ((q.limit - q.used) / q.limit) * 100))
 })
 
 // ── Init ──────────────────────────────────────────────────────────────────────

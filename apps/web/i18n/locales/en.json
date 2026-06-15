@@ -133,6 +133,10 @@
     "tool_call": "Searching knowledge base",
     "tool_result": "Found {count} relevant items",
     "sources": "{count} sources",
+    "group_today": "Today",
+    "group_week": "This week",
+    "group_earlier": "Earlier",
+    "quota_label": "Remaining",
     "quota_full": "Daily chat limit reached. Upgrade to Pro for more."
   },
   "security": {

@@ -80,11 +80,11 @@ function cancelRename() {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: 8px;
   cursor: pointer;
   transition: background .1s ease;
-  min-height: 36px;
+  height: 36px;
 }
 .session-row:hover { background: var(--surface2); }
 .session-row--active { background: var(--accent-dim); }

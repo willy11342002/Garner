@@ -3,11 +3,15 @@
     <LayoutAppNav v-if="isLoggedIn" />
     <LayoutGuestNav v-else />
     <slot />
-    <LayoutAppFooter :show-pricing="!isLoggedIn" />
+    <LayoutAppFooter v-if="showFooter" :show-pricing="!isLoggedIn" />
   </div>
 </template>
 
 <script setup lang="ts">
 const supabaseUser = useSupabaseUser()
 const isLoggedIn = computed(() => !!supabaseUser.value)
+
+const route = useRoute()
+// chat 頁面為全高版面，不顯示 footer
+const showFooter = computed(() => route.path !== '/app/chat')
 </script>
