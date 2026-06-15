@@ -17,7 +17,7 @@
 
         <!-- 通知鈴鐺 -->
         <div class="nav__notif" ref="notifEl">
-          <button class="nav__notif-btn" @click.stop="notifOpen = !notifOpen; if (notifOpen) menuOpen = false">
+          <button class="nav__notif-btn" @click.stop="toggleNotif">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
@@ -237,6 +237,15 @@ const apiFetch = useApiFetch()
 
 // 通知
 const notifOpen = ref(false)
+
+// 開啟通知面板即全部標記已讀（badge 歸零），歷史仍保留在列表
+function toggleNotif() {
+  notifOpen.value = !notifOpen.value
+  if (notifOpen.value) {
+    menuOpen.value = false
+    if (notifStore.unreadCount > 0) notifStore.markAllRead()
+  }
+}
 
 function formatNotifTime(isoStr: string) {
   const diff = Date.now() - new Date(isoStr).getTime()

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import events
+from app.core.database import AsyncSessionLocal
 from app.core.pipeline import StageContext, stage
 from app.crud import chunks as crud_chunks
 from app.crud import locations as crud_locations
@@ -213,7 +214,7 @@ async def _run_pipeline(
 
     # Stage 1: fetch metadata + raw_content
     try:
-        info, raw_content = await _stage_fetch(user_item_id, url, max_video_sec)
+        _info, raw_content = await _stage_fetch(user_item_id, url, max_video_sec)
     except Exception:
         await _fail(db, user_id, user_item_id, url)
         return
@@ -225,19 +226,11 @@ async def _run_pipeline(
         await _fail(db, user_id, user_item_id, url)
         return
 
-    # Content is secured — notify the user now (analysis continues in the
-    # background). The modal shows per-stage progress when opened. Best-effort.
-    try:
-        await crud_notifications.create(
-            db,
-            user_id=user_id,
-            type=NotificationType.item_processed,
-            title=info.title or url,
-            item_id=user_item_id,
-        )
-        await db.commit()
-    except Exception:
-        logger.warning("saved-notification failed for item %s", user_item_id, exc_info=True)
+    # The "saved" notification is sent later — after the note stage commits the
+    # AI-generated title — so it shows the knowledge title rather than the raw
+    # URL. It fires in parallel with the embedding stage (see _note_and_embedding)
+    # so it doesn't wait for embedding to finish. The modal shows per-stage
+    # progress live via events regardless.
 
     # note (+chunk embed +main embed) and landmarks run concurrently, each in
     # its own session. They write disjoint columns/tables, so this is safe.
@@ -245,7 +238,7 @@ async def _run_pipeline(
 
     async def _note_branch():
         nonlocal note_exc
-        note_exc = await _note_and_embedding(user_item_id, raw_content, user_id)
+        note_exc = await _note_and_embedding(user_item_id, raw_content, user_id, url)
 
     async def _landmarks_branch():
         # ai_locations come from raw_content directly, so this is independent
@@ -263,7 +256,7 @@ async def _run_pipeline(
 
 
 async def _note_and_embedding(
-    user_item_id: UUID, raw_content: str, user_id: UUID
+    user_item_id: UUID, raw_content: str, user_id: UUID, url: str
 ) -> Exception | None:
     """Run the note stage and the embedding stage for an item with known
     raw_content. The chunk embedding (pure network, no DB) is computed in
@@ -296,12 +289,40 @@ async def _note_and_embedding(
     if note_exc is not None:
         return note_exc
 
-    try:
-        await _stage_embedding(user_item_id, analysis, chunk_texts, chunk_embeddings)
-    except Exception:
-        pass  # embedding failure doesn't abort — item is already readable
+    # The note stage has committed the AI-generated title, so the "saved"
+    # notification can now show it. Fire the notification in parallel with the
+    # embedding stage — it only needs the title (already saved), so it doesn't
+    # wait for embedding to finish.
+    async def _embed():
+        try:
+            await _stage_embedding(user_item_id, analysis, chunk_texts, chunk_embeddings)
+        except Exception:
+            pass  # embedding failure doesn't abort — item is already readable
+
+    await asyncio.gather(_notify_saved(user_id, user_item_id, url), _embed())
 
     return None
+
+
+async def _notify_saved(user_id: UUID, user_item_id: UUID, url: str) -> None:
+    """Send the "saved" notification using the AI-generated title (set by the
+    note stage). Opens its own session so it can run alongside the embedding
+    stage. Best-effort — a notification failure never aborts processing."""
+    try:
+        async with AsyncSessionLocal() as db:
+            item = await db.get(UserItem, user_item_id)
+            if item is None:
+                return
+            await crud_notifications.create(
+                db,
+                user_id=user_id,
+                type=NotificationType.item_processed,
+                title=item.title or url,
+                item_id=user_item_id,
+            )
+            await db.commit()
+    except Exception:
+        logger.warning("saved-notification failed for item %s", user_item_id, exc_info=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

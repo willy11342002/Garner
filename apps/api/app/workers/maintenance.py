@@ -96,16 +96,36 @@ async def soft_delete_unparsed_items(db: AsyncSession, older_than_hours: int = 2
     return result.rowcount
 
 
+async def delete_old_notifications(db: AsyncSession, older_than_days: int = 3) -> int:
+    """硬刪除超過指定天數的通知。通知是即時動作確認，無長期保存價值，
+    故不走軟刪除（軟刪除規範僅針對 user_items）。"""
+    from app.models.notification import Notification
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+    result = await db.execute(
+        delete(Notification)
+        .where(Notification.created_at < cutoff)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount
+
+
 async def run_maintenance() -> dict:
-    """完整執行一次維護：清理解析失敗 item → 重算 count → 清理孤兒。"""
+    """完整執行一次維護：清理解析失敗 item → 重算 count → 清理孤兒 → 清理舊通知。"""
     async with AsyncSessionLocal() as db:
         async with db.begin():
             unparsed_deleted = await soft_delete_unparsed_items(db)
             updated = await recalculate_tag_counts(db)
             deleted = await delete_orphan_tags(db)
+            notifications_deleted = await delete_old_notifications(db)
 
     logger.info(
-        "maintenance done: unparsed_deleted=%d recalculated=%d orphans_deleted=%d",
-        unparsed_deleted, updated, deleted,
+        "maintenance done: unparsed_deleted=%d recalculated=%d orphans_deleted=%d notifications_deleted=%d",
+        unparsed_deleted, updated, deleted, notifications_deleted,
     )
-    return {"recalculated": updated, "orphans_deleted": deleted, "unparsed_deleted": unparsed_deleted}
+    return {
+        "recalculated": updated,
+        "orphans_deleted": deleted,
+        "unparsed_deleted": unparsed_deleted,
+        "notifications_deleted": notifications_deleted,
+    }
