@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, pat, quota, search, tags
+from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, pat, quota, reports, search, tags
 
 import logging
 import sys
@@ -86,6 +86,7 @@ app.include_router(locations.router, tags=["locations"])
 app.include_router(tags.router, prefix="/tags", tags=["tags"])
 app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(reports.router, prefix="/reports", tags=["reports"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(quota.router, prefix="/quota", tags=["quota"])
 app.include_router(billing.router, prefix="/billing", tags=["billing"])

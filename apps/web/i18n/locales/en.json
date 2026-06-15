@@ -81,6 +81,7 @@
   },
   "nav": {
     "chat": "Chat",
+    "reports": "Reports",
     "archive": "Archive",
     "add": "Add",
     "collections": "My Collections",
@@ -97,6 +98,26 @@
     "searchEmpty": "No results found",
     "toggleTheme": "Toggle theme",
     "toggleLanguage": "Toggle language"
+  },
+  "reports": {
+    "title": "AI Reports",
+    "empty": "No AI reports yet. Ask the AI to compile one in chat and it'll show up here.",
+    "sources": "Compiled from {n} saved items",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "revise": "Ask AI to revise",
+    "revisePlaceholder": "How should it change? e.g. \"make it shorter\"",
+    "regenerate": "Regenerate",
+    "regenerateConfirm": "Regenerating overwrites the current content (including your edits). Continue?",
+    "copy": "Copy Markdown",
+    "copied": "Copied",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this report?",
+    "selectHint": "Select a report on the left to read",
+    "saving": "Working…",
+    "lastEditedAi": "Last revised by AI",
+    "lastEditedUser": "Edited by you"
   },
   "fab": {
     "title": "AI Chat",

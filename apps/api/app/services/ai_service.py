@@ -206,6 +206,54 @@ async def analyze_content(content: str, candidate_tags: list[str] | None = None)
     }
 
 
+# ── 報告（AI 產出層）生成 / 修改 ──────────────────────────────────────────────
+
+_REVISE_PROMPT = """\
+你是用戶的個人知識庫寫作助理。下面有一篇現有文章與用戶的修改指示。
+請依指示修改文章，保留與指示無關的內容，輸出「完整的」修改後 markdown 全文。
+只輸出 markdown 內文，不要任何說明、不要用 ``` 包起來。
+
+【修改指示】
+{instruction}
+
+【現有文章】
+{content}
+"""
+
+_REPORT_PROMPT = """\
+你是用戶的個人知識庫寫作助理。根據以下用戶存過的內容，產出一篇結構清楚、實用的繁體中文文章（報告／規劃／指南／清單皆可）。
+沿用這個標題方向：{title}
+
+只回傳 JSON 物件，不要 markdown fence，格式：
+{{"title": "標題", "body_md": "完整 markdown 內文", "summary": "50 字以內摘要"}}
+
+【用戶內容】
+{sources}
+"""
+
+
+async def revise_text(content: str, instruction: str) -> str:
+    """依指示修改一段 markdown，回傳修改後全文。"""
+    prompt = _REVISE_PROMPT.format(instruction=instruction, content=(content or "")[:32000])
+    return await _llm_call(prompt)
+
+
+async def generate_report_body(title: str, source_texts: list[str]) -> dict:
+    """從來源內容重新生成報告。回傳 {title, body_md, summary}。"""
+    sources = "\n\n---\n\n".join(source_texts)[:32000]
+    prompt = _REPORT_PROMPT.format(title=title, sources=sources)
+    raw = await _llm_call(prompt)
+    try:
+        data = _parse_json(raw)
+    except Exception:
+        return {"title": title, "body_md": raw, "summary": None}
+    return {
+        "title": data.get("title") or title,
+        "body_md": data.get("body_md") or "",
+        "summary": data.get("summary"),
+    }
+
+
 _FOCUS_SYSTEM = """\
 你是用戶的個人知識庫助理。根據以下用戶存過的內容，用繁體中文回答用戶的問題。
 回答要具體、有洞察力，並直接引用或連結到相關內容。
@@ -499,6 +547,7 @@ _AGENTIC_SYSTEM = """\
 - 需要查知識庫時主動呼叫 search，可以多次呼叫、換角度搜尋
 - 詢問「來源」「出處」「哪篇」時，一定要呼叫 search，不能憑記憶回答
 - 如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造
+- 用戶要求「生成／產出報告、規劃、指南、清單」時：若已有可用的知識內容（使用者選定的知識節點，或 search 結果），直接用那些內容呼叫 create_report，不要反問主題；只有在完全沒有任何可用內容時才詢問
 - 如果問題超出知識庫範圍（閒聊、一般常識、數學計算等），簡短說明你只能幫助探索知識庫
 - 用繁體中文回答，自然簡潔，不過度列舉
 - 只輸出你自己的回覆，不要模擬用戶的後續回應
@@ -533,16 +582,31 @@ _AGENTIC_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "create_article",
-            "description": "根據知識庫內容或對話脈絡，建立一篇 AI 草稿文章、規劃、指南或清單。只在用戶明確要求產出內容時呼叫。",
+            "name": "create_report",
+            "description": "根據知識庫內容或對話脈絡，產出一份 AI 報告（規劃／指南／清單／彙整）。只在用戶明確要求產出內容時呼叫。產出會存進「AI 報告」，不會進入知識庫。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "文章標題（繁體中文，簡潔有力）"},
+                    "title": {"type": "string", "description": "報告標題（繁體中文，簡潔有力）"},
                     "content": {"type": "string", "description": "完整內容，使用 markdown 格式"},
                     "summary": {"type": "string", "description": "50 字以內的內容摘要"},
                 },
                 "required": ["title", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "revise_report",
+            "description": "修改一份既有的 AI 報告。只在用戶要求調整剛產出的報告時呼叫；report_id 用先前 create_report 回傳的 id。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "report_id": {"type": "string", "description": "要修改的報告 id（先前 create_report 回傳的 id）"},
+                    "instruction": {"type": "string", "description": "修改指示，例如「改短一點」「語氣正式些」"},
+                },
+                "required": ["report_id", "instruction"],
             },
         },
     },
@@ -558,6 +622,8 @@ async def agentic_chat_stream(
     history: list[dict],
     context_summary: str | None,
     execute_tool,  # async callable(tool_name, tool_args) -> dict
+    preloaded_sources: list[dict] | None = None,
+    preloaded_chunks: list[dict] | None = None,
 ):
     """
     Native tool-calling agentic loop. Yields SSE event strings.
@@ -565,7 +631,8 @@ async def agentic_chat_stream(
     Emits: thinking | tool_call | tool_result | sources | cited_sources | delta | done
     execute_tool(name, args) must return:
       search       → {"items": [...ChatSource dicts...], "chunks": [...chunk dicts...]}
-      create_article → {"draft": {...}, "ok": bool}
+      create_report → {"draft": {...}, "ok": bool}
+      revise_report → {"ok": bool, "report_id": str}
     """
     import json as _json
 
@@ -579,40 +646,40 @@ async def agentic_chat_stream(
         messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": user_content})
 
-    all_sources: list[dict] = []
-    all_chunks: list[dict] = []
+    # Seed with preloaded context (使用者選定的知識節點)，讓 LLM 第一輪就看得到內容
+    all_sources: list[dict] = list(preloaded_sources or [])
+    all_chunks: list[dict] = list(preloaded_chunks or [])
     process_steps: list[dict] = []
-    seen_source_ids: set[str] = set()
+    seen_source_ids: set[str] = {s["id"] for s in all_sources if s.get("id")}
     accumulated_text = ""
+
+    def _fmt_ctx(c: dict) -> str:
+        parts = [f"標題：{c.get('title') or '(無標題)'}"]
+        if c.get("tags"):
+            parts.append(f"標籤：{', '.join(c['tags'])}")
+        if c.get("locations"):
+            parts.append(f"地點：{', '.join(c['locations'])}")
+        parts.append(f"內容：{c.get('summary') or c.get('text') or '(無內容)'}")
+        return "\n".join(parts)
 
     MAX_ROUNDS = 3
     for _round in range(MAX_ROUNDS):
+        # 每輪重建 system；有檢索到內容就附在 system 裡。
+        # 絕不更動 messages 的 user/assistant/tool 序列，否則多輪 tool calling 會重複觸發工具。
+        sys_content = system
+        if all_chunks or all_sources:
+            ctx_items = all_chunks if all_chunks else all_sources
+            context_block = "【已找到的知識庫內容】\n" + "\n\n".join(
+                f"[{i+1}] " + _fmt_ctx(c) for i, c in enumerate(ctx_items)
+            )
+            sys_content = system + "\n\n" + context_block
+
         request_body: dict = {
             "model": _llm(),
             "stream": True,
-            "messages": messages,
+            "messages": [{"role": "system", "content": sys_content}] + messages,
             "tools": _AGENTIC_TOOLS,
         }
-        # Inject retrieved context as system note before final reply
-        if all_chunks or all_sources:
-            def _fmt(c: dict) -> str:
-                parts = [f"標題：{c.get('title') or '(無標題)'}"]
-                if c.get("tags"):
-                    parts.append(f"標籤：{', '.join(c['tags'])}")
-                if c.get("locations"):
-                    parts.append(f"地點：{', '.join(c['locations'])}")
-                parts.append(f"內容：{c.get('summary') or c.get('text') or '(無內容)'}")
-                return "\n".join(parts)
-
-            ctx_items = all_chunks if all_chunks else all_sources
-            context_block = "【已找到的知識庫內容】\n" + "\n\n".join(
-                f"[{i+1}] " + _fmt(c) for i, c in enumerate(ctx_items)
-            )
-            # Inject as the last user turn addendum
-            injected_messages = messages[:-1] + [
-                {"role": "user", "content": context_block + "\n\n" + user_content}
-            ]
-            request_body["messages"] = injected_messages
 
         accumulated_text = ""
         tool_calls_raw: dict[int, dict] = {}  # index → {id, name, arguments_str}
@@ -702,15 +769,20 @@ async def agentic_chat_stream(
                 process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)
 
-            elif name == "create_article":
+            elif name == "create_report":
                 draft = result.get("draft")
                 if draft:
-                    yield _sse("article_draft", draft)
-                    tool_result_data = {"tool": name, "created": True, "article_id": draft["id"], "title": draft["title"]}
-                    process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data, "articleDraft": draft})
+                    yield _sse("report_draft", draft)
+                    tool_result_data = {"tool": name, "created": True, "report_id": draft["id"], "title": draft["title"]}
+                    process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data, "reportDraft": draft})
                 else:
                     tool_result_data = {"tool": name, "created": False}
                     process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            elif name == "revise_report":
+                tool_result_data = {"tool": name, "revised": bool(result.get("ok")), "report_id": result.get("report_id")}
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)
 
             # Return tool result to model

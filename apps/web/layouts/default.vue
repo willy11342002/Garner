@@ -12,6 +12,6 @@ const supabaseUser = useSupabaseUser()
 const isLoggedIn = computed(() => !!supabaseUser.value)
 
 const route = useRoute()
-// chat 頁面為全高版面，不顯示 footer
-const showFooter = computed(() => route.path !== '/app/chat')
+// chat / reports 頁面為全高版面，不顯示 footer
+const showFooter = computed(() => route.path !== '/app/chat' && route.path !== '/app/reports')
 </script>

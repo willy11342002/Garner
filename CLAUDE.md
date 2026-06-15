@@ -52,6 +52,7 @@ garner/
 - `ai_service` — OpenRouter 摘要 + OpenAI embedding 產生
 - `search_service` — 語意 / 關鍵字搜尋
 - `chat_service` — Agentic chat 對話處理
+- `report_service` — AI 產出層（報告）：生成 / revise / regenerate，與知識分離、不進語料
 - `place_service` — 地點實體處理
 - `geocoding_service` — 地理編碼（地址 ↔ 座標）
 - `billing_service` — 訂閱 / 付費額度邏輯
@@ -59,14 +60,15 @@ garner/
 - `apify_service` — 外部內容抓取（Apify）
 
 ### API routers（`apps/api/app/routers/`）
-`items` · `articles` · `tags` · `search` · `chat` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）
+`items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）
 
 ### API crud（`apps/api/app/crud/`）
-`items` · `tags` · `users` · `chat` · `chunks` · `places` · `locations` · `notifications` · `personal_access_tokens`
+`items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `personal_access_tokens`
 
 ### Web composables（`apps/web/composables/`）
 - `useItems` / `useItemStore` — Item 資料與狀態
-- `useArticles` — 文章資料
+- `useArticles` — 文章（知識）資料：手動新增 / 編輯，存在 user_items
+- `useReports` — AI 報告（產出層）資料：列表 / 編輯 / revise / regenerate / 刪除
 - `useSearch` — 搜尋邏輯
 - `useItemModal` — Item 詳情彈窗開關
 - `useChain` — 關聯鏈
@@ -78,7 +80,7 @@ garner/
 `useAuthStore` · `useItemStore` · `useTagStore` · `useNotificationStore`
 
 ### Web components（按功能分資料夾 `apps/web/components/`）
-- `chat/` — ChatArticleCard, SessionRow, FolderRow（資料夾列：展開/行內改名/拖曳 drop target）
+- `chat/` — ChatReportCard, SessionRow, FolderRow（資料夾列：展開/行內改名/拖曳 drop target）
 - `home/` — HomeChatFab, HomeChatPanel, HomeMapView, HomeSemanticSearchView, HomeTagView, HomeViewSwitcher
 - `item/` — ItemDetailModal
 - `layout/` — AppNav, GuestNav, AppFooter
@@ -320,3 +322,4 @@ apps/extension/
 - Embedding 維度：1536（OpenAI text-embedding-3-small），不得更改，改了要 re-embed 全部資料
 - 軟刪除：`deleted_at` 欄位 + 排程硬刪除，禁止直接 hard delete
 - OpenRouter 401：捕捉並回傳 503（service unavailable），不要讓前端誤判為 auth 錯誤
+- 知識 vs AI 產出分層：知識（`user_items`，含手寫筆記 `source_type='note'`）進語料、可搜尋；AI 報告（`reports` 表）是產出層，**不 embed、不進語料、無 promote 回知識**。要把報告變知識只能手動新增文章重打（人的判斷是知識的唯一入口）。報告刪除採**直接硬刪除**（產出可重生，不走全站的軟刪除規範）。

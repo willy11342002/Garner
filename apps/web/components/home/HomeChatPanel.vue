@@ -63,7 +63,8 @@
                     </div>
                     <div v-if="step.toolResult" class="process-body__tool-result">
                       <span class="process-body__step-icon">✓</span>
-                      <span>找到 {{ step.toolResult.count }} 筆</span>
+                      <span v-if="step.toolCall.name === 'create_report'">報告已建立：{{ step.toolResult.title }}</span>
+                      <span v-else>找到 {{ step.toolResult.count }} 筆</span>
                       <button
                         v-if="step.toolResult?.titles?.length"
                         class="process-body__step-toggle"
@@ -111,7 +112,8 @@
                 </div>
                 <div v-if="step.toolResult" class="process-body__tool-result">
                   <span class="process-body__step-icon">✓</span>
-                  <span>找到 {{ step.toolResult.count }} 筆</span>
+                  <span v-if="step.toolCall.name === 'create_report'">報告已建立：{{ step.toolResult.title }}</span>
+                  <span v-else>找到 {{ step.toolResult.count }} 筆</span>
                   <button
                     v-if="step.toolResult?.titles?.length"
                     class="process-body__step-toggle"
@@ -127,7 +129,7 @@
                 </Transition>
                 <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                   <span class="process-body__step-icon">⋯</span>
-                  <span>{{ t('fab.searching') }}</span>
+                  <span>{{ step.toolCall.name === 'create_report' ? '生成中' : t('fab.searching') }}</span>
                 </div>
               </div>
             </div>
@@ -246,7 +248,7 @@ function toggleStep(msgId: string, stepIdx: number) {
 }
 const openSources = ref<Set<string>>(new Set())
 
-type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }
+type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[]; title?: string } | null }
 type ProcessLog = { thinking: string; steps: ProcessStep[]; sources: ChatSource[] }
 const liveProcess = ref<ProcessLog>({ thinking: '', steps: [], sources: [] })
 const processMap = ref<Record<string, ProcessLog>>({})
@@ -357,7 +359,7 @@ async function send() {
           await nextTick(); scrollBottom()
         } else if (event === 'tool_result') {
           const steps = liveProcess.value.steps
-          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
+          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles, title: data.title }
           await nextTick(); scrollBottom()
         } else if (event === 'sources') {
           liveProcess.value.sources = data as ChatSource[]

@@ -1,6 +1,6 @@
 <template>
-  <div class="chat-article-card">
-    <div class="chat-article-card__icon">
+  <div class="chat-report-card">
+    <div class="chat-report-card__icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
@@ -8,32 +8,29 @@
         <line x1="16" y1="17" x2="8" y2="17"/>
       </svg>
     </div>
-    <div class="chat-article-card__body">
-      <span class="chat-article-card__eyebrow">草稿文章</span>
-      <span class="chat-article-card__title">{{ draft.title }}</span>
-      <p class="chat-article-card__summary">{{ draft.notes_md?.slice(0, 120) }}</p>
+    <div class="chat-report-card__body">
+      <span class="chat-report-card__eyebrow">AI 報告</span>
+      <span class="chat-report-card__title">{{ draft.title }}</span>
+      <p v-if="draft.summary" class="chat-report-card__summary">{{ draft.summary }}</p>
     </div>
-    <div class="chat-article-card__actions">
-      <button class="btn chat-article-card__btn" @click="$emit('preview', draft.id)">預覽</button>
-      <button class="btn btn--accent chat-article-card__btn" @click="openInEditor">在編輯器開啟</button>
+    <div class="chat-report-card__actions">
+      <button class="btn btn--accent chat-report-card__btn" @click="openReport">開啟報告</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ArticleDraft } from '~/types/api'
+import type { ReportDraft } from '~/types/api'
 
-const props = defineProps<{ draft: ArticleDraft }>()
-defineEmits<{ preview: [id: string] }>()
+const props = defineProps<{ draft: ReportDraft }>()
 
-function openInEditor() {
-  const { openInEdit } = useItemModal()
-  openInEdit(props.draft.id)
+function openReport() {
+  navigateTo(`/app/reports?open=${props.draft.id}`)
 }
 </script>
 
-<style>
-.chat-article-card {
+<style scoped>
+.chat-report-card {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -48,10 +45,10 @@ function openInEditor() {
 }
 
 @media (max-width: 768px) {
-  .chat-article-card { width: 92%; max-width: 92%; }
+  .chat-report-card { width: 92%; max-width: 92%; }
 }
 
-.chat-article-card__icon {
+.chat-report-card__icon {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
@@ -63,9 +60,9 @@ function openInEditor() {
   justify-content: center;
   color: var(--accent);
 }
-.chat-article-card__icon svg { width: 16px; height: 16px; }
+.chat-report-card__icon svg { width: 16px; height: 16px; }
 
-.chat-article-card__body {
+.chat-report-card__body {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -73,7 +70,7 @@ function openInEditor() {
   gap: 3px;
 }
 
-.chat-article-card__eyebrow {
+.chat-report-card__eyebrow {
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--accent);
@@ -81,7 +78,7 @@ function openInEditor() {
   text-transform: uppercase;
 }
 
-.chat-article-card__title {
+.chat-report-card__title {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--text);
@@ -90,7 +87,7 @@ function openInEditor() {
   text-overflow: ellipsis;
 }
 
-.chat-article-card__summary {
+.chat-report-card__summary {
   font-size: 12px;
   color: var(--text-dim);
   line-height: 1.5;
@@ -101,14 +98,14 @@ function openInEditor() {
   overflow: hidden;
 }
 
-.chat-article-card__actions {
+.chat-report-card__actions {
   display: flex;
   flex-direction: column;
   gap: 6px;
   flex-shrink: 0;
 }
 
-.chat-article-card__btn {
+.chat-report-card__btn {
   font-size: 12px;
   padding: 5px 12px;
   height: auto;

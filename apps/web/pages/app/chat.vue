@@ -177,14 +177,14 @@
                       </div>
                       <div v-if="step.toolResult" class="process-body__tool-result">
                         <span class="process-body__step-icon">✓</span>
-                        <template v-if="step.toolCall.name === 'create_article'">
-                          <span>文章已建立：{{ step.toolResult.title }}</span>
+                        <template v-if="step.toolCall.name === 'create_report'">
+                          <span>報告已建立：{{ step.toolResult.title }}</span>
                         </template>
                         <template v-else>
                           <span>找到 {{ step.toolResult.count }} 筆</span>
                         </template>
                         <button
-                          v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'"
+                          v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
                           class="process-body__step-toggle"
                           @click="toggleStep(msg.id, i)"
                         >
@@ -192,7 +192,7 @@
                         </button>
                       </div>
                       <Transition name="thinking">
-                        <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article' && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
+                        <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
                           <button v-for="item in step.toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
                         </div>
                       </Transition>
@@ -237,11 +237,10 @@
                   </div>
                 </div>
               </Transition>
-              <!-- 文章草稿卡片 -->
-              <ChatArticleCard
+              <!-- AI 報告卡片 -->
+              <ChatReportCard
                 v-if="msg.role === 'assistant' && draftMap[msg.id]"
                 :draft="draftMap[msg.id]"
-                @preview="(id) => previewItemId = id"
               />
             </div>
           </template>
@@ -270,14 +269,14 @@
                   </div>
                   <div v-if="step.toolResult" class="process-body__tool-result">
                     <span class="process-body__step-icon">✓</span>
-                    <template v-if="step.toolCall.name === 'create_article'">
-                      <span>文章已建立：{{ step.toolResult.title }}</span>
+                    <template v-if="step.toolCall.name === 'create_report'">
+                      <span>報告已建立：{{ step.toolResult.title }}</span>
                     </template>
                     <template v-else>
                       <span>找到 {{ step.toolResult.count }} 筆</span>
                     </template>
                     <button
-                      v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article'"
+                      v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
                       class="process-body__step-toggle"
                       @click="toggleStep('live', i)"
                     >
@@ -285,13 +284,13 @@
                     </button>
                   </div>
                   <Transition name="thinking">
-                    <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_article' && openSteps.has(`live-${i}`)" class="process-body__tool-titles">
+                    <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report' && openSteps.has(`live-${i}`)" class="process-body__tool-titles">
                       <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
                     </div>
                   </Transition>
                   <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                     <span class="process-body__step-icon">⋯</span>
-                    <span>{{ step.toolCall.name === 'create_article' ? '生成中' : step.toolCall.name === 'filter_sources' ? '篩選中' : '搜尋中' }}</span>
+                    <span>{{ step.toolCall.name === 'create_report' ? '生成中' : step.toolCall.name === 'filter_sources' ? '篩選中' : '搜尋中' }}</span>
                   </div>
                 </div>
               </div>
@@ -335,10 +334,9 @@
                 </div>
               </div>
             </Transition>
-            <ChatArticleCard
+            <ChatReportCard
               v-if="liveDraft"
               :draft="liveDraft"
-              @preview="(id) => previewItemId = id"
             />
           </div>
         </div>
@@ -370,7 +368,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ArticleDraft, ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
+import type { ReportDraft, ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — AI Chat' })
 
 const { t } = useI18n()
@@ -424,8 +422,8 @@ const pendingItemIds = ref<string[]>([])
 
 const userContextMap = ref<Record<string, ChatSource[]>>({})
 
-const draftMap = ref<Record<string, ArticleDraft>>({})
-const liveDraft = ref<ArticleDraft | null>(null)
+const draftMap = ref<Record<string, ReportDraft>>({})
+const liveDraft = ref<ReportDraft | null>(null)
 const previewItemId = ref<string | null>(null)
 
 const messagesEl = ref<HTMLElement | null>(null)
@@ -533,8 +531,8 @@ async function openSession(id: string) {
       if (msg.role === 'assistant' && msg.process_log) {
         processMap.value[msg.id] = msg.process_log as ProcessLog
         openThinking.value.delete(msg.id)
-        const draftStep = (msg.process_log.steps as any[])?.find((s: any) => s.articleDraft)
-        if (draftStep?.articleDraft) draftMap.value[msg.id] = draftStep.articleDraft
+        const draftStep = (msg.process_log.steps as any[])?.find((s: any) => s.reportDraft)
+        if (draftStep?.reportDraft) draftMap.value[msg.id] = draftStep.reportDraft
       }
     }
     const lastAssistant = [...detail.messages].reverse().find(m => m.role === 'assistant' && m.process_log)
@@ -851,9 +849,9 @@ async function send() {
           if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
           await nextTick(); scrollBottom()
 
-        } else if (event === 'article_draft') {
+        } else if (event === 'report_draft') {
           if (!isActive()) continue
-          liveDraft.value = data as ArticleDraft
+          liveDraft.value = data as ReportDraft
           await nextTick(); scrollBottom()
 
         } else if (event === 'sources') {

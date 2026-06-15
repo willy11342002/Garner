@@ -20,7 +20,7 @@ from app.models.chat import MessageRole
 from app.models.user_item import UserItem
 from app.schemas.chat import ChatSource
 from app.services import ai_service
-from app.services.item_service import create_article_draft
+from app.services import report_service
 
 
 async def _get_search_cutoff(db: AsyncSession) -> float:
@@ -198,6 +198,8 @@ async def stream_reply(
         except Exception:
             return []
 
+    created_report: dict | None = None  # 防止同一輪 LLM 重複呼叫 create_report
+
     async def execute_tool(name: str, args: dict) -> dict:
         if name == "search":
             try:
@@ -230,17 +232,36 @@ async def stream_reply(
                 ]
             return {"items": items_out, "chunks": chunks_out}
 
-        if name == "create_article":
+        if name == "create_report":
+            nonlocal created_report
+            if created_report is not None:
+                return {"draft": created_report, "ok": True}
             try:
-                draft = await create_article_draft(
+                draft = await report_service.create_from_chat(
                     db, user_id,
-                    title=args.get("title", "未命名文章"),
-                    content_markdown=args.get("content", ""),
+                    title=args.get("title", "未命名報告"),
+                    body_md=args.get("content", ""),
                     summary=args.get("summary"),
+                    source_item_ids=[str(i) for i in seen_ids],
                 )
+                created_report = draft
                 return {"draft": draft, "ok": True}
             except Exception:
                 return {"draft": None, "ok": False}
+
+        if name == "revise_report":
+            rid = args.get("report_id")
+            try:
+                res = (
+                    await report_service.revise_from_chat(
+                        db, user_id, UUID(rid), args.get("instruction", "")
+                    )
+                    if rid
+                    else None
+                )
+                return {"ok": res is not None, "report_id": rid}
+            except Exception:
+                return {"ok": False, "report_id": rid}
 
         return {}
 
@@ -254,8 +275,22 @@ async def stream_reply(
         cited_item_ids=context_item_ids if context_item_ids else None,
     )
 
+    # 把選定的知識節點當成初始脈絡餵給 LLM（否則 AI 看不到內容，會反問主題）
+    preloaded_sources = [_to_chat_source(ui).model_dump(mode="json") for ui, _ in preloaded_items]
+    preloaded_chunks = [
+        {
+            "title": ui.title or "(無標題)",
+            "text": (ui.notes_md or "")[:4000],
+            "tags": _item_tags(ui),
+            "locations": _item_locations(ui),
+        }
+        for ui, _ in preloaded_items
+    ]
+
     async for event_str in ai_service.agentic_chat_stream(
-        user_content, history, context_summary, execute_tool
+        user_content, history, context_summary, execute_tool,
+        preloaded_sources=preloaded_sources,
+        preloaded_chunks=preloaded_chunks,
     ):
         # Intercept __meta__ sentinel, don't forward to client
         if "event: __meta__" in event_str:

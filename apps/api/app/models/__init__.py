@@ -9,6 +9,7 @@ from app.models.content_location import ContentLocation
 from app.models.place_cache import PlaceCache
 from app.models.item_tag import ItemTag, TagSource
 from app.models.plan import Plan
+from app.models.report import Report
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.tag import Tag
 from app.models.user import SSOProvider, User
@@ -18,6 +19,7 @@ __all__ = [
     "User",
     "SSOProvider",
     "Plan",
+    "Report",
     "Subscription",
     "SubscriptionStatus",
     "ContentLocation",

@@ -243,10 +243,41 @@ export interface QuotaItem {
   limit: number | null  // null = unlimited
 }
 
-export interface ArticleDraft {
+/** chat 產出報告後回傳的精簡草稿（用於聊天內卡片）。 */
+export interface ReportDraft {
   id: string
   title: string
-  notes_md: string
+  summary?: string | null
+}
+
+/** 報告的來源知識（provenance）。 */
+export interface ReportSource {
+  id: string
+  title: string | null
+  url: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+}
+
+export interface Report {
+  id: string
+  title: string
+  body_md: string
+  summary: string | null
+  sources: ReportSource[]
+  last_edited_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReportListItem {
+  id: string
+  title: string
+  summary: string | null
+  source_count: number
+  last_edited_by: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface PaginatedResult<T> {

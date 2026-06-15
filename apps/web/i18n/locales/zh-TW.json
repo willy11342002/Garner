@@ -81,6 +81,7 @@
   },
   "nav": {
     "chat": "對話",
+    "reports": "AI 報告",
     "archive": "封存",
     "add": "新增",
     "collections": "我的集合",
@@ -97,6 +98,26 @@
     "searchEmpty": "找不到相關內容",
     "toggleTheme": "切換主題",
     "toggleLanguage": "切換語言"
+  },
+  "reports": {
+    "title": "AI 報告",
+    "empty": "還沒有 AI 報告。在對話中請 AI 幫你彙整，就會出現在這裡。",
+    "sources": "從 {n} 則收藏彙整",
+    "edit": "編輯",
+    "save": "儲存",
+    "cancel": "取消",
+    "revise": "請 AI 調整",
+    "revisePlaceholder": "想怎麼修改？例如「改短一點」",
+    "regenerate": "重新生成",
+    "regenerateConfirm": "重新生成會覆蓋目前內容（含你的編輯），確定嗎？",
+    "copy": "複製 Markdown",
+    "copied": "已複製",
+    "delete": "刪除",
+    "deleteConfirm": "確定刪除這份報告？",
+    "selectHint": "選擇左側的報告來閱讀",
+    "saving": "處理中…",
+    "lastEditedAi": "AI 上次調整",
+    "lastEditedUser": "你編輯過"
   },
   "fab": {
     "title": "AI 對話",
