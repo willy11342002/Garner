@@ -114,9 +114,7 @@
     "delete": "刪除",
     "deleteConfirm": "確定刪除這份報告？",
     "selectHint": "選擇左側的報告來閱讀",
-    "saving": "處理中…",
-    "lastEditedAi": "AI 上次調整",
-    "lastEditedUser": "你編輯過"
+    "saving": "處理中…"
   },
   "fab": {
     "title": "AI 對話",

@@ -196,11 +196,6 @@ function sourceLabel(st: string | null) {
           <div class="report-view__head-main">
             <input v-if="editing" v-model="editTitle" class="report-view__title-input" />
             <h2 v-else class="report-view__title">{{ current.title }}</h2>
-            <div class="report-view__meta">
-              <span class="report-view__badge report-view__badge--ai">{{ t('reports.title') }}</span>
-              <span v-if="current.last_edited_by === 'ai'" class="report-view__tag">{{ t('reports.lastEditedAi') }}</span>
-              <span v-else-if="current.last_edited_by === 'user'" class="report-view__tag">{{ t('reports.lastEditedUser') }}</span>
-            </div>
           </div>
         </header>
 
@@ -266,14 +261,15 @@ function sourceLabel(st: string | null) {
   grid-template-columns: 320px 1fr;
   gap: 0;
   height: calc(100vh - 56px);
-  max-width: 1200px;
 }
 
 .reports__list {
   border-right: 1px solid var(--border);
   overflow-y: auto;
   padding: 16px 12px;
+  scrollbar-width: none;
 }
+.reports__list::-webkit-scrollbar { display: none; }
 
 .reports__heading {
   font-size: 16px;
@@ -311,7 +307,9 @@ function sourceLabel(st: string | null) {
 }
 .report-item__meta { font-size: 10.5px; color: var(--text-dim); font-family: var(--font-mono); }
 
-.reports__detail { overflow-y: auto; padding: 24px 32px; }
+/* 內容寬度跟對話功能一致：視窗變窄時從 70vw 放大到 100% */
+.reports__detail { overflow-y: auto; padding: 24px 32px; width: min(max(70vw, calc(494px + 35.7vw)), 100%); justify-self: center; scrollbar-width: none; }
+.reports__detail::-webkit-scrollbar { display: none; }
 
 .report-view__head { display: flex; align-items: flex-start; gap: 10px; }
 .report-view__back { display: none; background: none; border: none; color: var(--text-dim); font-size: 20px; cursor: pointer; line-height: 1; }
@@ -321,13 +319,6 @@ function sourceLabel(st: string | null) {
   width: 100%; font-size: 22px; font-weight: 700; color: var(--text);
   background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px;
 }
-.report-view__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.report-view__badge {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
-  padding: 2px 8px; border-radius: 999px;
-}
-.report-view__badge--ai { color: var(--accent); background: var(--accent-dim); border: 1px solid var(--accent-bdr); }
-.report-view__tag { font-size: 11px; color: var(--text-dim); }
 
 .report-view__sources { margin: 16px 0; }
 .report-view__sources-label { font-size: 12px; color: var(--text-dim); }
@@ -356,7 +347,7 @@ function sourceLabel(st: string | null) {
   .reports { grid-template-columns: 1fr; height: calc(100vh - 56px); }
   .reports__detail { display: none; }
   .reports--detail .reports__list { display: none; }
-  .reports--detail .reports__detail { display: block; }
+  .reports--detail .reports__detail { display: block; width: 100%; }
   .report-view__back { display: block; }
 }
 </style>

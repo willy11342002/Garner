@@ -114,9 +114,7 @@
     "delete": "Delete",
     "deleteConfirm": "Delete this report?",
     "selectHint": "Select a report on the left to read",
-    "saving": "Working…",
-    "lastEditedAi": "Last revised by AI",
-    "lastEditedUser": "Edited by you"
+    "saving": "Working…"
   },
   "fab": {
     "title": "AI Chat",
