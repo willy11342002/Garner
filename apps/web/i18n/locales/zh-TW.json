@@ -136,6 +136,11 @@
     "group_today": "今天",
     "group_week": "本週",
     "group_earlier": "更早",
+    "folders": "資料夾",
+    "new_folder": "新增資料夾",
+    "folder_name_placeholder": "資料夾名稱…",
+    "folder_hint": "建立資料夾來分類對話，把對話拖進來即可。",
+    "delete_folder": "刪除資料夾",
     "quota_label": "剩餘額度",
     "quota_full": "今日對話額度已用完，升級 Pro 可獲得更多。"
   },

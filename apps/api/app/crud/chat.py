@@ -47,6 +47,12 @@ async def delete_folder(db: AsyncSession, folder_id: UUID, user_id: UUID) -> boo
     folder = result.scalar_one_or_none()
     if not folder:
         return False
+    # 先把資料夾內的對話移回未分類，再刪資料夾（保留對話）
+    await db.execute(
+        update(ChatSession)
+        .where(ChatSession.folder_id == folder_id, ChatSession.user_id == user_id)
+        .values(folder_id=None)
+    )
     await db.delete(folder)
     await db.commit()
     return True
@@ -86,6 +92,7 @@ async def update_session(
     user_id: UUID,
     title: str | None = None,
     folder_id: UUID | None = None,
+    set_folder: bool = False,
 ) -> ChatSession | None:
     result = await db.execute(
         select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user_id)
@@ -95,7 +102,8 @@ async def update_session(
         return None
     if title is not None:
         session.title = title
-    if folder_id is not None:
+    # set_folder 為 True 時才動 folder_id（允許明確設為 None 以移出資料夾）
+    if set_folder:
         session.folder_id = folder_id
     session.updated_at = datetime.now(timezone.utc)
     await db.commit()

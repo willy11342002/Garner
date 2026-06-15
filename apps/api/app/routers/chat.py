@@ -73,6 +73,7 @@ async def update_session(session_id: UUID, body: ChatSessionUpdate, current_user
     session = await crud_chat.update_session(
         db, session_id, UUID(current_user["sub"]),
         title=body.title, folder_id=body.folder_id,
+        set_folder="folder_id" in body.model_fields_set,
     )
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

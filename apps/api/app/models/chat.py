@@ -19,7 +19,8 @@ class ChatFolder(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    sessions: Mapped[list["ChatSession"]] = relationship(back_populates="folder", cascade="all, delete-orphan")
+    # 刪資料夾時對話保留並移回未分類（交給 DB FK 的 SET NULL），故不用 delete-orphan
+    sessions: Mapped[list["ChatSession"]] = relationship(back_populates="folder", passive_deletes=True)
 
 
 class ChatSession(Base):

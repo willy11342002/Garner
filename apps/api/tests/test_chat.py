@@ -97,6 +97,39 @@ async def test_update_session_not_found(client):
     assert resp.status_code == 404
 
 
+async def test_update_session_title_only_keeps_folder(client):
+    # 只送 title 時不應動到資料夾（set_folder=False）
+    mock = AsyncMock(return_value=make_session_read(title="New Title"))
+    with patch("app.crud.chat.update_session", new=mock):
+        resp = await client.patch(f"/chat/sessions/{TEST_SESSION_ID}", json={"title": "New Title"})
+    assert resp.status_code == 200
+    assert mock.call_args.kwargs["set_folder"] is False
+
+
+async def test_update_session_move_to_folder(client):
+    # 送 folder_id 時應移入資料夾（set_folder=True）
+    moved = make_session_read(folder_id=TEST_FOLDER_ID)
+    mock = AsyncMock(return_value=moved)
+    with patch("app.crud.chat.update_session", new=mock):
+        resp = await client.patch(
+            f"/chat/sessions/{TEST_SESSION_ID}", json={"folder_id": str(TEST_FOLDER_ID)}
+        )
+    assert resp.status_code == 200
+    assert mock.call_args.kwargs["set_folder"] is True
+    assert mock.call_args.kwargs["folder_id"] == TEST_FOLDER_ID
+    assert resp.json()["folder_id"] == str(TEST_FOLDER_ID)
+
+
+async def test_update_session_remove_from_folder(client):
+    # 明確送 folder_id=null 時應移出資料夾（set_folder=True, folder_id=None）
+    mock = AsyncMock(return_value=make_session_read(folder_id=None))
+    with patch("app.crud.chat.update_session", new=mock):
+        resp = await client.patch(f"/chat/sessions/{TEST_SESSION_ID}", json={"folder_id": None})
+    assert resp.status_code == 200
+    assert mock.call_args.kwargs["set_folder"] is True
+    assert mock.call_args.kwargs["folder_id"] is None
+
+
 async def test_delete_session(client):
     with patch("app.crud.chat.delete_session", new=AsyncMock(return_value=True)):
         resp = await client.delete(f"/chat/sessions/{TEST_SESSION_ID}")

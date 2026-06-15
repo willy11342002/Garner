@@ -1,8 +1,11 @@
 <template>
   <div
     class="session-row"
-    :class="{ 'session-row--active': active, 'session-row--indent': indent, 'session-row--editing': editing, 'session-row--disabled': disabled || active }"
+    :class="{ 'session-row--active': active, 'session-row--indent': indent, 'session-row--editing': editing, 'session-row--disabled': disabled, 'session-row--dragging': dragging }"
+    :draggable="!editing"
     @click="!editing && !disabled && !active && emit('click')"
+    @dragstart="onDragStart"
+    @dragend="onDragEnd"
   >
     <!-- 改名模式 -->
     <input
@@ -46,13 +49,29 @@ const emit = defineEmits<{
   click: []
   rename: [id: string, name: string]
   delete: []
+  dragstart: [id: string]
+  dragend: []
 }>()
 
 const { t } = useI18n()
 
 const editing = ref(false)
 const editName = ref('')
+const dragging = ref(false)
 const inputEl = ref<HTMLInputElement | null>(null)
+
+function onDragStart(e: DragEvent) {
+  if (editing.value) return
+  dragging.value = true
+  e.dataTransfer?.setData('text/plain', props.session.id)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+  emit('dragstart', props.session.id)
+}
+
+function onDragEnd() {
+  dragging.value = false
+  emit('dragend')
+}
 
 function startRename() {
   editName.value = props.session.title || ''
@@ -87,11 +106,12 @@ function cancelRename() {
   height: 36px;
 }
 .session-row:hover { background: var(--surface2); }
-.session-row--active { background: var(--accent-dim); }
+.session-row--active { background: var(--accent-dim); cursor: default; }
 .session-row--indent { padding-left: 24px; }
 .session-row--editing { cursor: default; background: var(--surface2); }
 .session-row--disabled { cursor: default; pointer-events: none; }
 .session-row--disabled:not(.session-row--active) { opacity: 0.5; }
+.session-row--dragging { opacity: 0.4; }
 
 .session-row__title {
   flex: 1;

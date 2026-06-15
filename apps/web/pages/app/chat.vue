@@ -19,34 +19,76 @@
         </button>
       </div>
       <div class="chat-list__body">
-        <div v-for="g in timeGroups" :key="g.key" class="session-group">
-          <div class="time-label">{{ g.label }}</div>
-          <ChatSessionRow
-            v-for="s in g.sessions"
-            :key="s.id"
-            :session="s"
-            :active="activeSessionId === s.id"
-            :disabled="sessionLoading"
-            @click="openSession(s.id)"
-            @rename="(id, name) => renameSession(id, name)"
-            @delete="deleteSession(s.id)"
-          />
-        </div>
-        <div v-for="folder in folders" :key="folder.id" class="folder-block">
-          <div class="folder-block__label">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-            {{ folder.name }}
+        <!-- 資料夾區塊 -->
+        <div class="folder-section">
+          <div class="folder-section__head">
+            <span class="folder-section__title">{{ t('chat.folders') }}</span>
+            <button class="chat-icon-btn chat-icon-btn--sm" :title="t('chat.new_folder')" @click="startCreateFolder">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
           </div>
-          <ChatSessionRow
-            v-for="s in sessionsInFolder(folder.id)"
-            :key="s.id"
-            :session="s"
-            :active="activeSessionId === s.id"
-            indent
-            @click="openSession(s.id)"
-            @rename="(id, name) => renameSession(id, name)"
-            @delete="deleteSession(s.id)"
-          />
+          <input
+            v-if="creatingFolder"
+            ref="newFolderInput"
+            v-model="newFolderName"
+            class="folder-create-input"
+            :placeholder="t('chat.folder_name_placeholder')"
+            @keydown.enter.prevent="commitCreateFolder"
+            @keydown.escape.prevent="creatingFolder = false"
+            @blur="commitCreateFolder"
+          >
+          <p v-if="!folders.length && !creatingFolder" class="folder-section__empty">{{ t('chat.folder_hint') }}</p>
+          <template v-for="folder in folders" :key="folder.id">
+            <ChatFolderRow
+              :folder="folder"
+              :count="sessionsInFolder(folder.id).length"
+              :expanded="expandedFolders.has(folder.id)"
+              :dragging="draggingSessionId !== null"
+              @toggle="toggleFolder(folder.id)"
+              @rename="(id, name) => renameFolder(id, name)"
+              @delete="deleteFolder(folder.id)"
+              @drop-session="(sid) => moveSession(sid, folder.id)"
+            />
+            <div v-if="expandedFolders.has(folder.id)" class="folder-children">
+              <ChatSessionRow
+                v-for="s in sessionsInFolder(folder.id)"
+                :key="s.id"
+                :session="s"
+                :active="activeSessionId === s.id"
+                :disabled="sessionLoading"
+                indent
+                @click="openSession(s.id)"
+                @rename="(id, name) => renameSession(id, name)"
+                @delete="deleteSession(s.id)"
+                @dragstart="draggingSessionId = $event"
+                @dragend="draggingSessionId = null"
+              />
+            </div>
+          </template>
+        </div>
+
+        <!-- 未分類：依時間分組，並作為「拖出資料夾」的 drop 區 -->
+        <div
+          class="uncategorized-zone"
+          :class="{ 'uncategorized-zone--drop': draggingSessionId !== null }"
+          @dragover.prevent
+          @drop="(e) => onDropUncategorized(e)"
+        >
+          <div v-for="g in timeGroups" :key="g.key" class="session-group">
+            <div class="time-label">{{ g.label }}</div>
+            <ChatSessionRow
+              v-for="s in g.sessions"
+              :key="s.id"
+              :session="s"
+              :active="activeSessionId === s.id"
+              :disabled="sessionLoading"
+              @click="openSession(s.id)"
+              @rename="(id, name) => renameSession(id, name)"
+              @delete="deleteSession(s.id)"
+              @dragstart="draggingSessionId = $event"
+              @dragend="draggingSessionId = null"
+            />
+          </div>
         </div>
         <div v-if="!sessions.length" class="chat-list__empty">{{ t('chat.empty_list') }}</div>
       </div>
@@ -353,6 +395,13 @@ const streamingText = ref('')
 
 const mobileView = ref<'list' | 'chat'>('list')
 
+// ── 資料夾 ──
+const expandedFolders = ref<Set<string>>(new Set())
+const draggingSessionId = ref<string | null>(null)
+const creatingFolder = ref(false)
+const newFolderName = ref('')
+const newFolderInput = ref<HTMLInputElement | null>(null)
+
 const openThinking = ref<Set<string>>(new Set(['live']))
 const openSteps = ref<Set<string>>(new Set())
 const openContexts = ref<Set<string>>(new Set())
@@ -470,10 +519,11 @@ async function openSession(id: string) {
   activeSessionId.value = id
   try {
     const detail = await apiFetch<ChatSessionDetail>(`/chat/sessions/${id}`)
-    activeSessionId.value = id
+    if (activeSessionId.value !== id) { sessionLoading.value = false; return } // 載入期間又切到別的 session
     activeSession.value = detail
     messages.value = detail.messages
     sourcesMap.value = {}
+    userContextMap.value = {}
     processMap.value = {}
     openSources.value = new Set()
     resetProcess()
@@ -490,57 +540,194 @@ async function openSession(id: string) {
     const lastAssistant = [...detail.messages].reverse().find(m => m.role === 'assistant' && m.process_log)
     if (lastAssistant) openThinking.value.add(lastAssistant.id)
 
-    const assistantMsgs = detail.messages.filter(m => m.role === 'assistant' && m.cited_item_ids?.length)
-    const userCtxMsgs = detail.messages.filter(m => m.role === 'user' && m.cited_item_ids?.length)
-    const allIds = [...new Set([
-      ...assistantMsgs.flatMap(m => m.cited_item_ids!),
-      ...userCtxMsgs.flatMap(m => m.cited_item_ids!),
-    ])]
-    if (allIds.length) {
-      const itemResults = await Promise.allSettled(
-        allIds.map(itemId => apiFetch<ChatSource>(`/items/${itemId}`))
-      )
-      const itemMap: Record<string, ChatSource> = {}
-      itemResults.forEach((r, i) => {
-        if (r.status === 'fulfilled') itemMap[allIds[i]] = r.value
-      })
-      for (const msg of assistantMsgs) {
-        const sources = (msg.cited_item_ids ?? []).map(iid => itemMap[iid]).filter(Boolean)
-        if (sources.length) sourcesMap.value[msg.id] = sources
-      }
-      for (const msg of userCtxMsgs) {
-        const items = (msg.cited_item_ids ?? []).map(iid => itemMap[iid]).filter(Boolean)
-        if (items.length) userContextMap.value[msg.id] = items
-      }
-    }
-
+    // 訊息已可顯示：立即切換畫面、結束 loading、捲到底，不等來源 item
     mobileView.value = 'chat'
-    await nextTick()
-    scrollBottom()
-  } catch {} finally {
     sessionLoading.value = false
+    await nextTick()
+    // 開啟時直接跳到底（instant），避免 smooth 動畫在內容高度未定時只捲一半
+    requestAnimationFrame(() => scrollBottom(false))
+
+    // 來源卡（cited items）在背景載入，避免 N+1 請求擋住整個讀取
+    loadSourcesForMessages(id, detail.messages)
+    return
+  } catch {}
+  sessionLoading.value = false
+}
+
+// 背景抓取訊息引用的 item，逐一填入來源卡；若期間切了別的 session 就丟棄結果
+async function loadSourcesForMessages(sessionId: string, msgs: ChatMessage[]) {
+  const assistantMsgs = msgs.filter(m => m.role === 'assistant' && m.cited_item_ids?.length)
+  const userCtxMsgs = msgs.filter(m => m.role === 'user' && m.cited_item_ids?.length)
+  const allIds = [...new Set([
+    ...assistantMsgs.flatMap(m => m.cited_item_ids!),
+    ...userCtxMsgs.flatMap(m => m.cited_item_ids!),
+  ])]
+  if (!allIds.length) return
+  const itemResults = await Promise.allSettled(
+    allIds.map(itemId => apiFetch<ChatSource>(`/items/${itemId}`))
+  )
+  if (activeSessionId.value !== sessionId) return
+  // 填入來源前先記住是否在底部，填完若仍在底部就跟著捲到新的底部（修正「只捲一半」）
+  const stick = isNearBottom()
+  const itemMap: Record<string, ChatSource> = {}
+  itemResults.forEach((r, i) => {
+    if (r.status === 'fulfilled') itemMap[allIds[i]] = r.value
+  })
+  for (const msg of assistantMsgs) {
+    const sources = (msg.cited_item_ids ?? []).map(iid => itemMap[iid]).filter(Boolean)
+    if (sources.length) sourcesMap.value[msg.id] = sources
+  }
+  for (const msg of userCtxMsgs) {
+    const items = (msg.cited_item_ids ?? []).map(iid => itemMap[iid]).filter(Boolean)
+    if (items.length) userContextMap.value[msg.id] = items
+  }
+  if (stick) {
+    await nextTick()
+    requestAnimationFrame(() => { if (activeSessionId.value === sessionId) scrollBottom(false) })
   }
 }
 
 async function renameSession(id: string, name: string) {
+  // 樂觀更新：先改本地，背景送出，失敗回滾
+  const s = sessions.value.find(x => x.id === id)
+  const prevTitle = s?.title
+  if (s) s.title = name
+  const isActive = activeSession.value?.id === id
+  const prevActiveTitle = isActive ? activeSession.value!.title : undefined
+  if (isActive) activeSession.value!.title = name
   try {
     await apiFetch(`/chat/sessions/${id}`, { method: 'PATCH', body: { title: name } })
-    const idx = sessions.value.findIndex(s => s.id === id)
-    if (idx !== -1) sessions.value[idx].title = name
-    if (activeSession.value?.id === id) activeSession.value.title = name
-  } catch {}
+  } catch {
+    if (s) s.title = prevTitle ?? null
+    if (isActive && activeSession.value) activeSession.value.title = prevActiveTitle ?? null
+  }
 }
 
 async function deleteSession(id: string) {
+  // 樂觀更新：先從列表移除，失敗還原
+  const idx = sessions.value.findIndex(s => s.id === id)
+  if (idx === -1) return
+  const removed = sessions.value[idx]
+  sessions.value.splice(idx, 1)
+  const wasActive = activeSessionId.value === id
+  const prevActiveSession = activeSession.value
+  const prevMessages = messages.value
+  if (wasActive) {
+    activeSessionId.value = null
+    activeSession.value = null
+    messages.value = []
+  }
   try {
     await apiFetch(`/chat/sessions/${id}`, { method: 'DELETE' })
-    sessions.value = sessions.value.filter(s => s.id !== id)
-    if (activeSessionId.value === id) {
-      activeSessionId.value = null
-      activeSession.value = null
-      messages.value = []
+  } catch {
+    sessions.value.splice(idx, 0, removed)
+    if (wasActive) {
+      activeSessionId.value = id
+      activeSession.value = prevActiveSession
+      messages.value = prevMessages
     }
-  } catch {}
+  }
+}
+
+// ── Folder actions ────────────────────────────────────────────────────────────
+function toggleFolder(id: string) {
+  if (expandedFolders.value.has(id)) expandedFolders.value.delete(id)
+  else expandedFolders.value.add(id)
+}
+
+function startCreateFolder() {
+  creatingFolder.value = true
+  newFolderName.value = ''
+  nextTick(() => newFolderInput.value?.focus())
+}
+
+async function commitCreateFolder() {
+  // Enter 會先關閉 input，移除時又觸發 blur → 本函式被呼叫兩次，故用 creatingFolder 當守衛避免重複建立
+  if (!creatingFolder.value) return
+  const name = newFolderName.value.trim()
+  creatingFolder.value = false
+  newFolderName.value = ''
+  if (!name) return
+  // 樂觀更新：先用臨時 id 插入，背景建立，回來再換成真實 folder
+  const tempId = `temp-${Date.now()}`
+  folders.value.push({ id: tempId, name, created_at: new Date().toISOString() } as ChatFolder)
+  expandedFolders.value.add(tempId)
+  try {
+    const f = await apiFetch<ChatFolder>('/chat/folders', { method: 'POST', body: { name } })
+    const i = folders.value.findIndex(x => x.id === tempId)
+    if (i !== -1) folders.value[i] = f
+    if (expandedFolders.value.delete(tempId)) expandedFolders.value.add(f.id)
+    // 建立期間若有對話被拖進臨時資料夾，remap 到真實 id 並持久化
+    for (const s of sessions.value) {
+      if (s.folder_id === tempId) {
+        s.folder_id = f.id
+        apiFetch(`/chat/sessions/${s.id}`, { method: 'PATCH', body: { folder_id: f.id } }).catch(() => {})
+      }
+    }
+  } catch {
+    folders.value = folders.value.filter(x => x.id !== tempId)
+    expandedFolders.value.delete(tempId)
+    for (const s of sessions.value) { if (s.folder_id === tempId) s.folder_id = null }
+  }
+}
+
+async function renameFolder(id: string, name: string) {
+  // 樂觀更新
+  const f = folders.value.find(x => x.id === id)
+  if (!f) return
+  const prev = f.name
+  f.name = name
+  try {
+    await apiFetch(`/chat/folders/${id}`, { method: 'PATCH', body: { name } })
+  } catch {
+    f.name = prev
+  }
+}
+
+async function deleteFolder(id: string) {
+  // 樂觀更新：先移除資料夾並把對話移回未分類，失敗則全部還原
+  const idx = folders.value.findIndex(f => f.id === id)
+  if (idx === -1) return
+  const removed = folders.value[idx]
+  const wasExpanded = expandedFolders.value.has(id)
+  folders.value.splice(idx, 1)
+  expandedFolders.value.delete(id)
+  const now = new Date().toISOString()
+  const affected: { s: ChatSession; prevUpdated: string }[] = []
+  for (const s of sessions.value) {
+    if (s.folder_id === id) { affected.push({ s, prevUpdated: s.updated_at }); s.folder_id = null; s.updated_at = now }
+  }
+  try {
+    await apiFetch(`/chat/folders/${id}`, { method: 'DELETE' })
+  } catch {
+    folders.value.splice(idx, 0, removed)
+    if (wasExpanded) expandedFolders.value.add(id)
+    for (const { s, prevUpdated } of affected) { s.folder_id = id; s.updated_at = prevUpdated }
+  }
+}
+
+async function moveSession(sessionId: string, folderId: string | null) {
+  const s = sessions.value.find(x => x.id === sessionId)
+  if (!s || s.folder_id === folderId) return
+  // 樂觀更新：先移動，失敗回滾
+  const prevFolder = s.folder_id
+  const prevUpdated = s.updated_at
+  s.folder_id = folderId
+  s.updated_at = new Date().toISOString()
+  if (folderId) expandedFolders.value.add(folderId)
+  // 臨時資料夾（建立中）後端尚未存在，先只改本地，待 commitCreateFolder 完成後再持久化
+  if (folderId && folderId.startsWith('temp-')) return
+  try {
+    await apiFetch(`/chat/sessions/${sessionId}`, { method: 'PATCH', body: { folder_id: folderId } })
+  } catch {
+    s.folder_id = prevFolder
+    s.updated_at = prevUpdated
+  }
+}
+
+function onDropUncategorized(e: DragEvent) {
+  const id = e.dataTransfer?.getData('text/plain')
+  if (id) moveSession(id, null)
 }
 
 // ── Send message ──────────────────────────────────────────────────────────────
@@ -741,8 +928,16 @@ async function send() {
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
-function scrollBottom() {
-  if (messagesEl.value) messagesEl.value.scrollTo({ top: messagesEl.value.scrollHeight, behavior: 'smooth' })
+function scrollBottom(smooth = true) {
+  const el = messagesEl.value
+  if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+}
+
+// 使用者是否已捲到接近底部（用來判斷背景內容載入後要不要自動跟到底）
+function isNearBottom(threshold = 120) {
+  const el = messagesEl.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
 }
 
 function autoResize() {

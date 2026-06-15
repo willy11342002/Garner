@@ -136,6 +136,11 @@
     "group_today": "Today",
     "group_week": "This week",
     "group_earlier": "Earlier",
+    "folders": "Folders",
+    "new_folder": "New folder",
+    "folder_name_placeholder": "Folder name…",
+    "folder_hint": "Create a folder to organise chats, then drag chats into it.",
+    "delete_folder": "Delete folder",
     "quota_label": "Remaining",
     "quota_full": "Daily chat limit reached. Upgrade to Pro for more."
   },
