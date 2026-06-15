@@ -51,13 +51,16 @@ WITH effective_plan AS (
 SELECT
     ep.plan_name,
     ep.current_period_end,
-    -- saves：直接 count user_items，不走 user_feature_usage
-    (SELECT COUNT(*)::int
-     FROM user_items ui
-     WHERE ui.user_id  = :user_id
-       AND ui.saved_at >= :month_start
-       AND ui.deleted_at IS NULL
-       AND ui.source_type != 'article'
+    -- saves：count user_items + reanalyze/landmark 的 user_feature_usage 計次
+    ((SELECT COUNT(*)::int
+      FROM user_items ui
+      WHERE ui.user_id  = :user_id
+        AND ui.saved_at >= :month_start
+        AND ui.deleted_at IS NULL
+        AND ui.source_type != 'article')
+     + COALESCE((SELECT ufu.count FROM user_feature_usage ufu
+                 WHERE ufu.user_id = :user_id AND ufu.feature = 'saves_monthly'
+                   AND ufu.period_key = :monthly_key), 0)
     ) AS saves_used,
     -- usage（各走 unique index point lookup）
     COALESCE((SELECT ufu.count FROM user_feature_usage ufu

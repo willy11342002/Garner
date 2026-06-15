@@ -11,6 +11,7 @@ from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.crud import locations as crud_locations
 from app.dependencies import CurrentUser, DbSession
+from app.quota_depends import ReanalyzeQuota
 from app.schemas.location import ContentLocationCreate, ContentLocationRead, ContentLocationUpdate, ExtractLocationsResponse, LocationMapPoint, PlaceCacheRead, PlaceSearchResult
 from app.services import geocoding_service, place_service
 
@@ -131,12 +132,14 @@ async def extract_item_locations(
     background_tasks: BackgroundTasks,
     current_user: CurrentUser,
     db: DbSession,
+    _quota: ReanalyzeQuota,
 ):
     """Re-run location extraction for an existing item.
 
-    Deletes existing AI and metadata locations, then reruns the landmarks
-    pipeline stage in the background. Always returns immediately with
-    extracting=True so the frontend can poll until locations appear.
+    Consumes one monthly save quota (ReanalyzeQuota checks + increments before
+    this body runs). Deletes existing AI and metadata locations, then reruns
+    the landmarks pipeline stage in the background. Always returns immediately
+    with extracting=True so the frontend can poll until locations appear.
     """
     user_id = UUID(current_user["sub"])
     user_item = await crud_items.get_one(db, user_id, item_id)

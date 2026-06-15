@@ -11,7 +11,7 @@ from app.core.database import AsyncSessionLocal
 from app.crud import items as crud_items
 from app.crud import tags as crud_tags
 from app.dependencies import CurrentUser, DbSession
-from app.quota_depends import SaveQuota
+from app.quota_depends import SaveQuota, ReanalyzeQuota
 from app.schemas.item import ItemCreate, ItemPage, ItemRead, ItemUpdate
 from app.schemas.tag import TagCreate, TagRead
 from app.services import item_service
@@ -241,10 +241,13 @@ async def reanalyze_item_notes(
     background_tasks: BackgroundTasks,
     current_user: CurrentUser,
     db: DbSession,
+    _quota: ReanalyzeQuota,
 ):
     """Re-run stage 3 (note) → stage 5 (embedding) for an existing item.
 
-    Returns immediately. Caller can poll note_status / embedding_status to track progress.
+    Consumes one monthly save quota (ReanalyzeQuota checks + increments before
+    this body runs). Returns immediately. Caller can poll note_status /
+    embedding_status to track progress.
     """
     user_id = UUID(current_user["sub"])
     user_item = await crud_items.get_one(db, user_id, item_id)

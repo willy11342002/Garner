@@ -152,8 +152,10 @@ def _daily_key() -> str:
 
 
 async def _count_monthly_saves(db: AsyncSession, user_id: UUID) -> int:
-    """本月已儲存的外部 URL 數量（不含手寫 note，note 不消耗儲存額度）。
-    re-analyze 另外透過 UserFeatureUsage 計入。
+    """本月已消耗的存入額度。
+
+    = 本月已儲存的外部 URL 數量（不含手寫 note）
+      + re-analyze / 重抓地標 透過 UserFeatureUsage 計入的次數。
     """
     month_start = datetime.now(timezone.utc).replace(
         day=1, hour=0, minute=0, second=0, microsecond=0
@@ -168,7 +170,9 @@ async def _count_monthly_saves(db: AsyncSession, user_id: UUID) -> int:
             UserItem.source_type != "note",
         )
     )
-    return result.scalar_one()
+    item_saves = result.scalar_one()
+    reanalyze_saves = await _get_usage(db, user_id, "saves_monthly", _monthly_key())
+    return item_saves + reanalyze_saves
 
 
 def _quota_exceeded(feature: str, used: int, limit: int, plan: str) -> HTTPException:
