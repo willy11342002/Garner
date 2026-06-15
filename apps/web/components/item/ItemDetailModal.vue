@@ -33,6 +33,7 @@ const emit = defineEmits<{ close: []; archived: [] }>()
 const isOpen = computed(() => !!(props.itemId || props.item))
 const readonly = computed(() => !props.itemId)
 
+const { t } = useI18n()
 const apiFetch = useApiFetch()
 const gmap = useGlobalMap()
 const { getItem, getItemTags, attachTag, detachTag, updateItem } = useItems()
@@ -169,7 +170,7 @@ async function selectLocation(loc: typeof itemLocations.value[0]) {
     )
     placeData.value = result ?? null
   } catch {
-    placeError.value = '無法載入地點資訊'
+    placeError.value = t('itemModal.placeLoadError')
   } finally {
     placeLoading.value = false
   }
@@ -249,13 +250,23 @@ async function deleteLocation(loc: ItemLocation) {
   renderItemMarkers()
 }
 
+const showExtractConfirm = ref(false)
+const extractQuotaError = ref(false)
+
+function requestExtractLocations() {
+  extractQuotaError.value = false
+  showExtractConfirm.value = true
+}
+
 async function extractLocations() {
   if (!props.itemId) return
   extractingLocations.value = true
+  extractQuotaError.value = false
   try {
     const result = await apiFetch<{ locations: ItemLocation[], extracting: boolean }>(
       `/items/${props.itemId}/locations/extract`, { method: 'POST' }
     )
+    showExtractConfirm.value = false
     itemLocations.value = result.locations
     renderItemMarkers()
     gmap.notifyLocationChange()
@@ -268,8 +279,13 @@ async function extractLocations() {
     } else {
       extractingLocations.value = false
     }
-  } catch {
+  } catch (err: any) {
     extractingLocations.value = false
+    if (err?.response?.status === 429) {
+      extractQuotaError.value = true  // keep dialog open to show the message
+    } else {
+      showExtractConfirm.value = false
+    }
   }
 }
 
@@ -298,10 +314,10 @@ async function doSearch(q: string) {
     const results = await apiFetch<PlaceSearchResult[]>(`/places/search?${params}`)
     showSearchPins(results)
     searchHint.value = results.length
-      ? `找到 ${results.length} 個結果，點 pin 確認後新增`
-      : '找不到相關地點'
+      ? t('itemModal.searchFound', { n: results.length })
+      : t('itemModal.searchNoResult')
   } catch {
-    searchHint.value = '搜尋失敗，請稍後再試'
+    searchHint.value = t('itemModal.searchFailed')
   } finally {
     searchLoading.value = false
   }
@@ -362,10 +378,10 @@ function buildSearchPinPopup(r: PlaceSearchResult): HTMLElement {
 
   const addBtn = document.createElement('button')
   addBtn.className = 'id-loc-popup__btn id-loc-popup__btn--confirm'
-  addBtn.textContent = '+ 新增地標'
+  addBtn.textContent = t('itemModal.addLandmark')
   addBtn.addEventListener('click', async () => {
     addBtn.disabled = true
-    addBtn.textContent = '新增中…'
+    addBtn.textContent = t('itemModal.adding')
     await createLocation(r.name, r.lat, r.lng)
   })
   actions.appendChild(addBtn)
@@ -438,16 +454,30 @@ function cancelEditTitle() {
 
 // ── Reanalyze (stage 3 → 5) ──────────────────────────────────────────────────
 const reanalyzing = ref(false)
+const showReanalyzeConfirm = ref(false)
+const reanalyzeQuotaError = ref(false)
 let _reanalyzePollTimer: ReturnType<typeof setTimeout> | null = null
+
+function requestReanalyze() {
+  reanalyzeQuotaError.value = false
+  showReanalyzeConfirm.value = true
+}
 
 async function reanalyze() {
   if (!props.itemId) return
   reanalyzing.value = true
+  reanalyzeQuotaError.value = false
   try {
     await apiFetch(`/items/${props.itemId}/reanalyze`, { method: 'POST' })
+    showReanalyzeConfirm.value = false
     pollReanalyze()
-  } catch {
+  } catch (err: any) {
     reanalyzing.value = false
+    if (err?.response?.status === 429) {
+      reanalyzeQuotaError.value = true  // keep dialog open to show the message
+    } else {
+      showReanalyzeConfirm.value = false
+    }
   }
 }
 
@@ -556,9 +586,9 @@ function cardTitle(url: string, title: string | null) {
 
 function relativeTime(dateStr: string) {
   const d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
-  if (d === 0) return '今天'
-  if (d === 1) return '1 天前'
-  return `${d} 天前`
+  if (d === 0) return t('itemModal.today')
+  if (d === 1) return t('itemModal.dayAgo')
+  return t('itemModal.daysAgo', { n: d })
 }
 
 async function load(id: string) {
@@ -709,7 +739,7 @@ async function confirmArchive() {
         >
           <button class="id-close" @click="doClose">×</button>
           <div v-if="loading || error" class="id-spinner id-spinner--panel">
-            {{ error ? '載入失敗，請重新整理' : '載入中...' }}
+            {{ error ? t('itemModal.loadFailed') : t('itemModal.loading') }}
           </div>
           <template v-else-if="item">
 
@@ -739,29 +769,29 @@ async function confirmArchive() {
                   class="btn btn--accent"
                   @click="isEditingNotes ? saveNotes() : startEditNotes()"
                 >
-                  {{ isEditingNotes ? '保存' : '編輯筆記' }}
+                  {{ isEditingNotes ? t('itemModal.save') : t('itemModal.editNotes') }}
                 </button>
                 <button
                   v-if="!readonly && activeTab === 'info' && !isEditingNotes"
                   class="btn"
                   :disabled="reanalyzing || isAnalyzing"
-                  @click="reanalyze"
+                  @click="requestReanalyze"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
                   </svg>
-                  {{ (reanalyzing || isAnalyzing) ? '分析中…' : '重新分析' }}
+                  {{ (reanalyzing || isAnalyzing) ? t('itemModal.analyzing') : t('itemModal.reanalyze') }}
                 </button>
                 <button
                   v-if="!readonly && activeTab === 'map'"
                   class="btn btn--accent"
                   :disabled="extractingLocations"
-                  @click="extractLocations"
+                  @click="requestExtractLocations"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/>
                   </svg>
-                  {{ extractingLocations ? '抓取中…' : '重新抓取地標' }}
+                  {{ extractingLocations ? t('itemModal.extracting') : t('itemModal.reExtractLandmarks') }}
                 </button>
                 <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
@@ -772,7 +802,7 @@ async function confirmArchive() {
                       <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
                     </template>
                   </svg>
-                  {{ archiving ? '處理中…' : (item as Item).status === 'archived' ? '復原' : '封存' }}
+                  {{ archiving ? t('itemModal.processing') : (item as Item).status === 'archived' ? t('itemModal.restore') : t('itemModal.archive') }}
                 </button>
               </div>
             </div>
@@ -783,12 +813,12 @@ async function confirmArchive() {
                 class="id-tab"
                 :class="{ 'id-tab--active': activeTab === 'info' }"
                 @click="switchToInfoTab"
-              >筆記</button>
+              >{{ t('itemModal.tabNotes') }}</button>
               <button
                 class="id-tab"
                 :class="{ 'id-tab--active': activeTab === 'map' }"
                 @click="switchToMapTab"
-              >地圖</button>
+              >{{ t('itemModal.tabMap') }}</button>
             </div>
 
             <!-- Info tab: tags + notes -->
@@ -808,14 +838,14 @@ async function confirmArchive() {
                     ref="tagInputRef"
                     v-model="newTagInput"
                     class="id-tag__input"
-                    placeholder="標籤名稱"
+                    :placeholder="t('itemModal.tagPlaceholder')"
                     @keydown.enter="handleAddTag"
                     @keydown.esc.stop="addingTag = false; newTagInput = ''"
                     @blur="handleAddTag"
                   />
                 </template>
                 <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
-                  + 新增標籤
+                  {{ t('itemModal.addTag') }}
                 </button>
               </div>
 
@@ -834,16 +864,16 @@ async function confirmArchive() {
                   v-else-if="!readonly && (item as Item).note_status === 'error'"
                   class="notes-analyzing notes-analyzing--err"
                 >
-                  筆記分析失敗，可點上方「重新分析」重試
+                  {{ t('itemModal.noteAnalyzeFailed') }}
                 </div>
                 <div
                   v-else-if="!readonly && !(item as Item).parsed_at"
                   class="notes-analyzing"
                 >
                   <span class="notes-analyzing__spinner" />
-                  <span class="notes-analyzing__text">筆記分析中…</span>
+                  <span class="notes-analyzing__text">{{ t('itemModal.noteAnalyzing') }}</span>
                 </div>
-                <p v-else class="id-body__summary-empty">尚無筆記</p>
+                <p v-else class="id-body__summary-empty">{{ t('itemModal.noNotes') }}</p>
               </div>
             </template>
 
@@ -859,15 +889,15 @@ async function confirmArchive() {
                     v-model="searchQuery"
                     type="text"
                     class="id-map-search__input"
-                    placeholder="搜尋地點，結果會標在地圖上…"
+                    :placeholder="t('itemModal.searchPlacePlaceholder')"
                     autocomplete="off"
                     :disabled="savingNewLoc"
                     @input="onSearchInput"
                     @keydown.enter.prevent="onSearchInput"
                     @keydown.esc="clearSearch"
                   />
-                  <span v-if="searchLoading" class="id-map-search__saving">搜尋中…</span>
-                  <span v-else-if="savingNewLoc" class="id-map-search__saving">新增中…</span>
+                  <span v-if="searchLoading" class="id-map-search__saving">{{ t('itemModal.searching') }}</span>
+                  <span v-else-if="savingNewLoc" class="id-map-search__saving">{{ t('itemModal.adding') }}</span>
                   <button v-else-if="searchQuery" class="id-map-search__clear" @click="clearSearch">×</button>
                 </div>
                 <div v-if="searchHint" class="id-map-search__hint">{{ searchHint }}</div>
@@ -881,7 +911,7 @@ async function confirmArchive() {
                 <div class="id-map-place-header">
                   <button class="id-map-place-back" @click="clearSelectedLoc">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-                    所有地標
+                    {{ t('itemModal.allLandmarks') }}
                   </button>
                   <span class="id-map-place-name">{{ selectedLoc.name }}</span>
                 </div>
@@ -897,29 +927,29 @@ async function confirmArchive() {
               <!-- Locations list (default) -->
               <template v-else>
                 <div class="id-map-locations">
-                  <div v-if="loadingLocations" class="id-map-locations__loading">載入地點中…</div>
+                  <div v-if="loadingLocations" class="id-map-locations__loading">{{ t('itemModal.loadingLocations') }}</div>
                   <template v-else-if="itemLocations.length">
                     <div v-for="loc in itemLocations" :key="loc.id" class="id-map-loc" @click="selectLocation(loc)">
                       <svg class="id-map-loc__pin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                         <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/>
                       </svg>
                       <span class="id-map-loc__name">{{ loc.name }}</span>
-                      <span v-if="loc.geocoding_status === 'pending'" class="id-map-loc__nogeo id-map-loc__nogeo--pending">座標取得中…</span>
-                      <span v-else-if="loc.geocoding_status === 'failed'" class="id-map-loc__nogeo id-map-loc__nogeo--failed">無法取得座標</span>
+                      <span v-if="loc.geocoding_status === 'pending'" class="id-map-loc__nogeo id-map-loc__nogeo--pending">{{ t('itemModal.geocoding') }}</span>
+                      <span v-else-if="loc.geocoding_status === 'failed'" class="id-map-loc__nogeo id-map-loc__nogeo--failed">{{ t('itemModal.geocodeFailed') }}</span>
                       <span class="id-map-loc__badge" :class="`id-map-loc__badge--${loc.source}`">
-                        {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? '手動' : 'AI' }}
+                        {{ loc.source === 'metadata' ? 'meta' : loc.source === 'user' ? t('itemModal.sourceManual') : 'AI' }}
                       </span>
-                      <button class="id-map-loc__btn id-map-loc__btn--delete" @click.stop="deleteLocation(loc)">刪除</button>
+                      <button class="id-map-loc__btn id-map-loc__btn--delete" @click.stop="deleteLocation(loc)">{{ t('itemModal.delete') }}</button>
                     </div>
                   </template>
                   <div v-else class="id-map-locations__empty">
-                    <span>此內容尚無地點資訊</span>
+                    <span>{{ t('itemModal.noLocations') }}</span>
                     <button
                       class="id-map-loc__btn id-map-loc__btn--extract"
                       :disabled="extractingLocations"
-                      @click="extractLocations"
+                      @click="requestExtractLocations"
                     >
-                      {{ extractingLocations ? '抽取中…' : '補抓地點' }}
+                      {{ extractingLocations ? t('itemModal.extractingShort') : t('itemModal.supplementLandmarks') }}
                     </button>
                   </div>
                 </div>
@@ -934,8 +964,8 @@ async function confirmArchive() {
 
     <!-- ── Page mode ── -->
     <template v-else>
-      <div v-if="loading" class="idp-state">載入中...</div>
-      <div v-else-if="error" class="idp-state">載入失敗，請重新整理</div>
+      <div v-if="loading" class="idp-state">{{ t('itemModal.loading') }}</div>
+      <div v-else-if="error" class="idp-state">{{ t('itemModal.loadFailed') }}</div>
       <div v-else-if="item" class="idp-wrap">
         <div class="idp-panel">
           <div class="idp-media">
@@ -973,14 +1003,14 @@ async function confirmArchive() {
                   ref="tagInputRef"
                   v-model="newTagInput"
                   class="id-tag__input"
-                  placeholder="標籤名稱"
+                  :placeholder="t('itemModal.tagPlaceholder')"
                   @keydown.enter="handleAddTag"
                   @keydown.esc.stop="addingTag = false; newTagInput = ''"
                   @blur="handleAddTag"
                 />
               </template>
               <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
-                + 新增標籤
+                {{ t('itemModal.addTag') }}
               </button>
             </div>
 
@@ -999,16 +1029,16 @@ async function confirmArchive() {
                 v-else-if="!readonly && (item as Item).note_status === 'error'"
                 class="notes-analyzing notes-analyzing--err"
               >
-                筆記分析失敗，可點上方「重新分析」重試
+                {{ t('itemModal.noteAnalyzeFailed') }}
               </div>
               <div
                 v-else-if="!readonly && !(item as Item).parsed_at"
                 class="notes-analyzing"
               >
                 <span class="notes-analyzing__spinner" />
-                <span class="notes-analyzing__text">筆記分析中…</span>
+                <span class="notes-analyzing__text">{{ t('itemModal.noteAnalyzing') }}</span>
               </div>
-              <p v-else class="id-body__summary-empty">尚無筆記</p>
+              <p v-else class="id-body__summary-empty">{{ t('itemModal.noNotes') }}</p>
             </div>
 
             <div class="id-body__actions">
@@ -1018,7 +1048,7 @@ async function confirmArchive() {
                 :disabled="savingNotes"
                 @click="isEditingNotes ? saveNotes() : startEditNotes()"
               >
-                {{ isEditingNotes ? (savingNotes ? '儲存中…' : '保存') : '編輯筆記' }}
+                {{ isEditingNotes ? (savingNotes ? t('itemModal.saving') : t('itemModal.save')) : t('itemModal.editNotes') }}
               </button>
               <button v-if="!readonly" class="btn" :disabled="archiving" @click="requestArchive">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
@@ -1029,7 +1059,7 @@ async function confirmArchive() {
                     <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
                   </template>
                 </svg>
-                {{ archiving ? '處理中…' : (item as Item).status === 'archived' ? '復原' : '封存' }}
+                {{ archiving ? t('itemModal.processing') : (item as Item).status === 'archived' ? t('itemModal.restore') : t('itemModal.archive') }}
               </button>
             </div>
           </div>
@@ -1040,13 +1070,53 @@ async function confirmArchive() {
     <!-- Archive confirm（兩種模式共用） -->
     <div v-if="showArchiveConfirm" class="modal-mask" @click.self="showArchiveConfirm = false">
       <div class="modal">
-        <h2>確認封存</h2>
-        <p>封存後此內容將從首頁與搜尋結果中隱藏，可前往<b>封存庫</b>隨時復原。</p>
+        <h2>{{ t('itemModal.archiveConfirmTitle') }}</h2>
+        <i18n-t keypath="itemModal.archiveConfirmBody" tag="p">
+          <template #archive><b>{{ t('itemModal.archiveLink') }}</b></template>
+        </i18n-t>
         <div class="modal__actions">
           <button class="btn btn--warn" style="flex:1;" :disabled="archiving" @click="confirmArchive">
-            {{ archiving ? '處理中…' : '封存' }}
+            {{ archiving ? t('itemModal.processing') : t('itemModal.archive') }}
           </button>
-          <button class="btn" :disabled="archiving" @click="showArchiveConfirm = false">取消</button>
+          <button class="btn" :disabled="archiving" @click="showArchiveConfirm = false">{{ t('itemModal.cancel') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reanalyze confirm -->
+    <div v-if="showReanalyzeConfirm" class="modal-mask" @click.self="!reanalyzing && (showReanalyzeConfirm = false)">
+      <div class="modal">
+        <h2>{{ t('itemModal.reanalyze') }}</h2>
+        <i18n-t keypath="itemModal.reanalyzeConfirmBody" tag="p">
+          <template #cost><b>{{ t('itemModal.quotaCost') }}</b></template>
+        </i18n-t>
+        <p v-if="reanalyzeQuotaError" style="color: var(--danger, #e55); font-size: 13px;">
+          {{ t('itemModal.reanalyzeQuotaFull') }}
+        </p>
+        <div class="modal__actions">
+          <button class="btn btn--accent" style="flex:1;" :disabled="reanalyzing" @click="reanalyze">
+            {{ reanalyzing ? t('itemModal.processing') : t('itemModal.reanalyzeConfirmBtn') }}
+          </button>
+          <button class="btn" :disabled="reanalyzing" @click="showReanalyzeConfirm = false">{{ t('itemModal.cancel') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Re-extract landmarks confirm -->
+    <div v-if="showExtractConfirm" class="modal-mask" @click.self="!extractingLocations && (showExtractConfirm = false)">
+      <div class="modal">
+        <h2>{{ t('itemModal.reExtractLandmarks') }}</h2>
+        <i18n-t keypath="itemModal.extractConfirmBody" tag="p">
+          <template #cost><b>{{ t('itemModal.quotaCost') }}</b></template>
+        </i18n-t>
+        <p v-if="extractQuotaError" style="color: var(--danger, #e55); font-size: 13px;">
+          {{ t('itemModal.extractQuotaFull') }}
+        </p>
+        <div class="modal__actions">
+          <button class="btn btn--accent" style="flex:1;" :disabled="extractingLocations" @click="extractLocations">
+            {{ extractingLocations ? t('itemModal.processing') : t('itemModal.extractConfirmBtn') }}
+          </button>
+          <button class="btn" :disabled="extractingLocations" @click="showExtractConfirm = false">{{ t('itemModal.cancel') }}</button>
         </div>
       </div>
     </div>
