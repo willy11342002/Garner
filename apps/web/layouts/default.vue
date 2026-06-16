@@ -4,6 +4,7 @@
     <LayoutGuestNav v-else />
     <slot />
     <LayoutAppFooter v-if="showFooter" :show-pricing="!isLoggedIn" />
+    <ToastList />
   </div>
 </template>
 

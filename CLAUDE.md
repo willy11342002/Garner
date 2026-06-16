@@ -77,6 +77,7 @@ garner/
 - `useGlobalMap` — 地圖狀態
 - `useI18nContent` — 內容多語
 - `useTheme` — 主題切換
+- `useToast` — 全域 toast 通知（show(message, type)；搭配根目錄 ToastList 元件顯示）
 
 ### Web stores（`apps/web/stores/`）
 `useAuthStore` · `useItemStore` · `useTagStore` · `useNotificationStore`
@@ -89,7 +90,7 @@ garner/
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
 - `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）
-- 根目錄 — TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）
+- 根目錄 — TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）
 
 ### Web utils（`apps/web/utils/`）
 - `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）
