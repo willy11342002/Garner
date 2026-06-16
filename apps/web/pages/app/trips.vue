@@ -80,8 +80,25 @@
 
             <!-- Board view (by tags) -->
             <div v-show="activeView === 'board'" class="trips-board">
-              <div v-for="col in boardColumns" :key="col.id" class="trips-bcol">
-                <div class="trips-bcol__head">
+              <div
+                v-for="col in boardColumns"
+                :key="col.id"
+                class="trips-bcol"
+                :class="{
+                  'is-dragover': dragOverTagId === col.id && dragTagId !== col.id && col.id !== '__none__',
+                  'is-dragging': dragTagId === col.id,
+                }"
+                @dragover.prevent="col.id !== '__none__' && (dragOverTagId = col.id)"
+                @dragleave="dragOverTagId === col.id && (dragOverTagId = null)"
+                @drop.prevent="col.id !== '__none__' && onTagDrop(col.id)"
+              >
+                <div
+                  class="trips-bcol__head"
+                  :class="{ 'trips-bcol__head--drag': col.id !== '__none__' && editingTagId !== col.id }"
+                  :draggable="col.id !== '__none__' && editingTagId !== col.id"
+                  @dragstart="onTagDragStart(col.id, $event)"
+                  @dragend="onTagDragEnd"
+                >
                   <!-- Editable tag name (only for real tags, not "無標籤") -->
                   <template v-if="col.id !== '__none__'">
                     <input
@@ -103,6 +120,14 @@
                   </template>
                   <span v-else class="tag-chip tag-chip--plain">{{ col.name }}</span>
                   <span class="trips-colcount">{{ itemsByTag(col.id).length }}</span>
+                  <button
+                    v-if="col.id !== '__none__' && editingTagId !== col.id"
+                    class="trips-bcol__del"
+                    title="刪除分類"
+                    @click.stop="handleDeleteTag(col.id, col.name)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                  </button>
                 </div>
                 <div class="trips-bcol__cards">
                   <div
@@ -344,7 +369,7 @@ import type { Trip, TripItem, TripListItem, TripTag } from '~/types/api'
 definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 旅遊行程' })
 
-const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, addItem, updateItem, deleteItem, listTags, createTag, updateTag } = useTrips()
+const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, addItem, updateItem, deleteItem, listTags, createTag, updateTag, deleteTag } = useTrips()
 const { open: openItemModal } = useItemModal()
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -417,6 +442,11 @@ const addingBoardTag = ref(false)
 const boardTagName = ref('')
 const boardTagInputEl = ref<HTMLInputElement | null>(null)
 
+// Board column drag-reorder（順序記憶在 localStorage）
+const TAG_ORDER_KEY = 'trips:tagOrder'
+const dragTagId = ref<string | null>(null)
+const dragOverTagId = ref<string | null>(null)
+
 // Modal inline tag add
 const addingTag = ref(false)
 const newTagName = ref('')
@@ -445,6 +475,7 @@ onMounted(async () => {
         } catch { /* ignore */ }
       }
     }
+    applyStoredTagOrder()
   } finally {
     loadingList.value = false
   }
@@ -813,6 +844,90 @@ function cancelEditTag(e: KeyboardEvent) {
   ;(e.target as HTMLElement).blur()
 }
 
+// ── Board delete tag ───────────────────────────────────────────────────────
+async function handleDeleteTag(tagId: string, name: string) {
+  if (!confirm(`確定刪除分類「${name}」？該分類下的卡片會移到「無標籤」。`)) return
+  const idx = availableTags.value.findIndex(t => t.id === tagId)
+  if (idx === -1) return
+  const removed = availableTags.value[idx]
+  availableTags.value.splice(idx, 1)
+  // 同步把此標籤從目前行程的卡片上移除（後端 delete 會 cascade）
+  const detached: Array<{ item: TripItem; pos: number; tag: TripItem['tags'][number] }> = []
+  for (const item of current.value?.items ?? []) {
+    const ti = item.tags.findIndex(t => t.trip_tag_id === tagId)
+    if (ti !== -1) {
+      detached.push({ item, pos: ti, tag: item.tags[ti] })
+      item.tags.splice(ti, 1)
+    }
+  }
+  saveTagOrder()
+  try {
+    await deleteTag(tagId)
+  } catch {
+    availableTags.value.splice(idx, 0, removed)
+    for (const d of detached) d.item.tags.splice(d.pos, 0, d.tag)
+    saveTagOrder()
+  }
+}
+
+// ── Board column drag-reorder ──────────────────────────────────────────────
+function loadTagOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(TAG_ORDER_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveTagOrder() {
+  try {
+    localStorage.setItem(TAG_ORDER_KEY, JSON.stringify(availableTags.value.map(t => t.id)))
+  } catch { /* ignore */ }
+}
+
+function applyStoredTagOrder() {
+  const order = loadTagOrder()
+  if (!order.length) return
+  availableTags.value.sort((a, b) => {
+    const ia = order.indexOf(a.id)
+    const ib = order.indexOf(b.id)
+    if (ia === -1 && ib === -1) return 0
+    if (ia === -1) return 1   // 未記錄的（新標籤）排最後
+    if (ib === -1) return -1
+    return ia - ib
+  })
+}
+
+function onTagDragStart(tagId: string, e: DragEvent) {
+  if (tagId === '__none__' || editingTagId.value === tagId) return
+  dragTagId.value = tagId
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', tagId)
+  }
+}
+
+function onTagDragEnd() {
+  dragTagId.value = null
+  dragOverTagId.value = null
+}
+
+function onTagDrop(targetId: string) {
+  const fromId = dragTagId.value
+  dragTagId.value = null
+  dragOverTagId.value = null
+  if (!fromId || fromId === targetId) return
+  const arr = availableTags.value
+  const fromIdx = arr.findIndex(t => t.id === fromId)
+  const toIdx = arr.findIndex(t => t.id === targetId)
+  if (fromIdx === -1 || toIdx === -1) return
+  const [moved] = arr.splice(fromIdx, 1)
+  arr.splice(toIdx, 0, moved)
+  saveTagOrder()
+}
+
 // ── Board add tag column ───────────────────────────────────────────────────
 function startAddBoardTag() {
   addingBoardTag.value = true
@@ -1002,9 +1117,22 @@ function cancelNewTag() {
   padding-bottom: 16px;
   align-items: stretch;
 }
-.trips-bcol { flex: 0 0 256px; display: flex; flex-direction: column; min-height: 0; }
+.trips-bcol { flex: 0 0 256px; display: flex; flex-direction: column; min-height: 0; border-radius: 12px; transition: box-shadow .14s ease, opacity .14s ease; }
+.trips-bcol.is-dragging { opacity: .4; }
+.trips-bcol.is-dragover { box-shadow: inset 3px 0 0 var(--accent); }
 .trips-bcol--addtag { flex: 0 0 160px; justify-content: flex-start; padding-top: 2px; }
 .trips-bcol__head { display: flex; align-items: center; gap: 9px; padding: 0 2px; margin-bottom: 10px; flex-shrink: 0; }
+.trips-bcol__head--drag { cursor: grab; }
+.trips-bcol__head--drag:active { cursor: grabbing; }
+.trips-bcol__del {
+  width: 20px; height: 20px; flex-shrink: 0; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text-dim);
+  cursor: pointer; opacity: 0; transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.trips-bcol__del svg { width: 12px; height: 12px; }
+.trips-bcol__head:hover .trips-bcol__del { opacity: 1; }
+.trips-bcol__del:hover { background: var(--surface2); color: #e85555; }
 .trips-bcol__cards { flex: 1 1 auto; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; }
 .trips-bcol__taginput {
   flex: 1; min-width: 0;
@@ -1016,7 +1144,7 @@ function cancelNewTag() {
   color: var(--text);
   outline: none;
 }
-.trips-colcount { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.trips-colcount { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); margin-left: auto; }
 .trips-addcol-btn {
   display: flex; align-items: center; gap: 7px;
   padding: 7px 12px; border-radius: 10px;
