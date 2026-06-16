@@ -58,17 +58,19 @@ garner/
 - `billing_service` — 訂閱 / 付費額度邏輯
 - `gumroad_service` — Gumroad 金流串接
 - `apify_service` — 外部內容抓取（Apify）
+- `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發
 
 ### API routers（`apps/api/app/routers/`）
-`items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）
+`items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）· `trips` · `trip_tags`
 
 ### API crud（`apps/api/app/crud/`）
-`items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `personal_access_tokens`
+`items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `personal_access_tokens` · `trips`
 
 ### Web composables（`apps/web/composables/`）
 - `useItems` / `useItemStore` — Item 資料與狀態
 - `useArticles` — 文章（知識）資料：手動新增 / 編輯，存在 user_items
 - `useReports` — AI 報告（產出層）資料：列表 / 編輯 / revise / regenerate / 刪除
+- `useTrips` — 旅遊行程資料：行程 / 卡片 / 標籤 CRUD 與排序
 - `useSearch` — 搜尋邏輯
 - `useItemModal` — Item 詳情彈窗開關
 - `useChain` — 關聯鏈

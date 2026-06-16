@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, pat, quota, reports, search, tags
+from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, pat, quota, reports, search, tags, trips, trip_tags
 
 import logging
 import sys
@@ -90,6 +90,8 @@ app.include_router(reports.router, prefix="/reports", tags=["reports"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(quota.router, prefix="/quota", tags=["quota"])
 app.include_router(billing.router, prefix="/billing", tags=["billing"])
+app.include_router(trips.router, prefix="/trips", tags=["trips"])
+app.include_router(trip_tags.router, prefix="/trip-tags", tags=["trip-tags"])
 
 
 @app.exception_handler(Exception)

@@ -315,3 +315,143 @@ export interface Notification {
   is_read: boolean
   created_at: string
 }
+
+// ── Trip types ────────────────────────────────────────────────────────────────
+
+export interface TripTag {
+  id: string
+  name: string
+  color: string | null
+}
+
+export interface TripTagCreate {
+  name: string
+  color?: string | null
+}
+
+export interface TripTagUpdate {
+  name?: string | null
+  color?: string | null
+}
+
+export interface TripItemTag {
+  trip_tag_id: string
+  name: string
+  color: string | null
+}
+
+export interface TripItem {
+  id: string
+  trip_id: string
+  user_item_id: string | null
+  kind: 'event' | 'reference'
+  title: string
+  emoji: string | null
+  note: string | null
+  category: string | null
+  booked: boolean
+  start_date: string | null
+  end_date: string | null
+  start_time: string | null
+  end_time: string | null
+  order_index: number
+  place_name: string | null
+  lat: number | null
+  lng: number | null
+  geocoding_status: string
+  tags: TripItemTag[]
+  created_at: string
+  updated_at: string
+}
+
+export interface TripItemCreate {
+  user_item_id?: string | null
+  kind?: 'event' | 'reference'
+  title: string
+  emoji?: string | null
+  note?: string | null
+  category?: string | null
+  booked?: boolean
+  start_date?: string | null
+  end_date?: string | null
+  start_time?: string | null
+  end_time?: string | null
+  order_index?: number
+  place_name?: string | null
+  lat?: number | null
+  lng?: number | null
+}
+
+export interface TripItemUpdate {
+  kind?: string | null
+  title?: string | null
+  emoji?: string | null
+  note?: string | null
+  category?: string | null
+  booked?: boolean | null
+  start_date?: string | null
+  end_date?: string | null
+  start_time?: string | null
+  end_time?: string | null
+  order_index?: number | null
+  place_name?: string | null
+  lat?: number | null
+  lng?: number | null
+  tag_ids?: string[] | null
+}
+
+export interface TripItemReorderEntry {
+  id: string
+  order_index: number
+}
+
+export interface TripItemReorderRequest {
+  items: TripItemReorderEntry[]
+}
+
+export interface TripSourceItem {
+  id: string
+  title: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+}
+
+export interface Trip {
+  id: string
+  title: string
+  summary: string | null
+  start_date: string | null
+  end_date: string | null
+  last_edited_by: string | null
+  sources: TripSourceItem[]
+  items: TripItem[]
+  created_at: string
+  updated_at: string
+}
+
+export interface TripListItem {
+  id: string
+  title: string
+  summary: string | null
+  start_date: string | null
+  end_date: string | null
+  source_count: number
+  item_count: number
+  last_edited_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TripCreate {
+  title: string
+  summary?: string | null
+  start_date?: string | null
+  end_date?: string | null
+}
+
+export interface TripUpdate {
+  title?: string | null
+  summary?: string | null
+  start_date?: string | null
+  end_date?: string | null
+}

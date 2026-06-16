@@ -10,6 +10,7 @@ from app.models.place_cache import PlaceCache
 from app.models.item_tag import ItemTag, TagSource
 from app.models.plan import Plan
 from app.models.report import Report
+from app.models.trip import Trip, TripItem, TripItemTag, TripTag
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.tag import Tag
 from app.models.user import SSOProvider, User
@@ -20,6 +21,10 @@ __all__ = [
     "SSOProvider",
     "Plan",
     "Report",
+    "Trip",
+    "TripItem",
+    "TripTag",
+    "TripItemTag",
     "Subscription",
     "SubscriptionStatus",
     "ContentLocation",

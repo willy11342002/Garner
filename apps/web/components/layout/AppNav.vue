@@ -13,6 +13,11 @@
           class="nav__tab"
           :class="{ 'nav__tab--active': route.path.startsWith('/app/reports') }"
         >{{ t('nav.reports') }}</NuxtLink>
+        <NuxtLink
+          to="/app/trips"
+          class="nav__tab"
+          :class="{ 'nav__tab--active': route.path.startsWith('/app/trips') }"
+        >{{ t('nav.trips') }}</NuxtLink>
       </div>
       <div class="nav__right">
         <!-- 新增 -->
