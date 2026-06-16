@@ -160,3 +160,15 @@ class TripUpdate(BaseModel):
     summary: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+
+
+# ── AI 修改 ───────────────────────────────────────────────────────────────────
+
+class TripAIEditTurn(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class TripAIEditRequest(BaseModel):
+    instruction: str
+    history: list[TripAIEditTurn] | None = None

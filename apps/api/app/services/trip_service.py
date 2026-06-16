@@ -286,7 +286,7 @@ async def add_card_from_chat(
 
     if geocode_query:
         asyncio.create_task(_geocode_items_bg([(item.id, geocode_query)]))
-    return {"ok": True, "title": item.title}
+    return {"ok": True, "id": str(item.id), "title": item.title}
 
 
 async def _geocode_items_bg(items: list[tuple[UUID, str]]) -> None:
@@ -479,3 +479,294 @@ async def reorder_items(
         db, [{"id": e.id, "order_index": e.order_index} for e in entries]
     )
     return True
+
+
+# ── AI 修改既有行程 ──────────────────────────────────────────────────────────────
+
+_TRIP_EDIT_SYSTEM = """\
+你是 Garner 的旅遊行程編輯助理。用戶有一份「既有」的旅遊行程，會給你修改指示。
+你的工作是依指示，用工具對這份行程的卡片做「新增／修改／刪除」，把行程調整到位。
+
+規則：
+- 只能用工具改動行程，不要把行程內容用文字重貼一遍
+- 新增景點／餐廳／交通／住宿：用 add_card，一個地點一張卡，title 只放名稱（≤20 字），細節放 note
+- 修改某張卡片：用 update_card，card_no 用下方「目前卡片」清單的編號；只填要改的欄位
+- 刪除某張卡片：用 delete_card，card_no 用清單編號
+- 一次指示可呼叫多個工具（例如新增好幾張卡、或同時改多張）
+- place_name 只放純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址
+- 全部改完後，用繁體中文寫 1～2 句話簡短說明你做了哪些調整
+- 若指示與行程編輯無關，簡短說明你只能幫忙編輯這份行程的卡片
+"""
+
+_TRIP_EDIT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "add_card",
+            "description": "在這份行程新增一張卡片（單一景點／餐廳／交通／住宿）。需要幾個點就呼叫幾次。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "day": {"type": "integer", "description": "第幾天，從 1 開始（行程有起始日才會排到該天）"},
+                    "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動，簡短（≤20 字）"},
+                    "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址"},
+                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
+                    "emoji": {"type": "string", "description": "代表性 emoji，可選"},
+                    "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
+                    "note": {"type": "string", "description": "卡片細節（玩法、交通、提醒等），markdown 格式，可選"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_card",
+            "description": "修改一張既有卡片。card_no 用「目前卡片」清單的編號。只填要變更的欄位，未填的保持不變。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "card_no": {"type": "integer", "description": "要修改的卡片編號（見「目前卡片」清單）"},
+                    "day": {"type": "integer", "description": "改成第幾天，從 1 開始（行程有起始日才生效）"},
+                    "title": {"type": "string", "maxLength": 30, "description": "新的卡片名稱（簡短）"},
+                    "place_name": {"type": "string", "description": "新的純地點名稱（含城市），用於地圖定位，不要放網址"},
+                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "新的分類"},
+                    "emoji": {"type": "string", "description": "新的 emoji"},
+                    "start_time": {"type": "string", "description": "新的建議時間 HH:MM"},
+                    "note": {"type": "string", "description": "新的卡片細節（markdown）"},
+                    "booked": {"type": "boolean", "description": "是否已預定票券"},
+                },
+                "required": ["card_no"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_card",
+            "description": "刪除一張既有卡片。card_no 用「目前卡片」清單的編號。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "card_no": {"type": "integer", "description": "要刪除的卡片編號（見「目前卡片」清單）"},
+                },
+                "required": ["card_no"],
+            },
+        },
+    },
+]
+
+
+def _parse_time_str(v):
+    from datetime import datetime as _dt
+    if not v or not isinstance(v, str):
+        return None
+    try:
+        return _dt.strptime(v, "%H:%M").time()
+    except Exception:
+        return None
+
+
+def _maps_link_and_geocode_query(place_name: str | None) -> tuple[str | None, str | None]:
+    """純地名 → Google Maps 連結（前端當可點地標用）＋ 原始地名（供 geocoding 取座標）。
+    已是網址則直接沿用、不 geocode。回傳 (stored_place, geocode_query)。"""
+    from urllib.parse import quote
+    raw = (place_name or "").strip() or None
+    if not raw:
+        return None, None
+    if raw.startswith("http"):
+        return raw, None
+    return f"https://www.google.com/maps/search/?api=1&query={quote(raw)}", raw
+
+
+async def _ai_update_card(
+    db: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    trip_start_date,
+    item_id: UUID,
+    args: dict,
+) -> dict:
+    from datetime import timedelta
+
+    item = await crud_trips.get_item(db, trip_id, item_id)
+    if item is None:
+        return {"ok": False, "error": "card not found"}
+
+    kwargs: dict = {}
+    if args.get("title"):
+        kwargs["title"] = str(args["title"]).strip()[:60]
+    if "note" in args:
+        kwargs["note"] = args.get("note") or None
+    if "emoji" in args:
+        kwargs["emoji"] = args.get("emoji") or None
+    if isinstance(args.get("booked"), bool):
+        kwargs["booked"] = args["booked"]
+    if "start_time" in args:
+        kwargs["start_time"] = _parse_time_str(args.get("start_time"))
+    if args.get("category"):
+        kwargs["category"] = str(args["category"]).strip()
+
+    # day → start_date（需 trip 有起始日）
+    day = args.get("day")
+    try:
+        day_int = int(day) if day is not None else None
+    except (ValueError, TypeError):
+        day_int = None
+    if trip_start_date and day_int and day_int >= 1:
+        kwargs["start_date"] = trip_start_date + timedelta(days=day_int - 1)
+
+    # place_name 變更 → 存成可點連結 + 背景 geocoding
+    geocode_query = None
+    if "place_name" in args:
+        stored_place, geocode_query = _maps_link_and_geocode_query(args.get("place_name"))
+        kwargs["place_name"] = stored_place
+        if geocode_query:
+            kwargs["geocoding_status"] = "pending"
+            kwargs["lat"] = None
+            kwargs["lng"] = None
+
+    item = await crud_trips.update_item(db, item, **kwargs)
+
+    # category → 對應 trip 標籤並掛到卡片（沿用 add_card 的行為，掛失敗不影響卡片）
+    cat = (args.get("category") or "").strip()
+    if cat in _CATEGORY_TAG_COLORS:
+        try:
+            from app.models.trip import TripItemTag as _TripItemTag
+            from sqlalchemy import select
+            tag = await crud_trips.get_or_create_tag(db, user_id, cat, _CATEGORY_TAG_COLORS[cat])
+            exists = await db.execute(
+                select(_TripItemTag).where(
+                    _TripItemTag.trip_item_id == item.id,
+                    _TripItemTag.trip_tag_id == tag.id,
+                )
+            )
+            if exists.scalar_one_or_none() is None:
+                db.add(_TripItemTag(trip_item_id=item.id, trip_tag_id=tag.id))
+                await db.commit()
+        except Exception:
+            logger.exception("attach category tag failed for item %s", item.id)
+
+    if geocode_query:
+        asyncio.create_task(_geocode_items_bg([(item.id, geocode_query)]))
+
+    return await _item_read_json(db, trip_id, item.id, ok=True)
+
+
+async def _item_read_json(db: AsyncSession, trip_id: UUID, item_id: UUID, *, ok: bool) -> dict:
+    """把單張卡片組成給前端的工具結果：_item 放完整 TripItemRead（前端用來即時渲染卡片）。"""
+    item = await crud_trips.get_item(db, trip_id, item_id)
+    if item is None:
+        return {"ok": False}
+    read = _build_item_read(item)
+    return {"ok": ok, "title": item.title, "_item": read.model_dump(mode="json")}
+
+
+async def ai_edit_trip_stream(
+    db: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    instruction: str,
+    history: list[dict] | None = None,
+):
+    """AI 修改既有行程（SSE 串流）：依用戶指示用工具逐張新刪修卡片。
+
+    每執行一個工具就 yield 一個 tool_result 事件，前端據此即時更新畫面：
+      add_card / update_card → 帶完整卡片（_item）
+      delete_card           → 帶 _deleted_id
+    history 為先前的對話（[{role, content}]），讓多輪追問有記憶。
+    行程不存在時 yield error 事件。
+    """
+    from app.services import ai_service
+
+    trip = await crud_trips.get_trip(db, user_id, trip_id)
+    if trip is None:
+        yield ai_service._sse("error", {"message": "trip not found"})
+        return
+
+    # 以與詳情頁相同的排序呈現卡片，並建立 編號 → item_id 的對照
+    items_sorted = sorted(
+        trip.items or [],
+        key=lambda i: (str(i.start_date) if i.start_date else "", i.order_index),
+    )
+    card_map: dict[int, UUID] = {}
+    card_lines: list[str] = []
+    for n, it in enumerate(items_sorted, start=1):
+        card_map[n] = it.id
+        meta = []
+        if it.start_date:
+            meta.append(str(it.start_date))
+        if it.start_time:
+            meta.append(it.start_time.strftime("%H:%M"))
+        if it.category:
+            meta.append(it.category)
+        meta_str = f"（{' · '.join(meta)}）" if meta else ""
+        card_lines.append(f"{n}. {it.title}{meta_str}")
+
+    header = [f"行程標題：{trip.title}"]
+    if trip.start_date:
+        header.append(f"起始日：{trip.start_date}")
+    if trip.end_date:
+        header.append(f"結束日：{trip.end_date}")
+    cards_block = "\n".join(card_lines) if card_lines else "（目前沒有任何卡片）"
+    user_message = (
+        "\n".join(header)
+        + "\n\n目前卡片：\n"
+        + cards_block
+        + "\n\n修改指示：\n"
+        + instruction.strip()
+    )
+
+    trip_start_date = trip.start_date
+
+    async def execute_tool(name: str, args: dict) -> dict:
+        if name == "add_card":
+            res = await add_card_from_chat(
+                db, user_id, trip_id,
+                day=args.get("day"),
+                title=args.get("title", "未命名"),
+                place_name=args.get("place_name"),
+                category=args.get("category"),
+                emoji=args.get("emoji"),
+                start_time=args.get("start_time"),
+                note=args.get("note"),
+            )
+            if not res or not res.get("id"):
+                return {"ok": False}
+            return await _item_read_json(db, trip_id, UUID(res["id"]), ok=True)
+
+        if name == "update_card":
+            try:
+                no = int(args.get("card_no"))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "invalid card_no"}
+            item_id = card_map.get(no)
+            if item_id is None:
+                return {"ok": False, "error": "card_no not found"}
+            return await _ai_update_card(db, user_id, trip_id, trip_start_date, item_id, args)
+
+        if name == "delete_card":
+            try:
+                no = int(args.get("card_no"))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "invalid card_no"}
+            item_id = card_map.get(no)
+            if item_id is None:
+                return {"ok": False, "error": "card_no not found"}
+            ok = await delete_item(db, user_id, trip_id, item_id)
+            return {"ok": ok, "_deleted_id": str(item_id)}
+
+        return {"ok": False, "error": "unknown tool"}
+
+    from datetime import date as _date
+    system = _TRIP_EDIT_SYSTEM + f"\n今天日期：{_date.today().isoformat()}"
+    async for ev in ai_service.stream_tool_loop(
+        system, user_message, _TRIP_EDIT_TOOLS, execute_tool, history=history
+    ):
+        yield ev
+
+    # 標記為 AI 最後編輯（靜默，不另發事件）
+    trip2 = await crud_trips.get_trip(db, user_id, trip_id)
+    if trip2 is not None:
+        await crud_trips.update_trip(db, trip2, last_edited_by="ai")

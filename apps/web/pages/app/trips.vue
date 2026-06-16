@@ -134,6 +134,7 @@
                     v-for="item in itemsByTag(col.id)"
                     :key="item.id"
                     class="trips-tcard"
+                    :class="{ 'is-aiflash': flashIds.has(item.id) }"
                     @click="openItemEditor(item)"
                   >
                     <div class="trips-tcard__name">
@@ -181,6 +182,7 @@
                     v-for="item in unscheduledItems"
                     :key="item.id"
                     class="trips-tcard"
+                    :class="{ 'is-aiflash': flashIds.has(item.id) }"
                     @click="openItemEditor(item)"
                   >
                     <div class="trips-tcard__name">
@@ -208,6 +210,7 @@
                     v-for="item in itemsByDate(day)"
                     :key="item.id"
                     class="trips-tcard"
+                    :class="{ 'is-aiflash': flashIds.has(item.id) }"
                     @click="openItemEditor(item)"
                   >
                     <div class="trips-tcard__name">
@@ -327,14 +330,22 @@
           </div>
 
           <div class="trips-modal__foot">
-            <button v-if="editingItem.id" class="btn btn--danger" :disabled="savingItem" @click="handleDeleteItem">刪除</button>
-            <button class="btn btn--accent" :disabled="savingItem || !editForm.title.trim()" @click="handleSaveItem">
-              {{ savingItem ? '儲存中…' : '儲存' }}
-            </button>
+            <button v-if="editingItem.id" class="btn btn--danger" :disabled="isSaving" @click="handleDeleteItem">刪除</button>
+            <button class="btn btn--accent" :disabled="!editForm.title.trim()" @click="handleSaveItem">儲存</button>
           </div>
         </div>
       </div>
     </Transition>
+
+    <!-- ===== AI 修改懸浮球（僅在選定行程時顯示）===== -->
+    <TripAiFab
+      v-if="current"
+      :trip-id="current.id"
+      @card-added="onAiCardAdded"
+      @card-updated="onAiCardUpdated"
+      @card-deleted="onAiCardDeleted"
+      @done="onAiDone"
+    />
 
     <!-- Emoji picker (Teleport to body to escape overflow) -->
     <Teleport to="body">
@@ -429,6 +440,55 @@ const sourcesOpen = ref(false)
 function onSelectSource(id: string) {
   sourcesOpen.value = false
   openItemModal(id)
+}
+
+// ── AI 修改懸浮球：逐動作即時套用到畫面 + 綠色閃爍特效 ──────────────────────────
+const flashIds = ref<Set<string>>(new Set())
+
+function flashCard(id: string) {
+  flashIds.value = new Set(flashIds.value).add(id)
+  setTimeout(() => {
+    const next = new Set(flashIds.value)
+    next.delete(id)
+    flashIds.value = next
+  }, 1400)
+}
+
+function bumpSidebarCount(delta: number) {
+  if (!current.value) return
+  const idx = trips.value.findIndex(t => t.id === current.value!.id)
+  if (idx !== -1) trips.value[idx].item_count += delta
+}
+
+function onAiCardAdded(item: TripItem) {
+  if (!current.value) return
+  if (current.value.items.some(i => i.id === item.id)) return
+  current.value.items.push(item)
+  bumpSidebarCount(1)
+  flashCard(item.id)
+}
+
+function onAiCardUpdated(item: TripItem) {
+  if (!current.value) return
+  const idx = current.value.items.findIndex(i => i.id === item.id)
+  if (idx !== -1) current.value.items[idx] = item
+  else current.value.items.push(item)
+  flashCard(item.id)
+}
+
+function onAiCardDeleted(id: string) {
+  if (!current.value) return
+  const idx = current.value.items.findIndex(i => i.id === id)
+  if (idx !== -1) {
+    current.value.items.splice(idx, 1)
+    bumpSidebarCount(-1)
+  }
+}
+
+async function onAiDone() {
+  // AI 可能因 category 建立了新標籤，重新抓標籤清單並套回排序
+  availableTags.value = await listTags()
+  applyStoredTagOrder()
 }
 
 // Emoji picker
@@ -686,7 +746,7 @@ interface EditForm {
 }
 
 const editingItem = ref<Partial<TripItem> | null>(null)
-const savingItem = ref(false)
+const isSaving = ref(false)
 const editingPlace = ref(false)  // 地標：有值時預設顯示「開啟地圖」按鈕，按編輯才切成 input
 const editForm = ref<EditForm>({
   title: '', emoji: '', booked: false,
@@ -747,12 +807,14 @@ function sidebarItemCount(tripId: string, delta: number) {
 }
 
 async function handleSaveItem() {
-  if (!current.value || savingItem.value || !editForm.value.title.trim()) return
-  savingItem.value = true
+  if (!current.value || isSaving.value || !editForm.value.title.trim()) return
+  const toast = useToast()
+  isSaving.value = true
   const payload = buildPayload()
   const tripId = current.value.id
 
   if (editingItem.value?.id) {
+    // ── 更新既有卡片 ─────────────────────────────────────────────────────────
     const itemId = editingItem.value.id
     const itemIdx = current.value.items.findIndex(i => i.id === itemId)
     const prevItem = itemIdx !== -1 ? { ...current.value.items[itemIdx] } : null
@@ -762,15 +824,18 @@ async function handleSaveItem() {
     if (itemIdx !== -1) {
       current.value.items[itemIdx] = { ...current.value.items[itemIdx], ...payload, tags: optimisticTags }
     }
-    closeItemEditor()
     try {
       const updated = await updateItem(tripId, itemId, payload)
       const finalIdx = current.value.items.findIndex(i => i.id === itemId)
       if (finalIdx !== -1) current.value.items[finalIdx] = updated
+      editingPlace.value = false
+      toast.show('已儲存', 'success')
     } catch {
       if (prevItem && itemIdx !== -1) current.value.items[itemIdx] = prevItem
+      toast.show('儲存失敗，已復原', 'error')
     }
   } else {
+    // ── 新增卡片 ─────────────────────────────────────────────────────────────
     const tempId = `temp-${Date.now()}`
     const tempTags = availableTags.value
       .filter(t => payload.tag_ids.includes(t.id))
@@ -786,21 +851,24 @@ async function handleSaveItem() {
     }
     current.value.items.push(tempItem)
     sidebarItemCount(tripId, 1)
-    closeItemEditor()
     try {
       const created = await addItem(tripId, { ...payload, order_index: tempItem.order_index })
       const idx = current.value.items.findIndex(i => i.id === tempId)
       if (idx !== -1) current.value.items[idx] = created
+      editingItem.value = created
+      editingPlace.value = false
+      toast.show('已儲存', 'success')
     } catch {
       current.value.items = current.value.items.filter(i => i.id !== tempId)
       sidebarItemCount(tripId, -1)
+      toast.show('儲存失敗，已復原', 'error')
     }
   }
-  savingItem.value = false
+  isSaving.value = false
 }
 
 async function handleDeleteItem() {
-  if (!current.value || !editingItem.value?.id || savingItem.value) return
+  if (!current.value || !editingItem.value?.id || isSaving.value) return
   if (!confirm('確定刪除這張卡片？')) return
   const tripId = current.value.id
   const itemId = editingItem.value.id
@@ -1105,6 +1173,13 @@ function cancelNewTag() {
   background: var(--surface); border: 1px solid var(--border); cursor: pointer; transition: all .15s ease;
 }
 .trips-tcard:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: 0 10px 26px -14px var(--shadow); }
+/* AI 修改後的卡片：綠色閃爍一下 */
+.trips-tcard.is-aiflash { animation: trips-aiflash 1.4s ease-out; }
+@keyframes trips-aiflash {
+  0%   { background: color-mix(in oklab, #34c759 38%, var(--surface)); border-color: #34c759; box-shadow: 0 0 0 3px color-mix(in oklab, #34c759 30%, transparent); }
+  60%  { background: color-mix(in oklab, #34c759 18%, var(--surface)); border-color: color-mix(in oklab, #34c759 55%, var(--border)); }
+  100% { background: var(--surface); border-color: var(--border); box-shadow: none; }
+}
 .trips-tcard__name { display: flex; align-items: flex-start; gap: 7px; font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.4; }
 .trips-tcard__emoji { flex: 0 0 auto; }
 .trips-tcard__meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -1180,7 +1255,7 @@ function cancelNewTag() {
   display: flex; align-items: center; justify-content: center; padding: 24px;
 }
 .trips-modal {
-  width: clamp(70vw, calc(100vw - 48px), 100vw);
+  width: min(max(70vw, calc(494px + 35.7vw)), 100%);
   max-width: 100vw;
   max-height: 88vh;
   background: var(--bg);

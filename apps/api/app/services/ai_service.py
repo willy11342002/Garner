@@ -914,6 +914,158 @@ async def agentic_chat_stream(
     })
 
 
+async def stream_tool_loop(
+    system: str,
+    user_message: str,
+    tools: list[dict],
+    execute_tool,  # async callable(name, args) -> dict
+    max_rounds: int = 12,
+    history: list[dict] | None = None,
+):
+    """通用、串流的 native tool-calling 迴圈，yield SSE 字串。
+
+    給「逐動作即時反映到畫面」的一次性 agentic 任務用（例如 trips 的 AI 修改懸浮球）。
+    每輪串流模型輸出：文字 → delta；要呼叫工具 → tool_call，執行後 → tool_result。
+    工具結果中以底線開頭的 key（例如 _item）只回傳給前端、不灌回模型脈絡（避免吃 token）。
+    history 為先前的純文字對話（[{role, content}]），讓多輪追問有記憶。
+
+    Emits: delta | tool_call | tool_result | done
+    execute_tool(name, args) 回傳 dict；其餘鍵會原樣帶進 tool_result 事件。
+    """
+    import json as _json
+
+    messages: list[dict] = [{"role": "system", "content": system}]
+    for turn in history or []:
+        role = turn.get("role")
+        content = turn.get("content")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_message})
+
+    for _round in range(max_rounds):
+        accumulated_text = ""
+        tool_calls_raw: dict[int, dict] = {}
+
+        async with httpx.AsyncClient(timeout=90) as client:
+            async with client.stream(
+                "POST", OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                json={"model": _llm(), "stream": True, "messages": messages, "tools": tools},
+            ) as resp:
+                if resp.status_code == 401:
+                    raise RuntimeError("OpenRouter service unavailable")
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line[6:]
+                    if raw == "[DONE]":
+                        break
+                    try:
+                        choice = _json.loads(raw)["choices"][0]
+                        delta = choice.get("delta", {})
+                        if delta.get("content"):
+                            accumulated_text += delta["content"]
+                            yield _sse("delta", {"text": delta["content"]})
+                        for tc in delta.get("tool_calls", []):
+                            idx = tc.get("index", 0)
+                            slot = tool_calls_raw.setdefault(
+                                idx, {"id": "", "name": "", "arguments_str": ""}
+                            )
+                            if tc.get("id"):
+                                slot["id"] = tc["id"]
+                            fn = tc.get("function", {})
+                            if fn.get("name"):
+                                slot["name"] = fn["name"]
+                            if fn.get("arguments"):
+                                slot["arguments_str"] += fn["arguments"]
+                    except Exception:
+                        continue
+
+        if not tool_calls_raw:
+            break  # 沒有工具呼叫 → 最終文字已串流完畢
+
+        assistant_msg: dict = {"role": "assistant", "content": accumulated_text or None, "tool_calls": []}
+        for idx in sorted(tool_calls_raw):
+            tc = tool_calls_raw[idx]
+            assistant_msg["tool_calls"].append({
+                "id": tc["id"],
+                "type": "function",
+                "function": {"name": tc["name"], "arguments": tc["arguments_str"]},
+            })
+        messages.append(assistant_msg)
+
+        for idx in sorted(tool_calls_raw):
+            tc = tool_calls_raw[idx]
+            name = tc["name"]
+            try:
+                args = _json.loads(tc["arguments_str"]) if tc["arguments_str"] else {}
+            except Exception:
+                args = {}
+            yield _sse("tool_call", {"name": name, **args})
+            try:
+                result = await execute_tool(name, args) or {}
+            except Exception:
+                logger.exception("stream_tool_loop tool %s failed", name)
+                result = {"ok": False, "error": "tool execution failed"}
+            yield _sse("tool_result", {"name": name, **result})
+            # 回灌模型的精簡結果：去掉前端專用（底線開頭）的重欄位
+            model_result = {k: v for k, v in result.items() if not k.startswith("_")}
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "content": _json.dumps(model_result, ensure_ascii=False),
+            })
+
+    yield _sse("done", {})
+
+
+async def with_heartbeat(agen, interval: float = 15.0):
+    """通用 SSE keepalive 包裝：底層串流靜默超過 interval 秒就送一個 SSE comment（`: ping`），
+    避免代理／前端 idle-timeout 把「慢但還活著」的 agentic 串流誤判為斷線。
+    中斷時把 CancelledError 傳進底層 generator，乾淨收尾。"""
+    queue: asyncio.Queue = asyncio.Queue()
+    _END = object()
+
+    async def _pump():
+        try:
+            async for ev in agen:
+                await queue.put(ev)
+        except asyncio.CancelledError:
+            raise
+        except BaseException as e:
+            await queue.put(e)
+        else:
+            await queue.put(_END)
+
+    pump_task = asyncio.create_task(_pump())
+    get_task: asyncio.Task | None = None
+    try:
+        while True:
+            if get_task is None:
+                get_task = asyncio.create_task(queue.get())
+            done, _ = await asyncio.wait({get_task}, timeout=interval)
+            if not done:
+                yield ": ping\n\n"
+                continue
+            item = get_task.result()
+            get_task = None
+            if item is _END:
+                break
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        if get_task is not None:
+            get_task.cancel()
+        if not pump_task.done():
+            pump_task.cancel()
+        try:
+            await pump_task
+        except BaseException:
+            pass
+
+
 async def compress_memory(
     current_summary: str | None,
     recent_messages: list[dict],

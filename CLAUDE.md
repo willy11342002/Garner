@@ -58,7 +58,7 @@ garner/
 - `billing_service` — 訂閱 / 付費額度邏輯
 - `gumroad_service` — Gumroad 金流串接
 - `apify_service` — 外部內容抓取（Apify）
-- `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發
+- `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發；`ai_edit_trip_stream` 用 SSE 對既有行程逐張新刪修卡片（搭配 ai_service.stream_tool_loop）
 
 ### API routers（`apps/api/app/routers/`）
 `items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）· `trips` · `trip_tags`
@@ -88,6 +88,7 @@ garner/
 - `layout/` — AppNav, GuestNav, AppFooter
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
+- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）
 - 根目錄 — TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）
 
 ### Web utils（`apps/web/utils/`）
