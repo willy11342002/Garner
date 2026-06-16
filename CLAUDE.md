@@ -88,7 +88,7 @@ garner/
 - `layout/` — AppNav, GuestNav, AppFooter
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
-- 根目錄 — TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus
+- 根目錄 — TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）
 
 ### Web utils（`apps/web/utils/`）
 - `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）

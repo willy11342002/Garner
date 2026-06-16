@@ -24,6 +24,12 @@ const busy = ref(false)
 const reviseOpen = ref(false)
 const reviseText = ref('')
 const copied = ref(false)
+const sourcesOpen = ref(false)
+
+function onSelectSource(id: string) {
+  sourcesOpen.value = false
+  openItemModal(id)
+}
 
 onMounted(async () => {
   await loadList()
@@ -156,12 +162,6 @@ async function copyMd() {
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'short', day: 'numeric' })
 }
-
-function sourceLabel(st: string | null) {
-  if (st === 'youtube') return '▶ YouTube'
-  if (st === 'ig') return 'IG'
-  return 'Article'
-}
 </script>
 
 <template>
@@ -201,19 +201,9 @@ function sourceLabel(st: string | null) {
 
         <!-- provenance -->
         <div v-if="current.sources.length" class="report-view__sources">
-          <span class="report-view__sources-label">{{ t('reports.sources', { n: current.sources.length }) }}</span>
-          <div class="report-view__sources-row">
-            <button
-              v-for="s in current.sources"
-              :key="s.id"
-              class="source-chip"
-              @click="openItemModal(s.id)"
-            >
-              <img v-if="s.thumbnail_url" :src="s.thumbnail_url" :alt="s.title || ''" class="source-chip__thumb">
-              <span class="source-chip__title">{{ s.title || s.url }}</span>
-              <span class="source-chip__type">{{ sourceLabel(s.source_type) }}</span>
-            </button>
-          </div>
+          <button class="report-view__sources-trigger" @click="sourcesOpen = true">
+            {{ t('reports.sources', { n: current.sources.length }) }}
+          </button>
         </div>
 
         <!-- 工具列 -->
@@ -252,6 +242,14 @@ function sourceLabel(st: string | null) {
         </div>
       </article>
     </section>
+
+    <SourceListModal
+      :open="sourcesOpen"
+      :sources="current?.sources ?? []"
+      :title="t('reports.sources', { n: current?.sources.length ?? 0 })"
+      @close="sourcesOpen = false"
+      @select="onSelectSource"
+    />
   </div>
 </template>
 
@@ -321,17 +319,13 @@ function sourceLabel(st: string | null) {
 }
 
 .report-view__sources { margin: 16px 0; }
-.report-view__sources-label { font-size: 12px; color: var(--text-dim); }
-.report-view__sources-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.source-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: var(--surface2); border: 1px solid var(--border2); border-radius: 999px;
-  padding: 4px 10px 4px 4px; cursor: pointer; max-width: 240px;
+.report-view__sources-trigger {
+  font-size: 12px; color: var(--text-dim);
+  background: none; border: none; padding: 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+  transition: color .14s ease;
 }
-.source-chip:hover { border-color: var(--accent-bdr); }
-.source-chip__thumb { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
-.source-chip__title { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-chip__type { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); flex-shrink: 0; }
+.report-view__sources-trigger:hover { color: var(--accent); }
 
 .report-view__toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 

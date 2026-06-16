@@ -53,21 +53,14 @@
                 <div class="trips-doc__sub">
                   {{ current.items.length }} 項
                   <template v-if="current.start_date"> · {{ formatDateRange(current.start_date, current.end_date) }}</template>
-                  <template v-if="current.sources.length"> · 從 {{ current.sources.length }} 則收藏彙整</template>
+                  <template v-if="current.sources.length">
+                    · <button class="trips-doc__srcbtn" @click="sourcesOpen = true">從 {{ current.sources.length }} 則收藏彙整</button>
+                  </template>
                 </div>
               </div>
               <div class="trips-doc__actions">
                 <button class="btn" @click="handleAddItem">+ 新增卡片</button>
                 <button class="btn btn--danger" @click="handleDelete">刪除</button>
-              </div>
-            </div>
-
-            <!-- Source chips -->
-            <div v-if="current.sources.length" class="trips-sources">
-              <div v-for="s in current.sources" :key="s.id" class="trips-src">
-                <span class="trips-src__ico">{{ sourceEmoji(s.source_type) }}</span>
-                {{ s.title || '來源' }}
-                <span class="trips-src__badge">{{ sourceLabel(s.source_type) }}</span>
               </div>
             </div>
 
@@ -333,6 +326,15 @@
         />
       </div>
     </Teleport>
+
+    <!-- Source list modal -->
+    <SourceListModal
+      :open="sourcesOpen"
+      :sources="current?.sources ?? []"
+      :title="`從 ${current?.sources.length ?? 0} 則收藏彙整`"
+      @close="sourcesOpen = false"
+      @select="onSelectSource"
+    />
   </div>
 </template>
 
@@ -343,6 +345,7 @@ definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 旅遊行程' })
 
 const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, addItem, updateItem, deleteItem, listTags, createTag, updateTag } = useTrips()
+const { open: openItemModal } = useItemModal()
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const VIEWS = [
@@ -391,6 +394,12 @@ const creating = ref(false)
 const activeView = ref<'board' | 'date'>('board')
 const titleEl = ref<HTMLElement | null>(null)
 const availableTags = ref<TripTag[]>([])
+const sourcesOpen = ref(false)
+
+function onSelectSource(id: string) {
+  sourcesOpen.value = false
+  openItemModal(id)
+}
 
 // Emoji picker
 const emojiTriggerEl = ref<HTMLButtonElement | null>(null)
@@ -419,6 +428,11 @@ onMounted(async () => {
   document.addEventListener('click', handleOutsideClick, true)
   try {
     [trips.value, availableTags.value] = await Promise.all([listTrips(), listTags()])
+    // 從 chat「開啟行程」帶 ?open=<id> 進來時，自動選取該行程
+    const openId = useRoute().query.open as string | undefined
+    if (openId && trips.value.some(t => t.id === openId)) {
+      select(openId)
+    }
     if (availableTags.value.length === 0) {
       const defaults = [
         { name: '景點', color: 'd' }, { name: '美食', color: 'e' },
@@ -578,19 +592,6 @@ function formatDow(d: string) { return ['日','一','二','三','四','五','六
 function isUrl(s: string | null | undefined): boolean {
   if (!s) return false
   try { new URL(s); return true } catch { return false }
-}
-
-function sourceEmoji(t: string | null) {
-  if (t === 'youtube') return '▶️'
-  if (t === 'ig') return '📸'
-  if (t === 'note') return '📝'
-  return '🔗'
-}
-function sourceLabel(t: string | null) {
-  if (t === 'youtube') return 'YT'
-  if (t === 'ig') return 'IG'
-  if (t === 'note') return 'Note'
-  return 'Article'
 }
 
 // ── Emoji picker ───────────────────────────────────────────────────────────
@@ -952,15 +953,13 @@ function cancelNewTag() {
 .trips-doc__sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
 .trips-doc__actions { display: flex; gap: 8px; flex-shrink: 0; padding-top: 6px; }
 
-/* Sources */
-.trips-sources { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.trips-src {
-  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px 0 9px;
-  border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
-  font-size: 12px; color: var(--text-mid);
+/* Sources trigger */
+.trips-doc__srcbtn {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);
+  background: none; border: none; padding: 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px; transition: color .14s ease;
 }
-.trips-src__ico { width: 18px; height: 18px; border-radius: 6px; background: var(--surface3); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
-.trips-src__badge { font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+.trips-doc__srcbtn:hover { color: var(--accent); }
 
 /* Views */
 .trips-views { display: flex; align-items: center; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
