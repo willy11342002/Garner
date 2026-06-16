@@ -274,16 +274,21 @@
               </div>
             </div>
 
-            <!-- Place URL -->
-            <label class="trips-field">
+            <!-- Place URL：有地標時顯示「開啟地圖」按鈕，按編輯才切成 input；無地標直接 input -->
+            <div class="trips-field">
               <span class="trips-field__lbl">地標連結</span>
+              <div v-if="isUrl(editForm.place_name) && !editingPlace" class="trips-place-row">
+                <a :href="editForm.place_name" target="_blank" rel="noopener" class="btn trips-place-open">📍 開啟地圖</a>
+                <button type="button" class="btn trips-place-edit" @click="editingPlace = true">編輯</button>
+              </div>
               <input
+                v-else
                 v-model="editForm.place_name"
                 type="url"
                 class="trips-field__input"
-                placeholder="https://maps.app.goo.gl/…"
+                placeholder="貼上 Google Maps 連結或地點"
               />
-            </label>
+            </div>
 
             <!-- Tags -->
             <div class="trips-field">
@@ -682,6 +687,7 @@ interface EditForm {
 
 const editingItem = ref<Partial<TripItem> | null>(null)
 const savingItem = ref(false)
+const editingPlace = ref(false)  // 地標：有值時預設顯示「開啟地圖」按鈕，按編輯才切成 input
 const editForm = ref<EditForm>({
   title: '', emoji: '', booked: false,
   start_date: '', end_date: '', start_time: '', end_time: '',
@@ -690,6 +696,7 @@ const editForm = ref<EditForm>({
 
 function openItemEditor(item: TripItem) {
   editingItem.value = item
+  editingPlace.value = false  // 有地標就先顯示按鈕
   editForm.value = {
     title: item.title,
     emoji: item.emoji ?? '',
@@ -706,6 +713,7 @@ function openItemEditor(item: TripItem) {
 
 function handleAddItem() {
   editingItem.value = {}
+  editingPlace.value = false
   editForm.value = {
     title: '', emoji: '', booked: false,
     start_date: '', end_date: '', start_time: '', end_time: '',
@@ -1202,6 +1210,11 @@ function cancelNewTag() {
   padding: 8px 11px; font-size: 13.5px; color: var(--text); outline: none; transition: border-color .15s;
 }
 .trips-field__input:focus { border-color: var(--accent); }
+
+/* 地標：開啟地圖按鈕 + 編輯 */
+.trips-place-row { display: flex; gap: 8px; align-items: center; }
+.trips-place-open { flex: 1; text-align: center; text-decoration: none; }
+.trips-place-edit { flex: 0 0 auto; }
 
 /* Title + emoji on same row */
 .trips-titlerow { display: flex; align-items: center; gap: 8px; }

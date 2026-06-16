@@ -250,6 +250,14 @@ export interface ReportDraft {
   summary?: string | null
 }
 
+/** chat 產出旅遊行程後回傳的精簡草稿（trip_draft 事件，用於聊天內卡片）。 */
+export interface TripDraft {
+  id: string
+  title: string
+  summary?: string | null
+  item_count?: number
+}
+
 /** 報告的來源知識（provenance）。 */
 export interface ReportSource {
   id: string

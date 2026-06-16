@@ -166,9 +166,10 @@
                     <p v-if="processMap[msg.id].thinking" class="process-body__reasoning">{{ processMap[msg.id].thinking }}</p>
                     <div v-for="(step, i) in processMap[msg.id].steps" :key="i" class="process-body__step">
                       <div class="process-body__tool-call">
-                        <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
+                        <span class="process-body__step-icon">{{ stepIcon(step.toolCall.name) }}</span>
                         <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                         <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
+                        <span v-if="step.toolCall.name === 'add_trip_card' && step.toolCall.title" class="process-body__param">{{ step.toolCall.title }}</span>
                         <template v-if="step.toolCall.name === 'structured_filter'">
                           <span v-if="step.toolCall.tags?.length" class="process-body__param">tags: {{ step.toolCall.tags.join(', ') }}</span>
                           <span v-if="step.toolCall.source_type" class="process-body__param">source: {{ step.toolCall.source_type }}</span>
@@ -177,12 +178,7 @@
                       </div>
                       <div v-if="step.toolResult" class="process-body__tool-result">
                         <span class="process-body__step-icon">✓</span>
-                        <template v-if="step.toolCall.name === 'create_report'">
-                          <span>報告已建立：{{ step.toolResult.title }}</span>
-                        </template>
-                        <template v-else>
-                          <span>找到 {{ step.toolResult.count }} 筆</span>
-                        </template>
+                        <span>{{ stepResultLabel(step) }}</span>
                         <button
                           v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
                           class="process-body__step-toggle"
@@ -242,6 +238,11 @@
                 v-if="msg.role === 'assistant' && draftMap[msg.id]"
                 :draft="draftMap[msg.id]"
               />
+              <!-- AI 旅遊行程卡片 -->
+              <ChatTripCard
+                v-if="msg.role === 'assistant' && tripDraftMap[msg.id]"
+                :draft="tripDraftMap[msg.id]"
+              />
             </div>
           </template>
 
@@ -258,9 +259,10 @@
                 <p v-if="liveProcess.thinking" class="process-body__reasoning">{{ liveProcess.thinking }}</p>
                 <div v-for="(step, i) in liveProcess.steps" :key="i" class="process-body__step">
                   <div class="process-body__tool-call">
-                    <span class="process-body__step-icon">{{ step.toolCall.name === 'filter_sources' ? '🎯' : '🔍' }}</span>
+                    <span class="process-body__step-icon">{{ stepIcon(step.toolCall.name) }}</span>
                     <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
                     <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
+                    <span v-if="step.toolCall.name === 'add_trip_card' && step.toolCall.title" class="process-body__param">{{ step.toolCall.title }}</span>
                     <template v-if="step.toolCall.name === 'structured_filter'">
                       <span v-if="step.toolCall.tags?.length" class="process-body__param">tags: {{ step.toolCall.tags.join(', ') }}</span>
                       <span v-if="step.toolCall.source_type" class="process-body__param">source: {{ step.toolCall.source_type }}</span>
@@ -269,12 +271,7 @@
                   </div>
                   <div v-if="step.toolResult" class="process-body__tool-result">
                     <span class="process-body__step-icon">✓</span>
-                    <template v-if="step.toolCall.name === 'create_report'">
-                      <span>報告已建立：{{ step.toolResult.title }}</span>
-                    </template>
-                    <template v-else>
-                      <span>找到 {{ step.toolResult.count }} 筆</span>
-                    </template>
+                    <span>{{ stepResultLabel(step) }}</span>
                     <button
                       v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
                       class="process-body__step-toggle"
@@ -290,7 +287,7 @@
                   </Transition>
                   <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                     <span class="process-body__step-icon">⋯</span>
-                    <span>{{ step.toolCall.name === 'create_report' ? '生成中' : step.toolCall.name === 'filter_sources' ? '篩選中' : '搜尋中' }}</span>
+                    <span>{{ stepPendingLabel(step.toolCall.name) }}</span>
                   </div>
                 </div>
               </div>
@@ -338,6 +335,10 @@
               v-if="liveDraft"
               :draft="liveDraft"
             />
+            <ChatTripCard
+              v-if="liveTripDraft"
+              :draft="liveTripDraft"
+            />
           </div>
         </div>
 
@@ -353,7 +354,15 @@
               @keydown.enter.exact.prevent="send"
               @input="autoResize"
             ></textarea>
-            <button class="chat-send-btn" :disabled="loading || !inputText.trim() || chatQuotaFull" @click="send">
+            <button
+              v-if="loading"
+              class="chat-send-btn chat-send-btn--stop"
+              :title="t('chat.stop')"
+              @click="stopStreaming"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            </button>
+            <button v-else class="chat-send-btn" :disabled="!inputText.trim() || chatQuotaFull" @click="send">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="16" height="16"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             </button>
           </div>
@@ -368,8 +377,12 @@
 </template>
 
 <script setup lang="ts">
-import type { ReportDraft, ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
+import type { ReportDraft, TripDraft, ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — AI Chat' })
+
+// keepalive：切換頁面時不 unmount 本頁，進行中的串流（send 迴圈與所有狀態）持續運作，
+// 回來時同一個 instance 被重新啟用 → 直接看到即時生成內容，不中斷。
+definePageMeta({ keepalive: true })
 
 const { t } = useI18n()
 const apiFetch = useApiFetch()
@@ -390,6 +403,32 @@ const inputText = ref('')
 const loading = ref(false)
 const sessionLoading = ref(false)
 const streamingText = ref('')
+
+// 串流中斷控制：停止鈕呼叫 abort()；idle timer 在長時間無事件時自動 abort 視為斷線
+const abortController = ref<AbortController | null>(null)
+const IDLE_TIMEOUT_MS = 45000
+
+function stopStreaming() {
+  // reason 用 AbortError 與 idle 逾時（TimeoutError）區分，catch 端據此決定是否提示
+  abortController.value?.abort(new DOMException('stopped by user', 'AbortError'))
+}
+
+// idle 偵測提到 component scope，這樣 keepalive 切頁（onDeactivated）時可暫停計時器：
+// 離開頁面時不該因「沒人看」而誤判斷線，後端會繼續跑完並存檔；回頁再重新計時。
+const pageActive = ref(true)
+const idleTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+function clearIdle() {
+  if (idleTimer.value) { clearTimeout(idleTimer.value); idleTimer.value = null }
+}
+function armIdle() {
+  clearIdle()
+  // 只有「頁面在前景 + 正在串流」才計時；背景或非串流不計時
+  if (!pageActive.value || !loading.value) return
+  idleTimer.value = setTimeout(
+    () => abortController.value?.abort(new DOMException('stream idle timeout', 'TimeoutError')),
+    IDLE_TIMEOUT_MS,
+  )
+}
 
 const mobileView = ref<'list' | 'chat'>('list')
 
@@ -412,7 +451,7 @@ function toggleStep(msgId: string, stepIdx: number) {
 }
 const openSources = ref<Set<string>>(new Set())
 
-type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }
+type ProcessStep = { toolCall: Record<string, any>; toolResult: Record<string, any> | null }
 type ProcessLog = { thinking: string; steps: ProcessStep[] }
 const liveProcess = ref<ProcessLog & { sources: ChatSource[] }>({ thinking: '', steps: [], sources: [] })
 
@@ -424,6 +463,8 @@ const userContextMap = ref<Record<string, ChatSource[]>>({})
 
 const draftMap = ref<Record<string, ReportDraft>>({})
 const liveDraft = ref<ReportDraft | null>(null)
+const tripDraftMap = ref<Record<string, TripDraft>>({})
+const liveTripDraft = ref<TripDraft | null>(null)
 const previewItemId = ref<string | null>(null)
 
 const messagesEl = ref<HTMLElement | null>(null)
@@ -471,21 +512,43 @@ const chatQuotaPct = computed(() => {
 })
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-onMounted(async () => {
-  await Promise.all([loadFolders(), loadSessions(), loadQuota()])
+// 深連結處理：從別頁帶 ?session=&prefill=&items= 進來時開啟對話並（可選）自動送出。
+// 抽成函式供 onMounted（首訪）與 onActivated（keepalive 回頁）共用。
+async function handleRouteQuery() {
   const sid = route.query.session as string | undefined
   const prefill = route.query.prefill as string | undefined
   const itemsParam = route.query.items as string | undefined
-  if (sid) {
-    await openSession(sid)
-    router.replace({ query: {} })  // 清掉 URL query
-    if (prefill) {
-      if (itemsParam) pendingItemIds.value = itemsParam.split(',').filter(Boolean)
-      inputText.value = prefill
-      await nextTick()
-      send()
-    }
+  if (!sid) return
+  await openSession(sid)
+  router.replace({ query: {} })  // 清掉 URL query
+  if (prefill) {
+    if (itemsParam) pendingItemIds.value = itemsParam.split(',').filter(Boolean)
+    inputText.value = prefill
+    await nextTick()
+    send()
   }
+}
+
+onMounted(async () => {
+  await Promise.all([loadFolders(), loadSessions(), loadQuota()])
+  await handleRouteQuery()
+})
+
+// keepalive 回頁：首次 activate 與 onMounted 同時發生，跳過以免重複處理；
+// 之後每次回來才檢查是否有新的深連結，沒有就維持現狀（含進行中的串流）。
+let firstActivate = true
+onActivated(() => {
+  pageActive.value = true
+  if (loading.value) armIdle()  // 回頁若仍在串流，恢復 idle 計時
+  if (firstActivate) { firstActivate = false; return }
+  loadQuota()
+  handleRouteQuery()
+})
+
+onDeactivated(() => {
+  // 切走頁面：暫停 idle 計時，避免「沒人看」時把仍在跑的串流誤判為斷線並中止
+  pageActive.value = false
+  clearIdle()
 })
 
 async function loadQuota() {
@@ -519,6 +582,7 @@ async function newSession() {
   userContextMap.value = {}
   processMap.value = {}
   draftMap.value = {}
+  tripDraftMap.value = {}
   openSources.value = new Set()
   resetProcess()
   mobileView.value = 'chat'
@@ -579,12 +643,15 @@ async function openSession(id: string) {
     resetProcess()
 
     draftMap.value = {}
+    tripDraftMap.value = {}
     for (const msg of detail.messages) {
       if (msg.role === 'assistant' && msg.process_log) {
         processMap.value[msg.id] = msg.process_log as ProcessLog
         openThinking.value.delete(msg.id)
         const draftStep = (msg.process_log.steps as any[])?.find((s: any) => s.reportDraft)
         if (draftStep?.reportDraft) draftMap.value[msg.id] = draftStep.reportDraft
+        const tripStep = (msg.process_log.steps as any[])?.find((s: any) => s.tripDraft)
+        if (tripStep?.tripDraft) tripDraftMap.value[msg.id] = tripStep.tripDraft
       }
     }
     const lastAssistant = [...detail.messages].reverse().find(m => m.role === 'assistant' && m.process_log)
@@ -785,6 +852,7 @@ function resetProcess() {
   liveProcess.value = { thinking: '', steps: [], sources: [] }
   streamingText.value = ''
   liveDraft.value = null
+  liveTripDraft.value = null
   openThinking.value = new Set(['live'])
   openSources.value.delete('live')
 }
@@ -846,6 +914,10 @@ async function send() {
   const token = session.value?.access_token
   const isFirstMessage = messages.value.filter(m => m.role === 'user').length === 1
 
+  // 串流中斷控制（idle 計時器在 component scope，可隨切頁暫停／恢復）
+  const abort = new AbortController()
+  abortController.value = abort
+
   try {
     const itemIds = pendingItemIds.value.slice()
     pendingItemIds.value = []
@@ -867,6 +939,8 @@ async function send() {
       })
     }
 
+    armIdle()
+
     const resp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages`, {
       method: 'POST',
       headers: {
@@ -874,6 +948,7 @@ async function send() {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ content, ...(itemIds.length ? { item_ids: itemIds } : {}) }),
+      signal: abort.signal,
     })
     if (!resp.ok) throw new Error('request failed')
 
@@ -886,6 +961,7 @@ async function send() {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      armIdle()
       buffer += decoder.decode(value, { stream: true })
 
       const parts = buffer.split('\n\n')
@@ -910,12 +986,18 @@ async function send() {
         } else if (event === 'tool_result') {
           if (!isActive()) continue
           const steps = liveProcess.value.steps
-          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles }
+          // 保留完整 result（不同工具欄位不同：search 有 count/titles；add_trip_card 有 ok/title…）
+          if (steps.length) steps[steps.length - 1].toolResult = data
           await nextTick(); scrollBottom()
 
         } else if (event === 'report_draft') {
           if (!isActive()) continue
           liveDraft.value = data as ReportDraft
+          await nextTick(); scrollBottom()
+
+        } else if (event === 'trip_draft') {
+          if (!isActive()) continue
+          liveTripDraft.value = data as TripDraft
           await nextTick(); scrollBottom()
 
         } else if (event === 'sources') {
@@ -937,6 +1019,10 @@ async function send() {
             if (liveDraft.value) {
               draftMap.value[assistantId] = liveDraft.value
               liveDraft.value = null
+            }
+            if (liveTripDraft.value) {
+              tripDraftMap.value[assistantId] = liveTripDraft.value
+              liveTripDraft.value = null
             }
             openThinking.value.delete('live')
             openThinking.value.add(assistantId)
@@ -973,18 +1059,24 @@ async function send() {
         }
       }
     }
-  } catch {
-    if (isActive()) {
+  } catch (err: any) {
+    // 使用者主動停止：靜默結束，丟棄半截內容（後端 generator 被取消也不會存 DB）
+    if (err?.name === 'AbortError') {
+      if (isActive()) resetProcess()
+    } else if (isActive()) {
       resetProcess()
+      // 逾時斷線顯示專屬提示，其餘錯誤用通用錯誤訊息
       messages.value.push({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: t('chat.error'),
+        content: err?.name === 'TimeoutError' ? t('chat.timeout') : t('chat.error'),
         cited_item_ids: null,
         created_at: new Date().toISOString(),
       })
     }
   } finally {
+    clearIdle()
+    abortController.value = null
     loading.value = false
   }
 }
@@ -1014,6 +1106,29 @@ function resetInputHeight() {
 
 function sourceLabel(type: string | null) {
   return type ? (SOURCE_LABELS[type] ?? type) : 'Article'
+}
+
+// ── 推理過程：各工具的圖示／結果文字／進行中文字 ──
+function stepIcon(name: string) {
+  return name === 'add_trip_card' ? '📍'
+    : name === 'create_trip' ? '🗺️'
+    : name === 'create_report' ? '📝'
+    : name === 'filter_sources' ? '🎯'
+    : '🔍'
+}
+function stepResultLabel(step: any): string {
+  const n = step.toolCall?.name
+  const r = step.toolResult || {}
+  if (n === 'create_report') return `報告已建立：${r.title ?? ''}`
+  if (n === 'create_trip') return `行程已建立：${r.title ?? ''}`
+  if (n === 'add_trip_card') return r.ok ? `新增卡片：${r.title ?? ''}` : '卡片新增失敗'
+  return `找到 ${r.count ?? 0} 筆`
+}
+function stepPendingLabel(name: string): string {
+  if (name === 'create_report' || name === 'create_trip') return '生成中'
+  if (name === 'add_trip_card') return '新增中'
+  if (name === 'filter_sources') return '篩選中'
+  return '搜尋中'
 }
 
 </script>

@@ -1,9 +1,13 @@
+import asyncio
 import json
+import logging
 
 import httpx
 
 from app.core.config import settings
 from app.core.tracing import traced
+
+logger = logging.getLogger("garner.chat")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -545,9 +549,12 @@ _AGENTIC_SYSTEM = """\
 
 規則：
 - 需要查知識庫時主動呼叫 search，可以多次呼叫、換角度搜尋
+- 若對話歷史中已有你先前的 search 結果（看得到查過的 query 與取得的 item），且足以回答現在的請求（例如「重新生一份」「微調剛剛的行程／報告」），請直接沿用既有結果重組，不要重複搜尋相同內容；只有需要新資訊時才再 search
 - 詢問「來源」「出處」「哪篇」時，一定要呼叫 search，不能憑記憶回答
 - 如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造
-- 用戶要求「生成／產出報告、規劃、指南、清單」時：若已有可用的知識內容（使用者選定的知識節點，或 search 結果），直接用那些內容呼叫 create_report，不要反問主題；只有在完全沒有任何可用內容時才詢問
+- 用戶要「旅遊行程／旅遊規劃／幾天幾夜／itinerary／玩幾天」時：先呼叫 create_trip 建立空行程，再用 add_trip_card 逐一新增卡片（每個景點／餐廳／交通／住宿各一張，title 只放名稱、細節放 note，一天通常 3～6 張）。不要用 create_report，也不要把整天行程塞進單一卡片
+- 用戶要其他「報告／指南／清單／彙整（非旅遊行程）」時：呼叫 create_report
+- 上述產出類請求：若已有可用的知識內容（使用者選定的知識節點，或 search 結果），直接用那些內容產出，不要反問主題；只有在完全沒有任何可用內容時才詢問
 - 如果問題超出知識庫範圍（閒聊、一般常識、數學計算等），簡短說明你只能幫助探索知識庫
 - 用繁體中文回答，自然簡潔，不過度列舉
 - 只輸出你自己的回覆，不要模擬用戶的後續回應
@@ -598,6 +605,43 @@ _AGENTIC_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "create_trip",
+            "description": "建立一份『空的』旅遊行程（trips 功能），只設定標題與日期。用戶要『旅遊行程／規劃／幾天幾夜／itinerary』時先呼叫這個，再用 add_trip_card 逐張填卡片。不要用 create_report。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "行程標題（繁體中文，例如「大阪4天3夜自由行」）"},
+                    "summary": {"type": "string", "description": "50 字以內的行程摘要"},
+                    "start_date": {"type": "string", "description": "出發日期 YYYY-MM-DD。只要用戶有提到出發時間（例如「今年8月2日」「8月初」）就務必推算並帶上，卡片才能正確排到每一天。"},
+                    "end_date": {"type": "string", "description": "回程日期 YYYY-MM-DD（依天數推算，例如4天3夜＝start_date+3）"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_trip_card",
+            "description": "對先前 create_trip 建立的行程新增『一張』卡片（單一景點／餐廳／交通／住宿）。需要幾個點就呼叫幾次，一天通常 3～6 張。務必先呼叫 create_trip 再用本工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "day": {"type": "integer", "description": "第幾天，從 1 開始"},
+                    "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動名稱，簡短（≤20 字），例如「道頓堀」「黑門市場」。不要寫整段說明或多個地點。"},
+                    "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位。只放地名，不要放網址。"},
+                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
+                    "emoji": {"type": "string", "description": "代表性 emoji，可選"},
+                    "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
+                    "note": {"type": "string", "description": "這張卡片的細節說明（玩法、交通、提醒等），用 markdown 格式撰寫（可用條列、粗體）。整段敘述放這裡，不要放進 title。"},
+                },
+                "required": ["day", "title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "revise_report",
             "description": "修改一份既有的 AI 報告。只在用戶要求調整剛產出的報告時呼叫；report_id 用先前 create_report 回傳的 id。",
             "parameters": {
@@ -641,9 +685,8 @@ async def agentic_chat_stream(
     if context_summary:
         system += f"\n\n【對話摘要（早期）】\n{context_summary}"
 
-    messages: list[dict] = []
-    for m in history:
-        messages.append({"role": m["role"], "content": m["content"]})
+    # history 已是完整 OpenAI 訊息格式（可能含 tool_calls / tool 角色，用於跨輪重放檢索軌跡）
+    messages: list[dict] = [dict(m) for m in history]
     messages.append({"role": "user", "content": user_content})
 
     # Seed with preloaded context (使用者選定的知識節點)，讓 LLM 第一輪就看得到內容
@@ -662,17 +705,24 @@ async def agentic_chat_stream(
         parts.append(f"內容：{c.get('summary') or c.get('text') or '(無內容)'}")
         return "\n".join(parts)
 
-    MAX_ROUNDS = 3
-    for _round in range(MAX_ROUNDS):
-        # 每輪重建 system；有檢索到內容就附在 system 裡。
-        # 絕不更動 messages 的 user/assistant/tool 序列，否則多輪 tool calling 會重複觸發工具。
-        sys_content = system
+    # 有檢索到內容就把它附在 system 裡；每輪與最終總結都用這份。
+    def _sys_with_context() -> str:
         if all_chunks or all_sources:
             ctx_items = all_chunks if all_chunks else all_sources
             context_block = "【已找到的知識庫內容】\n" + "\n\n".join(
                 f"[{i+1}] " + _fmt_ctx(c) for i, c in enumerate(ctx_items)
             )
-            sys_content = system + "\n\n" + context_block
+            return system + "\n\n" + context_block
+        return system
+
+    # 不再限制 3 輪：給一個高安全上限避免模型無限呼叫工具燒 token。
+    # 拆步驟後行程會用較多輪（create_trip + 多次 add_trip_card），故放寬到 40。
+    MAX_ROUNDS = 40
+    final_answer_done = False  # 是否已產出最終文字（模型該輪不再呼叫工具）
+    for _round in range(MAX_ROUNDS):
+        logger.debug("agentic round %d/%d (history msgs=%d)", _round + 1, MAX_ROUNDS, len(messages))
+        # 絕不更動 messages 的 user/assistant/tool 序列，否則多輪 tool calling 會重複觸發工具。
+        sys_content = _sys_with_context()
 
         request_body: dict = {
             "model": _llm(),
@@ -728,6 +778,8 @@ async def agentic_chat_stream(
 
         # No tool calls → final answer
         if not tool_calls_raw:
+            final_answer_done = True
+            logger.debug("round %d produced final answer (len=%d)", _round + 1, len(accumulated_text))
             break
 
         # Append assistant message with tool_calls
@@ -751,6 +803,7 @@ async def agentic_chat_stream(
                 args = {}
 
             tool_payload = {"name": name, **args}
+            logger.debug("tool_call: %s args=%s", name, args)
             yield _sse("tool_call", tool_payload)
 
             result = await execute_tool(name, args)
@@ -780,10 +833,28 @@ async def agentic_chat_stream(
                     process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)
 
+            elif name == "create_trip":
+                draft = result.get("draft")
+                if draft:
+                    yield _sse("trip_draft", draft)
+                    tool_result_data = {"tool": name, "created": True, "trip_id": draft["id"], "title": draft["title"]}
+                    process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data, "tripDraft": draft})
+                else:
+                    tool_result_data = {"tool": name, "created": False}
+                    process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            elif name == "add_trip_card":
+                tool_result_data = {"tool": name, "ok": bool(result.get("ok")), "title": result.get("title")}
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
             elif name == "revise_report":
                 tool_result_data = {"tool": name, "revised": bool(result.get("ok")), "report_id": result.get("report_id")}
                 process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)
+
+            logger.debug("tool_result: %s -> %s", name, tool_result_data)
 
             # Return tool result to model
             messages.append({
@@ -792,6 +863,44 @@ async def agentic_chat_stream(
                 "content": _json.dumps(tool_result_data, ensure_ascii=False),
             })
 
+    # 跑滿 MAX_ROUNDS 仍停在工具呼叫那輪 → 還沒讓模型依工具結果做最終回答。
+    # 補一次「停用工具」的串流呼叫，強制產出文字總結，否則前端只會收到空回覆（畫面空白）。
+    if not final_answer_done:
+        logger.debug("max rounds reached with pending tool calls → forcing final synthesis (no tools)")
+        accumulated_text = ""
+        # 不帶 tools：模型無法再呼叫工具，只能依現有結果產出文字
+        final_body: dict = {
+            "model": _llm(),
+            "stream": True,
+            "messages": [{"role": "system", "content": _sys_with_context()}] + messages,
+        }
+        async with httpx.AsyncClient(timeout=90) as client:
+            async with client.stream(
+                "POST", OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                json=final_body,
+            ) as resp:
+                if resp.status_code == 401:
+                    raise RuntimeError("OpenRouter service unavailable")
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line[6:]
+                    if raw == "[DONE]":
+                        break
+                    try:
+                        delta = _json.loads(raw)["choices"][0].get("delta", {})
+                        if delta.get("content"):
+                            accumulated_text += delta["content"]
+                            yield _sse("delta", {"text": delta["content"]})
+                    except Exception:
+                        continue
+
+    logger.debug(
+        "agentic stream done: reply_len=%d sources=%d steps=%d preview=%r",
+        len(accumulated_text), len(all_sources), len(process_steps), accumulated_text[:160],
+    )
     yield _sse("sources", all_sources)
     yield _sse("done", {})
 

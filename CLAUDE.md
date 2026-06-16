@@ -82,7 +82,7 @@ garner/
 `useAuthStore` · `useItemStore` · `useTagStore` · `useNotificationStore`
 
 ### Web components（按功能分資料夾 `apps/web/components/`）
-- `chat/` — ChatReportCard, SessionRow, FolderRow（資料夾列：展開/行內改名/拖曳 drop target）
+- `chat/` — ChatReportCard, ChatTripCard（chat 產出的旅遊行程卡，連到 trips）, SessionRow, FolderRow（資料夾列：展開/行內改名/拖曳 drop target）
 - `home/` — HomeChatFab, HomeChatPanel, HomeMapView, HomeSemanticSearchView, HomeTagView, HomeViewSwitcher
 - `item/` — ItemDetailModal
 - `layout/` — AppNav, GuestNav, AppFooter

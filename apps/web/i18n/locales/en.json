@@ -145,6 +145,8 @@
     "placeholder": "Ask your knowledge base...",
     "hint": "Enter to send · Shift+Enter for new line",
     "error": "AI service unavailable. Please try again later.",
+    "timeout": "Connection lost — response stopped. Please retry.",
+    "stop": "Stop generating",
     "rename": "Rename",
     "delete": "Delete",
     "rename_placeholder": "Conversation name...",

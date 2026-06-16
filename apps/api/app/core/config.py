@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    debug: bool = False  # DEBUG=true → 本地開發把 log 層級設為 DEBUG
+
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:6543/postgres"
     supabase_url: str = ""
     supabase_service_key: str = ""

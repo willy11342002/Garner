@@ -145,6 +145,8 @@
     "placeholder": "問你的知識庫...",
     "hint": "Enter 送出 · Shift+Enter 換行",
     "error": "AI 服務暫時無法使用，請稍後再試。",
+    "timeout": "連線中斷，回應已停止，請重試。",
+    "stop": "停止生成",
     "rename": "重新命名",
     "delete": "刪除",
     "rename_placeholder": "對話名稱...",

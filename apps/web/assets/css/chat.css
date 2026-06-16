@@ -318,6 +318,8 @@
 .chat-input:disabled { cursor: not-allowed; }
 .chat-send-btn { width: 36px; height: 36px; border-radius: 9px; background: var(--accent); color: var(--accent-fg); border: none; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: opacity .15s; }
 .chat-send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.chat-send-btn--stop { background: var(--text-dim); }
+.chat-send-btn--stop:hover { background: var(--text); }
 .chat-hint { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); margin: 8px 0 0; text-align: center; }
 
 .chat-back-btn { display: none; }

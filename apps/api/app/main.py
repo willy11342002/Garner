@@ -11,9 +11,17 @@ from app.routers import admin, articles, auth, billing, chat, items, locations, 
 
 import logging
 import sys
-logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-for _name in ("httpx", "httpcore"):
+# DEBUG=true（本地開發）→ 全域 log 層級設為 DEBUG，看得到 AI chat 的逐步動作
+_log_level = logging.DEBUG if settings.debug else logging.INFO
+logging.basicConfig(
+    level=_log_level,
+    stream=sys.stdout,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+# 第三方在 DEBUG 下會洗版，壓回 INFO/WARNING，保留我們自己的 DEBUG log 清爽
+for _name in ("httpx", "httpcore", "hpack", "asyncio"):
     logging.getLogger(_name).propagate = True
+    logging.getLogger(_name).setLevel(logging.WARNING if settings.debug else logging.INFO)
 
 if settings.sentry_dsn:
     sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.2)
