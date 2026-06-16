@@ -500,14 +500,66 @@ async function loadSessions() {
   try { sessions.value = await apiFetch<ChatSession[]>('/chat/sessions') } catch {}
 }
 
+// 樂觀建立中的臨時 session → 真實建立請求的 promise（供 send() 在送訊息前解析出真實 id）
+const pendingSessionCreates = new Map<string, Promise<ChatSession>>()
+
 // ── Session actions ───────────────────────────────────────────────────────────
 async function newSession() {
+  // 樂觀更新：先在本地插入臨時 session 並立即切到空白對話，背景建立，回來再換成真實 id。
+  // 省去原本「POST 再 GET detail」兩次往返，點擊即時開新對話。
+  const tempId = `temp-${Date.now()}`
+  const now = new Date().toISOString()
+  sessions.value.unshift({ id: tempId, folder_id: null, title: null, created_at: now, updated_at: now })
+
+  // 直接在本地開啟空 session，不打 detail 請求
+  activeSessionId.value = tempId
+  activeSession.value = { id: tempId, folder_id: null, title: null, created_at: now, updated_at: now, messages: [] }
+  messages.value = []
+  sourcesMap.value = {}
+  userContextMap.value = {}
+  processMap.value = {}
+  draftMap.value = {}
+  openSources.value = new Set()
+  resetProcess()
+  mobileView.value = 'chat'
+
+  const p = apiFetch<ChatSession>('/chat/sessions', { method: 'POST', body: {} })
+  pendingSessionCreates.set(tempId, p)
   try {
-    const s = await apiFetch<ChatSession>('/chat/sessions', { method: 'POST', body: {} })
-    sessions.value.unshift(s)
-    await openSession(s.id)
-    mobileView.value = 'chat'
-  } catch {}
+    const real = await p
+    const i = sessions.value.findIndex(x => x.id === tempId)
+    if (i !== -1) sessions.value[i] = real
+    if (activeSessionId.value === tempId) activeSessionId.value = real.id
+    if (activeSession.value?.id === tempId) activeSession.value.id = real.id
+  } catch {
+    // 建立失敗：移除臨時 session，若仍停留其上則清空
+    sessions.value = sessions.value.filter(x => x.id !== tempId)
+    if (activeSessionId.value === tempId) {
+      activeSessionId.value = null
+      activeSession.value = null
+      messages.value = []
+    }
+  } finally {
+    pendingSessionCreates.delete(tempId)
+  }
+}
+
+// 把（可能是樂觀建立中的）臨時 session id 解析成真實 id；失敗或仍無真實 id 回傳 null
+async function resolveSessionId(id: string): Promise<string | null> {
+  if (!id.startsWith('temp-')) return id
+  const pending = pendingSessionCreates.get(id)
+  if (pending) {
+    try {
+      const real = await pending
+      if (activeSessionId.value === id) activeSessionId.value = real.id
+      return real.id
+    } catch {
+      return null
+    }
+  }
+  // 建立已完成並換好 id：採用目前的真實 active id
+  const current = activeSessionId.value
+  return current && !current.startsWith('temp-') ? current : null
 }
 
 async function openSession(id: string) {
@@ -759,11 +811,23 @@ async function send() {
   if (!inputText.value.trim() || loading.value || !activeSessionId.value || chatQuotaFull.value) return
 
   const content = inputText.value.trim()
-  const sessionId = activeSessionId.value  // capture，避免切換 session 後寫到錯的地方
+  let sessionId = activeSessionId.value  // capture，避免切換 session 後寫到錯的地方
   inputText.value = ''
   resetInputHeight()
   loading.value = true
   resetProcess()
+
+  // 樂觀建立中的臨時 session：先等真實 id 回來再送訊息，失敗則還原輸入
+  if (sessionId.startsWith('temp-')) {
+    const real = await resolveSessionId(sessionId)
+    if (!real) {
+      loading.value = false
+      inputText.value = content
+      resetInputHeight()
+      return
+    }
+    sessionId = real
+  }
 
   const isActive = () => activeSessionId.value === sessionId
 
