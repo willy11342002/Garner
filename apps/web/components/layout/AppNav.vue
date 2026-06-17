@@ -1,6 +1,10 @@
 <template>
   <div>
     <nav class="nav">
+      <button class="nav__hamburger" @click="mobileMenuOpen = !mobileMenuOpen">
+        <svg v-if="!mobileMenuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
       <NuxtLink to="/app" class="nav__logo">Garner</NuxtLink>
       <div class="nav__tabs">
         <NuxtLink
@@ -162,6 +166,32 @@
       </div>
     </nav>
 
+    <!-- 手機 drawer -->
+    <Transition name="drawer">
+      <div v-if="mobileMenuOpen" class="nav__drawer">
+        <div class="nav__drawer-logo">Garner</div>
+        <nav class="nav__drawer-nav">
+          <NuxtLink to="/app" class="nav__drawer-item" :class="{ 'nav__drawer-item--active': route.path === '/app' }" @click="mobileMenuOpen = false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.3 6H8.3C6.3 13.7 5 11.5 5 9a7 7 0 0 1 7-7z"/><path d="M9 21h6"/><path d="M10 18h4"/></svg>
+            {{ t('nav.knowledge') }}
+          </NuxtLink>
+          <NuxtLink to="/app/chat" class="nav__drawer-item" :class="{ 'nav__drawer-item--active': route.path.startsWith('/app/chat') }" @click="mobileMenuOpen = false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            {{ t('nav.chat') }}
+          </NuxtLink>
+          <NuxtLink to="/app/reports" class="nav__drawer-item" :class="{ 'nav__drawer-item--active': route.path.startsWith('/app/reports') }" @click="mobileMenuOpen = false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            {{ t('nav.reports') }}
+          </NuxtLink>
+          <NuxtLink to="/app/trips" class="nav__drawer-item" :class="{ 'nav__drawer-item--active': route.path.startsWith('/app/trips') }" @click="mobileMenuOpen = false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+            {{ t('nav.trips') }}
+          </NuxtLink>
+        </nav>
+      </div>
+    </Transition>
+    <div v-if="mobileMenuOpen" class="nav__drawer-backdrop" @click="mobileMenuOpen = false" />
+
     <!-- Backdrops -->
     <div v-if="menuOpen" class="nav__backdrop" @click="menuOpen = false" />
     <div v-if="notifOpen" class="nav__backdrop" @click="notifOpen = false" />
@@ -244,6 +274,9 @@ const authStore = useAuthStore()
 const itemStore = useItemStore()
 const notifStore = useNotificationStore()
 const apiFetch = useApiFetch()
+
+// 手機 drawer
+const mobileMenuOpen = ref(false)
 
 // 通知
 const notifOpen = ref(false)
@@ -415,6 +448,7 @@ watch(menuOpen, (val) => {
 watch(() => route.path, () => {
   menuOpen.value = false
   notifOpen.value = false
+  mobileMenuOpen.value = false
   closeItemModal()
 })
 

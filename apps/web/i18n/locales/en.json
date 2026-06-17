@@ -80,6 +80,7 @@
     "writeArticle": "Write an article"
   },
   "nav": {
+    "knowledge": "Knowledge",
     "chat": "Chat",
     "reports": "Reports",
     "trips": "Trips",
