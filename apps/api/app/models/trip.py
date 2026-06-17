@@ -74,6 +74,7 @@ class TripItem(Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(Text, nullable=True)  # 景點|美食|交通|住宿|null
     booked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    ticket_url: Mapped[str | None] = mapped_column(Text, nullable=True)  # 票券／訂位連結
 
     # ── 排程 ──────────────────────────────────────────────────────────────────
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -101,10 +102,30 @@ class TripItem(Base):
     item_tags: Mapped[list["TripItemTag"]] = relationship(
         back_populates="trip_item", cascade="all, delete-orphan", lazy="selectin"
     )
+    sources: Mapped[list["TripItemSource"]] = relationship(
+        back_populates="trip_item", cascade="all, delete-orphan", lazy="selectin"
+    )
 
     __table_args__ = (
         Index("ix_trip_items_trip_id_order", "trip_id", "order_index"),
     )
+
+
+class TripItemSource(Base):
+    """TripItem ↔ 知識（user_items）關聯：一張卡片可關聯多則知識（AI 依地點對應）。
+
+    不對 user_item_id 設 FK，與 Trip.source_item_ids / TripItem.user_item_id 同理由：
+    user_items 走軟刪除，硬 FK 會擋住刪除流程。
+    """
+
+    __tablename__ = "trip_item_sources"
+
+    trip_item_id: Mapped[UUID] = mapped_column(
+        ForeignKey("trip_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_item_id: Mapped[UUID] = mapped_column(primary_key=True)
+
+    trip_item: Mapped["TripItem"] = relationship(back_populates="sources")
 
 
 class TripTag(Base):

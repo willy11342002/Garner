@@ -145,7 +145,6 @@
                       <span v-if="item.booked" class="trips-booked">✓ 已預定</span>
                       <span v-if="item.start_date" class="trips-tcard__time">{{ formatDateRange(item.start_date, item.end_date) }}</span>
                       <span v-if="item.start_time" class="trips-tcard__time">{{ item.start_time }}</span>
-                      <a v-if="isUrl(item.place_name)" :href="item.place_name!" target="_blank" class="trips-tcard__place" @click.stop title="開啟地圖">📍</a>
                     </div>
                   </div>
                 </div>
@@ -220,7 +219,6 @@
                     <div class="trips-tcard__meta">
                       <span v-if="item.booked" class="trips-booked">✓ 已預定</span>
                       <span v-if="item.start_time" class="trips-tcard__time">{{ item.start_time }}</span>
-                      <a v-if="isUrl(item.place_name)" :href="item.place_name!" target="_blank" class="trips-tcard__place" @click.stop>📍</a>
                     </div>
                   </div>
                   <div v-if="itemsByDate(day).length === 0" class="trips-empty-note">— 自由活動 —</div>
@@ -240,40 +238,70 @@
       <div v-if="editingItem !== null" class="trips-modal-overlay" @click.self="closeItemEditor">
         <div class="trips-modal">
           <div class="trips-modal__head">
+            <button
+              ref="emojiTriggerEl"
+              class="trips-emoji-trigger"
+              type="button"
+              :title="editForm.emoji ? '更換 Emoji' : '選擇 Emoji'"
+              @click="toggleEmojiPicker"
+            >{{ editForm.emoji || '😊' }}</button>
+            <input
+              v-model="editForm.title"
+              class="trips-modal__title"
+              placeholder="景點名稱…"
+              @blur="onTitleCommit"
+              @keydown.enter.prevent="($event.target as HTMLElement).blur()"
+            />
             <button class="trips-modal__close" @click="closeItemEditor">✕</button>
           </div>
           <div class="trips-modal__body">
-
-            <!-- Title + Emoji button on same row -->
-            <div class="trips-field">
-              <span class="trips-field__lbl">名稱</span>
-              <div class="trips-titlerow">
-                <button
-                  ref="emojiTriggerEl"
-                  class="trips-emoji-trigger"
-                  type="button"
-                  :title="editForm.emoji ? '更換 Emoji' : '選擇 Emoji'"
-                  @click="toggleEmojiPicker"
-                >{{ editForm.emoji || '😊' }}</button>
-                <input v-model="editForm.title" class="trips-field__input" placeholder="景點名稱…" />
-              </div>
+            <!-- 已關聯 & 刪除 -->
+            <div class="trips-linked-row">
+              <button
+                v-if="editingItem?.sources?.length"
+                type="button"
+                class="trips-ksrcbtn"
+                @click="itemSourcesOpen = true"
+              >有 {{ editingItem.sources.length }} 則收藏關聯</button>
+              <span v-else></span>
+              <button v-if="editingItem?.id" class="btn btn--danger" :disabled="isSaving" @click="handleDeleteItem">刪除</button>
             </div>
 
-            <!-- Booked -->
-            <label class="trips-field trips-field--inline">
-              <input type="checkbox" v-model="editForm.booked" />
-              <span class="trips-field__lbl">已預定票券</span>
-            </label>
+            <!-- 已預定票券 + 票券連結（同地標：Enter 送出後變按鈕）-->
+            <div class="trips-field">
+              <span class="trips-field__lbl">票券</span>
+              <div class="trips-booked-row">
+                <label class="trips-check">
+                  <input type="checkbox" v-model="editForm.booked" @change="saveField('booked')" />
+                  <span class="trips-field__lbl">已預定票券</span>
+                </label>
+                <div class="trips-ticket">
+                  <div v-if="isUrl(editForm.ticket_url) && !editingTicket" class="trips-place-row">
+                    <a :href="editForm.ticket_url" target="_blank" rel="noopener" class="btn trips-place-open">🎫 開啟票券</a>
+                    <button type="button" class="btn trips-place-edit" @click="editingTicket = true">編輯</button>
+                  </div>
+                  <input
+                    v-else
+                    v-model="editForm.ticket_url"
+                    type="url"
+                    class="trips-field__input"
+                    placeholder="貼上票券連結，按 Enter 送出"
+                    @keydown.enter.prevent="commitTicket"
+                    @blur="commitTicket"
+                  />
+                </div>
+              </div>
+            </div>
 
             <!-- Date + Time combined -->
             <div class="trips-field">
               <span class="trips-field__lbl">時間</span>
               <div class="trips-field__timerow">
-                <input v-model="editForm.start_date" type="date" class="trips-field__input trips-field__dt" />
-                <input v-model="editForm.start_time" type="time" class="trips-field__input trips-field__tm" />
+                <input v-model="editForm.start_date" type="date" class="trips-field__input trips-field__dt" @change="saveField('start_date')" />
+                <input v-model="editForm.start_time" type="time" class="trips-field__input trips-field__tm" @change="saveField('start_time')" />
                 <span class="trips-field__sep">→</span>
-                <input v-model="editForm.end_date" type="date" class="trips-field__input trips-field__dt" />
-                <input v-model="editForm.end_time" type="time" class="trips-field__input trips-field__tm" />
+                <input v-model="editForm.end_date" type="date" class="trips-field__input trips-field__dt" @change="saveField('end_date')" />
+                <input v-model="editForm.end_time" type="time" class="trips-field__input trips-field__tm" @change="saveField('end_time')" />
               </div>
             </div>
 
@@ -289,7 +317,9 @@
                 v-model="editForm.place_name"
                 type="url"
                 class="trips-field__input"
-                placeholder="貼上 Google Maps 連結或地點"
+                placeholder="貼上 Google Maps 連結或地點，按 Enter 送出"
+                @keydown.enter.prevent="commitPlace"
+                @blur="commitPlace"
               />
             </div>
 
@@ -329,10 +359,6 @@
 
           </div>
 
-          <div class="trips-modal__foot">
-            <button v-if="editingItem.id" class="btn btn--danger" :disabled="isSaving" @click="handleDeleteItem">刪除</button>
-            <button class="btn btn--accent" :disabled="!editForm.title.trim()" @click="handleSaveItem">儲存</button>
-          </div>
         </div>
       </div>
     </Transition>
@@ -368,13 +394,22 @@
       </div>
     </Teleport>
 
-    <!-- Source list modal -->
+    <!-- Source list modal（行程層級來源）-->
     <SourceListModal
       :open="sourcesOpen"
       :sources="current?.sources ?? []"
       :title="`從 ${current?.sources.length ?? 0} 則收藏彙整`"
       @close="sourcesOpen = false"
       @select="onSelectSource"
+    />
+
+    <!-- Source list modal（卡片關聯的收藏）-->
+    <SourceListModal
+      :open="itemSourcesOpen"
+      :sources="editingItem?.sources ?? []"
+      :title="`有 ${editingItem?.sources?.length ?? 0} 則收藏關聯`"
+      @close="itemSourcesOpen = false"
+      @select="onSelectItemSource"
     />
   </div>
 </template>
@@ -439,6 +474,13 @@ const sourcesOpen = ref(false)
 
 function onSelectSource(id: string) {
   sourcesOpen.value = false
+  openItemModal(id)
+}
+
+// 卡片編輯彈窗內「關聯收藏」清單選取 → 開知識詳情
+const itemSourcesOpen = ref(false)
+function onSelectItemSource(id: string) {
+  itemSourcesOpen.value = false
   openItemModal(id)
 }
 
@@ -729,6 +771,7 @@ function toggleEmojiPicker() {
 function pickEmoji(e: string) {
   editForm.value.emoji = e
   showEmojiPicker.value = false
+  saveField('emoji')
 }
 
 // ── Item editor ────────────────────────────────────────────────────────────
@@ -736,6 +779,7 @@ interface EditForm {
   title: string
   emoji: string
   booked: boolean
+  ticket_url: string
   start_date: string
   end_date: string
   start_time: string
@@ -748,57 +792,59 @@ interface EditForm {
 const editingItem = ref<Partial<TripItem> | null>(null)
 const isSaving = ref(false)
 const editingPlace = ref(false)  // 地標：有值時預設顯示「開啟地圖」按鈕，按編輯才切成 input
+const editingTicket = ref(false) // 票券連結：同地標的切換行為
 const editForm = ref<EditForm>({
-  title: '', emoji: '', booked: false,
+  title: '', emoji: '', booked: false, ticket_url: '',
   start_date: '', end_date: '', start_time: '', end_time: '',
   place_name: '', note: '', tag_ids: [],
 })
 
-function openItemEditor(item: TripItem) {
-  editingItem.value = item
-  editingPlace.value = false  // 有地標就先顯示按鈕
+// populateForm 期間抑制自動儲存，避免載入卡片時誤觸 PATCH
+const suppressAutoSave = ref(false)
+
+function populateForm(item: Partial<TripItem>) {
+  suppressAutoSave.value = true
+  editingPlace.value = false   // 有地標就先顯示按鈕
+  editingTicket.value = false  // 有票券連結就先顯示按鈕
   editForm.value = {
-    title: item.title,
+    title: item.title ?? '',
     emoji: item.emoji ?? '',
-    booked: item.booked,
+    booked: item.booked ?? false,
+    ticket_url: item.ticket_url ?? '',
     start_date: item.start_date ?? '',
     end_date: item.end_date ?? '',
     start_time: item.start_time ?? '',
     end_time: item.end_time ?? '',
     place_name: item.place_name ?? '',
     note: item.note ?? '',
-    tag_ids: item.tags.map(t => t.trip_tag_id),
+    tag_ids: (item.tags ?? []).map(t => t.trip_tag_id),
   }
+  nextTick(() => { suppressAutoSave.value = false })
 }
 
-function handleAddItem() {
-  editingItem.value = {}
-  editingPlace.value = false
-  editForm.value = {
-    title: '', emoji: '', booked: false,
-    start_date: '', end_date: '', start_time: '', end_time: '',
-    place_name: '', note: '', tag_ids: [],
+function openItemEditor(item: TripItem) {
+  editingItem.value = item
+  populateForm(item)
+}
+
+// 新增：直接建立一張空白卡片再開編輯（無儲存按鈕，後續編輯各自 PATCH）
+async function handleAddItem() {
+  if (!current.value) return
+  const tripId = current.value.id
+  try {
+    const created = await addItem(tripId, { title: '未命名', order_index: current.value.items.length })
+    current.value.items.push(created)
+    sidebarItemCount(tripId, 1)
+    openItemEditor(created)
+  } catch {
+    useToast().show('新增失敗', 'error')
   }
 }
 
 function closeItemEditor() {
+  flushNoteSave()  // 關閉前把尚未送出的備註送出
   editingItem.value = null
   showEmojiPicker.value = false
-}
-
-function buildPayload() {
-  return {
-    title: editForm.value.title.trim(),
-    emoji: editForm.value.emoji || null,
-    booked: editForm.value.booked,
-    start_date: editForm.value.start_date || null,
-    end_date: editForm.value.end_date || null,
-    start_time: editForm.value.start_time || null,
-    end_time: editForm.value.end_time || null,
-    place_name: editForm.value.place_name || null,
-    note: editForm.value.note || null,
-    tag_ids: editForm.value.tag_ids,
-  }
 }
 
 function sidebarItemCount(tripId: string, delta: number) {
@@ -806,66 +852,66 @@ function sidebarItemCount(tripId: string, delta: number) {
   if (idx !== -1) trips.value[idx].item_count += delta
 }
 
-async function handleSaveItem() {
-  if (!current.value || isSaving.value || !editForm.value.title.trim()) return
-  const toast = useToast()
-  isSaving.value = true
-  const payload = buildPayload()
+// ── 自動儲存：每個欄位變更各自發送 PATCH ─────────────────────────────────────
+async function patchField(patch: Record<string, unknown>, optimistic: Partial<TripItem>) {
+  if (!current.value || !editingItem.value?.id) return
   const tripId = current.value.id
-
-  if (editingItem.value?.id) {
-    // ── 更新既有卡片 ─────────────────────────────────────────────────────────
-    const itemId = editingItem.value.id
-    const itemIdx = current.value.items.findIndex(i => i.id === itemId)
-    const prevItem = itemIdx !== -1 ? { ...current.value.items[itemIdx] } : null
-    const optimisticTags = availableTags.value
-      .filter(t => payload.tag_ids.includes(t.id))
-      .map(t => ({ trip_tag_id: t.id, name: t.name, color: t.color }))
-    if (itemIdx !== -1) {
-      current.value.items[itemIdx] = { ...current.value.items[itemIdx], ...payload, tags: optimisticTags }
-    }
-    try {
-      const updated = await updateItem(tripId, itemId, payload)
-      const finalIdx = current.value.items.findIndex(i => i.id === itemId)
-      if (finalIdx !== -1) current.value.items[finalIdx] = updated
-      editingPlace.value = false
-      toast.show('已儲存', 'success')
-    } catch {
-      if (prevItem && itemIdx !== -1) current.value.items[itemIdx] = prevItem
-      toast.show('儲存失敗，已復原', 'error')
-    }
-  } else {
-    // ── 新增卡片 ─────────────────────────────────────────────────────────────
-    const tempId = `temp-${Date.now()}`
-    const tempTags = availableTags.value
-      .filter(t => payload.tag_ids.includes(t.id))
-      .map(t => ({ trip_tag_id: t.id, name: t.name, color: t.color }))
-    const tempItem: TripItem = {
-      id: tempId, trip_id: tripId, user_item_id: null,
-      order_index: current.value.items.length,
-      kind: 'event', category: null,
-      geocoding_status: 'done', tags: tempTags,
-      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      lat: null, lng: null,
-      ...payload,
-    }
-    current.value.items.push(tempItem)
-    sidebarItemCount(tripId, 1)
-    try {
-      const created = await addItem(tripId, { ...payload, order_index: tempItem.order_index })
-      const idx = current.value.items.findIndex(i => i.id === tempId)
-      if (idx !== -1) current.value.items[idx] = created
-      editingItem.value = created
-      editingPlace.value = false
-      toast.show('已儲存', 'success')
-    } catch {
-      current.value.items = current.value.items.filter(i => i.id !== tempId)
-      sidebarItemCount(tripId, -1)
-      toast.show('儲存失敗，已復原', 'error')
-    }
+  const itemId = editingItem.value.id
+  const idx = current.value.items.findIndex(i => i.id === itemId)
+  if (idx === -1) return
+  const prev = { ...current.value.items[idx] }
+  current.value.items[idx] = { ...current.value.items[idx], ...optimistic }
+  if (editingItem.value?.id === itemId) editingItem.value = current.value.items[idx]
+  try {
+    const updated = await updateItem(tripId, itemId, patch)
+    const i2 = current.value.items.findIndex(i => i.id === itemId)
+    if (i2 !== -1) current.value.items[i2] = updated
+    if (editingItem.value?.id === itemId) editingItem.value = updated
+  } catch {
+    const i2 = current.value.items.findIndex(i => i.id === itemId)
+    if (i2 !== -1) current.value.items[i2] = prev
+    if (editingItem.value?.id === itemId) editingItem.value = prev
+    useToast().show('儲存失敗，已復原', 'error')
   }
-  isSaving.value = false
 }
+
+type SaveKey = 'title' | 'emoji' | 'booked' | 'ticket_url' | 'place_name'
+  | 'start_date' | 'end_date' | 'start_time' | 'end_time' | 'note'
+
+function saveField(key: SaveKey) {
+  if (suppressAutoSave.value) return
+  let value: unknown = editForm.value[key]
+  if (key === 'title') {
+    value = (value as string).trim() || '未命名'
+    editForm.value.title = value as string
+  } else if (typeof value === 'string') {
+    value = value || null
+  }
+  patchField({ [key]: value }, { [key]: value } as Partial<TripItem>)
+}
+
+function saveTags() {
+  if (suppressAutoSave.value) return
+  const optimisticTags = availableTags.value
+    .filter(t => editForm.value.tag_ids.includes(t.id))
+    .map(t => ({ trip_tag_id: t.id, name: t.name, color: t.color }))
+  patchField({ tag_ids: [...editForm.value.tag_ids] }, { tags: optimisticTags })
+}
+
+function onTitleCommit() { saveField('title') }
+function commitPlace() { editingPlace.value = false; saveField('place_name') }
+function commitTicket() { editingTicket.value = false; saveField('ticket_url') }
+
+// 備註打字頻繁：去抖動後再送，離開卡片時 flush
+let noteTimer: ReturnType<typeof setTimeout> | null = null
+function flushNoteSave() {
+  if (noteTimer) { clearTimeout(noteTimer); noteTimer = null; saveField('note') }
+}
+watch(() => editForm.value.note, () => {
+  if (suppressAutoSave.value) return
+  if (noteTimer) clearTimeout(noteTimer)
+  noteTimer = setTimeout(() => { noteTimer = null; saveField('note') }, 700)
+})
 
 async function handleDeleteItem() {
   if (!current.value || !editingItem.value?.id || isSaving.value) return
@@ -890,6 +936,7 @@ function toggleTag(tagId: string) {
   const idx = ids.indexOf(tagId)
   if (idx === -1) ids.push(tagId)
   else ids.splice(idx, 1)
+  saveTags()
 }
 
 // ── Board tag editing ──────────────────────────────────────────────────────
@@ -1054,6 +1101,7 @@ async function confirmNewTag() {
     if (idx !== -1) availableTags.value[idx] = tag
     const tidIdx = editForm.value.tag_ids.indexOf(tempId)
     if (tidIdx !== -1) editForm.value.tag_ids[tidIdx] = tag.id
+    saveTags()  // 用真實 tag id 存到卡片
   } catch {
     availableTags.value = availableTags.value.filter(t => t.id !== tempId)
     editForm.value.tag_ids = editForm.value.tag_ids.filter(id => id !== tempId)
@@ -1184,7 +1232,6 @@ function cancelNewTag() {
 .trips-tcard__emoji { flex: 0 0 auto; }
 .trips-tcard__meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .trips-tcard__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
-.trips-tcard__place { font-size: 13px; text-decoration: none; }
 .trips-booked {
   display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500;
   color: var(--tag-a); background: color-mix(in oklab, var(--tag-a) 14%, transparent);
@@ -1267,17 +1314,33 @@ function cancelNewTag() {
   overflow: hidden;
 }
 .trips-modal__head {
-  padding: 18px 20px 16px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; flex-shrink: 0;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
 }
-.trips-modal__close { color: var(--text-dim); font-size: 16px; background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.trips-modal__title {
+  flex: 1; min-width: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 11px; font-size: 15px; font-weight: 600; color: var(--text);
+  outline: none; transition: border-color .15s;
+}
+.trips-modal__title:focus { border-color: var(--accent); }
+.trips-modal__close { color: var(--text-dim); font-size: 16px; background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0; }
 .trips-modal__close:hover { background: var(--surface2); color: var(--text); }
-.trips-modal__body { flex: 1 1 auto; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
-.trips-modal__foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+.trips-modal__body {
+  width: min(max(70%, calc(494px + 35.7%)), 100%);
+  margin: auto;
+  scrollbar-width: none;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.trips-modal__foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
 
 /* Fields */
 .trips-field { display: flex; flex-direction: column; gap: 6px; }
-.trips-field--inline { flex-direction: row; align-items: center; gap: 10px; }
 .trips-field--note { gap: 8px; }
 .trips-field__lbl { font-size: 12px; font-weight: 500; color: var(--text-mid); }
 .trips-field__input {
@@ -1291,9 +1354,7 @@ function cancelNewTag() {
 .trips-place-open { flex: 1; text-align: center; text-decoration: none; }
 .trips-place-edit { flex: 0 0 auto; }
 
-/* Title + emoji on same row */
-.trips-titlerow { display: flex; align-items: center; gap: 8px; }
-.trips-titlerow .trips-field__input { flex: 1; }
+/* 名稱列的 Emoji 觸發鈕（在 modal head）*/
 .trips-emoji-trigger {
   flex: 0 0 auto;
   width: 44px; height: 40px;
@@ -1325,6 +1386,21 @@ function cancelNewTag() {
 }
 
 /* Tags */
+.trips-linked-row {display: flex; justify-content: space-between;}
+/* 已預定票券 + 票券連結 同列 */
+.trips-booked-row { display: flex; flex-direction: row; align-items: center; gap: 14px; }
+.trips-check { display: flex; align-items: center; gap: 8px; flex-shrink: 0; cursor: pointer; }
+.trips-ticket { flex: 1; min-width: 0; }
+.trips-ticket .trips-place-open { font-size: 13px; }
+
+/* 關聯知識：文字按鈕（同 doc__srcbtn 風格）*/
+.trips-ksrcbtn {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  background: none; border: none; padding: 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px; transition: color .14s ease;
+}
+.trips-ksrcbtn:hover { color: var(--accent); }
+
 .trips-tags-wrap { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .trips-pill {
   padding: 5px 12px; border-radius: 20px; font-size: 12px;

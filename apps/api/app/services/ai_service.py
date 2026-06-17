@@ -553,6 +553,7 @@ _AGENTIC_SYSTEM = """\
 - 詢問「來源」「出處」「哪篇」時，一定要呼叫 search，不能憑記憶回答
 - 如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造
 - 用戶要「旅遊行程／旅遊規劃／幾天幾夜／itinerary／玩幾天」時：先呼叫 create_trip 建立空行程，再用 add_trip_card 逐一新增卡片（每個景點／餐廳／交通／住宿各一張，title 只放名稱、細節放 note，一天通常 3～6 張）。不要用 create_report，也不要把整天行程塞進單一卡片
+- 新增每張卡片時，若卡片的地點與『已找到的知識庫內容』中某些知識的「地點」相符，務必用 add_trip_card 的 source_item_ids 帶上那些知識的「知識id」，讓卡片連回對應的知識；沒有相符的就留空
 - 用戶要其他「報告／指南／清單／彙整（非旅遊行程）」時：呼叫 create_report
 - 上述產出類請求：若已有可用的知識內容（使用者選定的知識節點，或 search 結果），直接用那些內容產出，不要反問主題；只有在完全沒有任何可用內容時才詢問
 - 如果問題超出知識庫範圍（閒聊、一般常識、數學計算等），簡短說明你只能幫助探索知識庫
@@ -634,6 +635,11 @@ _AGENTIC_TOOLS = [
                     "emoji": {"type": "string", "description": "代表性 emoji，可選"},
                     "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
                     "note": {"type": "string", "description": "這張卡片的細節說明（玩法、交通、提醒等），用 markdown 格式撰寫（可用條列、粗體）。整段敘述放這裡，不要放進 title。"},
+                    "source_item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "這張卡片對應的知識 id 陣列。從『已找到的知識庫內容』裡，依『地點』把這張卡片的地點對應到提到該地點的知識，填入它們的「知識id」。沒有相符的知識就留空或省略，不要亂填。",
+                    },
                 },
                 "required": ["day", "title"],
             },
@@ -697,7 +703,12 @@ async def agentic_chat_stream(
     accumulated_text = ""
 
     def _fmt_ctx(c: dict) -> str:
-        parts = [f"標題：{c.get('title') or '(無標題)'}"]
+        # item_id（chunk）或 id（source）讓模型可在建行程卡片時用 source_item_ids 依地點回連知識
+        item_id = c.get("item_id") or c.get("id")
+        head = f"標題：{c.get('title') or '(無標題)'}"
+        if item_id:
+            head += f"（知識id：{item_id}）"
+        parts = [head]
         if c.get("tags"):
             parts.append(f"標籤：{', '.join(c['tags'])}")
         if c.get("locations"):

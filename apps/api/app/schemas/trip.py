@@ -34,6 +34,16 @@ class TripItemTagRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TripSourceItem(BaseModel):
+    """Provenance：trip 或 trip_item 關聯的知識（供前端顯示／點開）。"""
+    id: UUID
+    title: str | None = None
+    thumbnail_url: str | None = None
+    source_type: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class TripItemRead(BaseModel):
     id: UUID
     trip_id: UUID
@@ -44,6 +54,7 @@ class TripItemRead(BaseModel):
     note: str | None = None
     category: str | None = None
     booked: bool
+    ticket_url: str | None = None
     start_date: date | None = None
     end_date: date | None = None
     start_time: time | None = None
@@ -54,6 +65,7 @@ class TripItemRead(BaseModel):
     lng: float | None = None
     geocoding_status: str
     tags: list[TripItemTagRead] = []
+    sources: list[TripSourceItem] = []   # 關聯的知識（user_items），AI 依地點對應
     created_at: datetime
     updated_at: datetime
 
@@ -68,6 +80,7 @@ class TripItemCreate(BaseModel):
     note: str | None = None
     category: str | None = None
     booked: bool = False
+    ticket_url: str | None = None
     start_date: date | None = None
     end_date: date | None = None
     start_time: time | None = None
@@ -85,6 +98,7 @@ class TripItemUpdate(BaseModel):
     note: str | None = None
     category: str | None = None
     booked: bool | None = None
+    ticket_url: str | None = None
     start_date: date | None = None
     end_date: date | None = None
     start_time: time | None = None
@@ -106,16 +120,6 @@ class TripItemReorderRequest(BaseModel):
 
 
 # ── Trip schemas ──────────────────────────────────────────────────────────────
-
-class TripSourceItem(BaseModel):
-    """Provenance：供前端顯示「從 N 則收藏彙整」。"""
-    id: UUID
-    title: str | None = None
-    thumbnail_url: str | None = None
-    source_type: str | None = None
-
-    model_config = {"from_attributes": True}
-
 
 class TripRead(BaseModel):
     id: UUID

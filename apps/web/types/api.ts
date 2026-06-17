@@ -236,6 +236,7 @@ export interface ChatSource {
   title: string | null
   thumbnail_url: string | null
   source_type: string | null
+  locations?: string[]
 }
 
 export interface QuotaItem {
@@ -348,6 +349,14 @@ export interface TripItemTag {
   color: string | null
 }
 
+/** 卡片關聯的知識（user_items）。 */
+export interface TripItemSource {
+  id: string
+  title: string | null
+  thumbnail_url: string | null
+  source_type: string | null
+}
+
 export interface TripItem {
   id: string
   trip_id: string
@@ -358,6 +367,7 @@ export interface TripItem {
   note: string | null
   category: string | null
   booked: boolean
+  ticket_url: string | null
   start_date: string | null
   end_date: string | null
   start_time: string | null
@@ -368,6 +378,7 @@ export interface TripItem {
   lng: number | null
   geocoding_status: string
   tags: TripItemTag[]
+  sources: TripItemSource[]
   created_at: string
   updated_at: string
 }
@@ -380,6 +391,7 @@ export interface TripItemCreate {
   note?: string | null
   category?: string | null
   booked?: boolean
+  ticket_url?: string | null
   start_date?: string | null
   end_date?: string | null
   start_time?: string | null
@@ -397,6 +409,7 @@ export interface TripItemUpdate {
   note?: string | null
   category?: string | null
   booked?: boolean | null
+  ticket_url?: string | null
   start_date?: string | null
   end_date?: string | null
   start_time?: string | null

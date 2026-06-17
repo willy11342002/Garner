@@ -19,13 +19,16 @@ from app.schemas.trip import (
     TripUpdate,
 )
 
+# 卡片關聯知識的對照表型別：user_item_id → 已解析的來源資訊
+SourceMap = dict[UUID, TripSourceItem]
+
 logger = logging.getLogger(__name__)
 
 # category → 標籤顏色，對齊前端 trips.vue 建立的預設標籤（同名會被 get_or_create_tag 沿用）
 _CATEGORY_TAG_COLORS = {"景點": "d", "美食": "e", "交通": "b", "住宿": "a"}
 
 
-def _build_item_read(item: TripItem) -> TripItemRead:
+def _build_item_read(item: TripItem, source_map: SourceMap | None = None) -> TripItemRead:
     tags = [
         TripItemTagRead(
             trip_tag_id=it.trip_tag_id,
@@ -34,6 +37,13 @@ def _build_item_read(item: TripItem) -> TripItemRead:
         )
         for it in (item.item_tags or [])
     ]
+    # 依卡片的 sources（user_item_id）查對照表，組出可顯示的關聯知識
+    sources: list[TripSourceItem] = []
+    if source_map:
+        for s in (item.sources or []):
+            resolved = source_map.get(s.user_item_id)
+            if resolved is not None:
+                sources.append(resolved)
     return TripItemRead(
         id=item.id,
         trip_id=item.trip_id,
@@ -44,6 +54,7 @@ def _build_item_read(item: TripItem) -> TripItemRead:
         note=item.note,
         category=item.category,
         booked=item.booked,
+        ticket_url=item.ticket_url,
         start_date=item.start_date,
         end_date=item.end_date,
         start_time=item.start_time,
@@ -54,9 +65,35 @@ def _build_item_read(item: TripItem) -> TripItemRead:
         lng=item.lng,
         geocoding_status=item.geocoding_status,
         tags=tags,
+        sources=sources,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
+
+
+async def _build_item_source_map(
+    db: AsyncSession, user_id: UUID, items: list[TripItem]
+) -> SourceMap:
+    """一次解析一批 items 用到的所有關聯知識（避免 N+1）。"""
+    all_ids: list[UUID] = []
+    seen: set[UUID] = set()
+    for it in items:
+        for s in (it.sources or []):
+            if s.user_item_id not in seen:
+                seen.add(s.user_item_id)
+                all_ids.append(s.user_item_id)
+    if not all_ids:
+        return {}
+    resolved = await crud_trips.resolve_sources(db, user_id, all_ids)
+    return {
+        ui.id: TripSourceItem(
+            id=ui.id,
+            title=ui.title,
+            thumbnail_url=ui.thumbnail_url,
+            source_type=ui.source_type,
+        )
+        for ui in resolved
+    }
 
 
 async def _build_trip_read(db: AsyncSession, user_id: UUID, trip: Trip) -> TripRead:
@@ -71,6 +108,7 @@ async def _build_trip_read(db: AsyncSession, user_id: UUID, trip: Trip) -> TripR
         for s in sources_raw
     ]
     items = sorted(trip.items or [], key=lambda i: (str(i.start_date) if i.start_date else "", i.order_index))
+    source_map = await _build_item_source_map(db, user_id, items)
     return TripRead(
         id=trip.id,
         title=trip.title,
@@ -79,7 +117,7 @@ async def _build_trip_read(db: AsyncSession, user_id: UUID, trip: Trip) -> TripR
         end_date=trip.end_date,
         last_edited_by=trip.last_edited_by,
         sources=sources,
-        items=[_build_item_read(i) for i in items],
+        items=[_build_item_read(i, source_map) for i in items],
         created_at=trip.created_at,
         updated_at=trip.updated_at,
     )
@@ -218,8 +256,11 @@ async def add_card_from_chat(
     emoji: str | None = None,
     start_time=None,
     note: str | None = None,
+    ticket_url: str | None = None,
+    source_item_ids: list[str] | None = None,
 ) -> dict | None:
-    """chat 的 add_trip_card 工具用：對既有行程逐張新增卡片，回傳精簡 dict。"""
+    """chat 的 add_trip_card 工具用：對既有行程逐張新增卡片，回傳精簡 dict。
+    source_item_ids：依地點對應到的知識 user_item id（已在上游用 seen_ids 過濾），寫入關聯表。"""
     from datetime import datetime as _dt, timedelta
     from urllib.parse import quote
 
@@ -269,6 +310,7 @@ async def add_card_from_chat(
         start_time=_parse_time(start_time),
         order_index=float(len(trip.items or [])),  # 接在現有卡片之後
         place_name=stored_place,
+        ticket_url=((ticket_url or "").strip() or None),
         geocoding_status=("pending" if geocode_query else "done"),
     )
 
@@ -284,9 +326,28 @@ async def add_card_from_chat(
         except Exception:
             logger.exception("attach category tag failed for item %s", item.id)
 
+    # 知識關聯（依地點對應的知識 item）。寫失敗不影響卡片本身，故獨立 try。
+    parsed_sources = _parse_uuid_list(source_item_ids)
+    if parsed_sources:
+        try:
+            await crud_trips.set_item_sources(db, item.id, parsed_sources)
+        except Exception:
+            logger.exception("attach sources failed for item %s", item.id)
+
     if geocode_query:
         asyncio.create_task(_geocode_items_bg([(item.id, geocode_query)]))
     return {"ok": True, "id": str(item.id), "title": item.title}
+
+
+def _parse_uuid_list(values: list[str] | None) -> list[UUID]:
+    """把字串 id 清單轉成 UUID，解析失敗者略過。"""
+    out: list[UUID] = []
+    for v in values or []:
+        try:
+            out.append(v if isinstance(v, UUID) else UUID(str(v)))
+        except (ValueError, TypeError):
+            continue
+    return out
 
 
 async def _geocode_items_bg(items: list[tuple[UUID, str]]) -> None:
@@ -353,6 +414,7 @@ async def add_item(
         note=data.note,
         category=data.category,
         booked=data.booked,
+        ticket_url=data.ticket_url,
         start_date=data.start_date,
         end_date=data.end_date,
         start_time=data.start_time,
@@ -382,7 +444,8 @@ async def add_item(
         await db.commit()
 
     item = await crud_trips.get_item(db, trip_id, item.id)
-    return _build_item_read(item)
+    source_map = await _build_item_source_map(db, user_id, [item])
+    return _build_item_read(item, source_map)
 
 
 async def _get_primary_location(db, user_item_id: UUID):
@@ -433,7 +496,8 @@ async def update_item(
         asyncio.create_task(_geocode_item(db, item.id, update_kwargs["place_name"]))
 
     item = await crud_trips.get_item(db, trip_id, item_id)
-    return _build_item_read(item)
+    source_map = await _build_item_source_map(db, user_id, [item])
+    return _build_item_read(item, source_map)
 
 
 async def _geocode_item(db: AsyncSession, item_id: UUID, place_name: str) -> None:
@@ -494,6 +558,7 @@ _TRIP_EDIT_SYSTEM = """\
 - 刪除某張卡片：用 delete_card，card_no 用清單編號
 - 一次指示可呼叫多個工具（例如新增好幾張卡、或同時改多張）
 - place_name 只放純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址
+- 用戶提供票券／訂位網址，或要你補上票券連結時，用 ticket_url 帶上完整網址（與地標 place_name 是不同欄位，網址放這裡）
 - 全部改完後，用繁體中文寫 1～2 句話簡短說明你做了哪些調整
 - 若指示與行程編輯無關，簡短說明你只能幫忙編輯這份行程的卡片
 """
@@ -514,6 +579,7 @@ _TRIP_EDIT_TOOLS = [
                     "emoji": {"type": "string", "description": "代表性 emoji，可選"},
                     "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
                     "note": {"type": "string", "description": "卡片細節（玩法、交通、提醒等），markdown 格式，可選"},
+                    "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址），可選"},
                 },
                 "required": ["title"],
             },
@@ -536,6 +602,7 @@ _TRIP_EDIT_TOOLS = [
                     "start_time": {"type": "string", "description": "新的建議時間 HH:MM"},
                     "note": {"type": "string", "description": "新的卡片細節（markdown）"},
                     "booked": {"type": "boolean", "description": "是否已預定票券"},
+                    "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址）；傳空字串可清除"},
                 },
                 "required": ["card_no"],
             },
@@ -601,6 +668,8 @@ async def _ai_update_card(
         kwargs["note"] = args.get("note") or None
     if "emoji" in args:
         kwargs["emoji"] = args.get("emoji") or None
+    if "ticket_url" in args:
+        kwargs["ticket_url"] = (args.get("ticket_url") or "").strip() or None
     if isinstance(args.get("booked"), bool):
         kwargs["booked"] = args["booked"]
     if "start_time" in args:
@@ -651,15 +720,20 @@ async def _ai_update_card(
     if geocode_query:
         asyncio.create_task(_geocode_items_bg([(item.id, geocode_query)]))
 
-    return await _item_read_json(db, trip_id, item.id, ok=True)
+    return await _item_read_json(db, trip_id, item.id, ok=True, user_id=user_id)
 
 
-async def _item_read_json(db: AsyncSession, trip_id: UUID, item_id: UUID, *, ok: bool) -> dict:
+async def _item_read_json(
+    db: AsyncSession, trip_id: UUID, item_id: UUID, *, ok: bool, user_id: UUID | None = None
+) -> dict:
     """把單張卡片組成給前端的工具結果：_item 放完整 TripItemRead（前端用來即時渲染卡片）。"""
     item = await crud_trips.get_item(db, trip_id, item_id)
     if item is None:
         return {"ok": False}
-    read = _build_item_read(item)
+    source_map = (
+        await _build_item_source_map(db, user_id, [item]) if user_id else None
+    )
+    read = _build_item_read(item, source_map)
     return {"ok": ok, "title": item.title, "_item": read.model_dump(mode="json")}
 
 
@@ -731,10 +805,11 @@ async def ai_edit_trip_stream(
                 emoji=args.get("emoji"),
                 start_time=args.get("start_time"),
                 note=args.get("note"),
+                ticket_url=args.get("ticket_url"),
             )
             if not res or not res.get("id"):
                 return {"ok": False}
-            return await _item_read_json(db, trip_id, UUID(res["id"]), ok=True)
+            return await _item_read_json(db, trip_id, UUID(res["id"]), ok=True, user_id=user_id)
 
         if name == "update_card":
             try:

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.trip import Trip, TripItem, TripItemTag, TripTag
+from app.models.trip import Trip, TripItem, TripItemSource, TripItemTag, TripTag
 from app.models.user_item import UserItem
 
 
@@ -117,7 +117,7 @@ async def update_item(
 ) -> TripItem:
     for k, v in kwargs.items():
         if v is not None or k in ("start_date", "end_date", "start_time", "end_time",
-                                   "place_name", "lat", "lng", "note", "emoji"):
+                                   "place_name", "lat", "lng", "note", "emoji", "ticket_url"):
             setattr(item, k, v)
 
     if tag_ids is not None:
@@ -135,6 +135,20 @@ async def update_item(
 
 async def delete_item(db: AsyncSession, item: TripItem) -> None:
     await db.delete(item)
+    await db.commit()
+
+
+async def set_item_sources(
+    db: AsyncSession, trip_item_id: UUID, user_item_ids: list[UUID]
+) -> None:
+    """全替換某張卡片的知識關聯（沿用 tag 的全替換寫法）。"""
+    await db.execute(
+        TripItemSource.__table__.delete().where(
+            TripItemSource.trip_item_id == trip_item_id
+        )
+    )
+    for uid in dict.fromkeys(user_item_ids):  # 去重、保序
+        db.add(TripItemSource(trip_item_id=trip_item_id, user_item_id=uid))
     await db.commit()
 
 

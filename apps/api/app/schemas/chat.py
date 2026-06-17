@@ -69,6 +69,7 @@ class ChatSource(BaseModel):
     thumbnail_url: str | None
     source_type: str | None
     distance: float | None = None
+    locations: list[str] = []
 
 
 # ── Send message request ──────────────────────────────────────────────────────

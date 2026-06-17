@@ -140,6 +140,14 @@ async def _exec_search(
 
 
 
+def _ui_location_names(ui) -> list[str]:
+    """取 UserItem 的地點名稱（依 order_index）；relationship 未載入時安全回 []。"""
+    try:
+        return [loc.name for loc in sorted(ui.locations or [], key=lambda l: l.order_index)]
+    except Exception:
+        return []
+
+
 def _to_chat_source(ui: UserItem, distance: float | None = None) -> ChatSource:
     return ChatSource(
         id=ui.id,
@@ -148,6 +156,7 @@ def _to_chat_source(ui: UserItem, distance: float | None = None) -> ChatSource:
         thumbnail_url=ui.thumbnail_url,
         source_type=ui.source_type,
         distance=round(distance, 4) if distance is not None else None,
+        locations=_ui_location_names(ui),
     )
 
 
@@ -234,6 +243,7 @@ async def stream_reply(
                 item_map = {ui.id: ui for ui, _ in new_hits}
                 chunks_out = [
                     {
+                        "item_id": str(c.user_item_id),
                         "title": item_map[c.user_item_id].title if c.user_item_id in item_map else "(無標題)",
                         "text": c.text,
                         "tags": _item_tags(item_map[c.user_item_id]) if c.user_item_id in item_map else [],
@@ -284,6 +294,15 @@ async def stream_reply(
             # 卡片掛到本輪建立的行程（不信任模型給的 trip_id，避免誤寫他人行程）
             if created_trip is None:
                 return {"ok": False}
+            # 只接受本 session 實際檢索／預載過的知識 id（防模型亂編 id 寫到別人的知識）
+            raw_src = args.get("source_item_ids") or []
+            valid_src: list[str] = []
+            for sid in raw_src if isinstance(raw_src, list) else []:
+                try:
+                    if UUID(str(sid)) in seen_ids:
+                        valid_src.append(str(sid))
+                except (ValueError, TypeError):
+                    continue
             try:
                 res = await trip_service.add_card_from_chat(
                     db, user_id, UUID(created_trip["id"]),
@@ -294,6 +313,7 @@ async def stream_reply(
                     emoji=args.get("emoji"),
                     start_time=args.get("start_time"),
                     note=args.get("note"),
+                    source_item_ids=valid_src or None,
                 )
                 return {"ok": bool(res), "title": (res or {}).get("title")}
             except Exception:
@@ -330,6 +350,7 @@ async def stream_reply(
     preloaded_sources = [_to_chat_source(ui).model_dump(mode="json") for ui, _ in preloaded_items]
     preloaded_chunks = [
         {
+            "item_id": str(ui.id),
             "title": ui.title or "(無標題)",
             "text": (ui.notes_md or "")[:4000],
             "tags": _item_tags(ui),
