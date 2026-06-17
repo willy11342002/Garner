@@ -3,27 +3,27 @@
     <!-- ===== Sidebar ===== -->
     <aside class="trips-side" :class="{ 'trips-side--hidden-mobile': mobileView === 'detail' }">
       <div class="trips-side__head">
-        <span class="trips-side__lbl">旅遊行程</span>
+        <span class="trips-side__lbl">{{ t('trips.title') }}</span>
         <span class="trips-side__count">{{ trips.length }}</span>
-        <button class="trips-side__newbtn" title="新增行程" :disabled="creating" @click="handleCreate">
+        <button class="trips-side__newbtn" :title="t('trips.createNewBtn')" :disabled="creating" @click="handleCreate">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
       <div class="trips-rlist">
-        <div v-if="loadingList" class="trips-rlist__loading">載入中…</div>
-        <div v-else-if="trips.length === 0" class="trips-rlist__empty">還沒有行程，點 + 開始規劃</div>
+        <div v-if="loadingList" class="trips-rlist__loading">{{ t('trips.loading') }}</div>
+        <div v-else-if="trips.length === 0" class="trips-rlist__empty">{{ t('trips.empty') }}</div>
         <button
-          v-for="t in trips"
-          :key="t.id"
+          v-for="trip in trips"
+          :key="trip.id"
           class="trips-ritem"
-          :class="{ 'is-active': selectedId === t.id }"
-          @click="select(t.id)"
+          :class="{ 'is-active': selectedId === trip.id }"
+          @click="select(trip.id)"
         >
-          <h3 class="trips-ritem__title">{{ t.title }}</h3>
-          <p v-if="t.summary" class="trips-ritem__desc">{{ t.summary }}</p>
+          <h3 class="trips-ritem__title">{{ trip.title }}</h3>
+          <p v-if="trip.summary" class="trips-ritem__desc">{{ trip.summary }}</p>
           <div class="trips-ritem__meta">
-            <span v-if="t.start_date" class="trips-ritem__date">{{ formatDateRange(t.start_date, t.end_date) }}</span>
-            <span class="trips-ritem__count">{{ t.item_count }} 項</span>
+            <span v-if="trip.start_date" class="trips-ritem__date">{{ formatDateRange(trip.start_date, trip.end_date) }}</span>
+            <span class="trips-ritem__count">{{ t('trips.itemCount', { n: trip.item_count }) }}</span>
           </div>
         </button>
       </div>
@@ -38,7 +38,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
       </button>
       <div v-if="!selectedId" class="trips-empty">
-        <p>選擇左側行程，或點 + 建立新行程</p>
+        <p>{{ t('trips.selectHint') }}</p>
       </div>
 
       <template v-else-if="current">
@@ -57,16 +57,16 @@
                   @keydown.enter.prevent="($event.target as HTMLElement).blur()"
                 >{{ current.title }}</h1>
                 <div class="trips-doc__sub">
-                  {{ current.items.length }} 項
+                  {{ t('trips.itemCount', { n: current.items.length }) }}
                   <template v-if="current.start_date"> · {{ formatDateRange(current.start_date, current.end_date) }}</template>
                   <template v-if="current.sources.length">
-                    · <button class="trips-doc__srcbtn" @click="sourcesOpen = true">從 {{ current.sources.length }} 則收藏彙整</button>
+                    · <button class="trips-doc__srcbtn" @click="sourcesOpen = true">{{ t('trips.sourceCount', { n: current.sources.length }) }}</button>
                   </template>
                 </div>
               </div>
               <div class="trips-doc__actions">
-                <button class="btn" @click="handleAddItem">+ 新增卡片</button>
-                <button class="btn btn--danger" @click="handleDelete">刪除</button>
+                <button class="btn" @click="handleAddItem">{{ t('trips.addCardBtn') }}</button>
+                <button class="btn btn--danger" @click="handleDelete">{{ t('trips.deleteBtn') }}</button>
               </div>
             </div>
 
@@ -80,7 +80,7 @@
                 @click="activeView = v.key"
               >
                 <span class="trips-vtab__n">{{ v.n }}</span>
-                {{ v.label }}
+                {{ t(`trips.viewLabel.${v.key}`) }}
               </button>
             </div>
 
@@ -120,16 +120,16 @@
                       v-else
                       class="tag-chip"
                       :class="col.color ? `tag-chip--${col.color}` : 'tag-chip--plain'"
-                      title="點擊重新命名"
+                      :title="t('trips.renameTagTooltip')"
                       @click="startEditTag(col.id, col.name)"
                     >{{ col.name }}</span>
                   </template>
-                  <span v-else class="tag-chip tag-chip--plain">{{ col.name }}</span>
+                  <span v-else class="tag-chip tag-chip--plain">{{ t('trips.noTags') }}</span>
                   <span class="trips-colcount">{{ itemsByTag(col.id).length }}</span>
                   <button
                     v-if="col.id !== '__none__' && editingTagId !== col.id"
                     class="trips-bcol__del"
-                    title="刪除分類"
+                    :title="t('trips.deleteTagTooltip')"
                     @click.stop="handleDeleteTag(col.id, col.name)"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -148,7 +148,7 @@
                       {{ item.title }}
                     </div>
                     <div class="trips-tcard__meta">
-                      <span v-if="item.booked" class="trips-booked">✓ 已預定</span>
+                      <span v-if="item.booked" class="trips-booked">{{ t('trips.bookedLabel') }}</span>
                       <span v-if="item.start_date" class="trips-tcard__time">{{ formatDateRange(item.start_date, item.end_date) }}</span>
                       <span v-if="item.start_time" class="trips-tcard__time">{{ item.start_time }}</span>
                     </div>
@@ -162,7 +162,7 @@
                     ref="boardTagInputEl"
                     v-model="boardTagName"
                     class="trips-bcol__taginput"
-                    placeholder="標籤名稱"
+                    :placeholder="t('trips.tagNamePlaceholder')"
                     @blur="confirmBoardTag"
                     @keydown.enter.prevent="($event.target as HTMLElement).blur()"
                     @keydown.escape="cancelBoardTag($event)"
@@ -170,7 +170,7 @@
                 </div>
                 <button v-else class="trips-addcol-btn" @click="startAddBoardTag">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                  新增標籤
+                  {{ t('trips.addTagBtn') }}
                 </button>
               </div>
             </div>
@@ -179,8 +179,8 @@
             <div v-show="activeView === 'date'" class="trips-dboard">
               <div class="trips-dcol">
                 <div class="trips-dcol__head">
-                  <div class="trips-dcol__month">未排程</div>
-                  <div class="trips-dcol__d" style="font-size:14px">無日期</div>
+                  <div class="trips-dcol__month">{{ t('trips.unscheduledSection') }}</div>
+                  <div class="trips-dcol__d" style="font-size:14px">{{ t('trips.noDateLabel') }}</div>
                 </div>
                 <div class="trips-dcol__cards">
                   <div
@@ -196,10 +196,10 @@
                     </div>
                     <div class="trips-tcard__meta">
                       <span v-for="tag in item.tags" :key="tag.trip_tag_id" class="tag-chip tag-chip--plain" style="font-size:10px">{{ tag.name }}</span>
-                      <span v-if="item.booked" class="trips-booked">✓ 已預定</span>
+                      <span v-if="item.booked" class="trips-booked">{{ t('trips.bookedLabel') }}</span>
                     </div>
                   </div>
-                  <div v-if="unscheduledItems.length === 0" class="trips-empty-note">—</div>
+                  <div v-if="unscheduledItems.length === 0" class="trips-empty-note">{{  '—' }}</div>
                 </div>
               </div>
               <div v-for="day in tripDays" :key="day" class="trips-dcol">
@@ -223,11 +223,11 @@
                       {{ item.title }}
                     </div>
                     <div class="trips-tcard__meta">
-                      <span v-if="item.booked" class="trips-booked">✓ 已預定</span>
+                      <span v-if="item.booked" class="trips-booked">{{ t('trips.bookedLabel') }}</span>
                       <span v-if="item.start_time" class="trips-tcard__time">{{ item.start_time }}</span>
                     </div>
                   </div>
-                  <div v-if="itemsByDate(day).length === 0" class="trips-empty-note">— 自由活動 —</div>
+                  <div v-if="itemsByDate(day).length === 0" class="trips-empty-note">{{ t('trips.freeActivityLabel') }}</div>
                 </div>
               </div>
             </div>
@@ -236,7 +236,7 @@
         </div>
       </template>
 
-      <div v-else-if="loadingDetail" class="trips-empty">載入中…</div>
+      <div v-else-if="loadingDetail" class="trips-empty">{{ t('trips.loading') }}</div>
     </main>
 
     <!-- ===== Item editor Modal ===== -->
@@ -248,13 +248,13 @@
               ref="emojiTriggerEl"
               class="trips-emoji-trigger"
               type="button"
-              :title="editForm.emoji ? '更換 Emoji' : '選擇 Emoji'"
+              :title="editForm.emoji ? t('trips.changeEmojiTooltip') : t('trips.selectEmojiTooltip')"
               @click="toggleEmojiPicker"
             >{{ editForm.emoji || '😊' }}</button>
             <input
               v-model="editForm.title"
               class="trips-modal__title"
-              placeholder="景點名稱…"
+              :placeholder="t('trips.itemNamePlaceholder')"
               @blur="onTitleCommit"
               @keydown.enter.prevent="($event.target as HTMLElement).blur()"
             />
@@ -268,30 +268,30 @@
                 type="button"
                 class="trips-ksrcbtn"
                 @click="itemSourcesOpen = true"
-              >有 {{ editingItem.sources.length }} 則收藏關聯</button>
+              >{{ t('trips.sourcesLinked', { n: editingItem.sources.length }) }}</button>
               <span v-else></span>
-              <button v-if="editingItem?.id" class="btn btn--danger" :disabled="isSaving" @click="handleDeleteItem">刪除</button>
+              <button v-if="editingItem?.id" class="btn btn--danger" :disabled="isSaving" @click="handleDeleteItem">{{ t('trips.deleteBtn') }}</button>
             </div>
 
             <!-- 已預定票券 + 票券連結（同地標：Enter 送出後變按鈕）-->
             <div class="trips-field">
-              <span class="trips-field__lbl">票券</span>
+              <span class="trips-field__lbl">{{ t('trips.fieldLabel.ticket') }}</span>
               <div class="trips-booked-row">
                 <label class="trips-check">
                   <input type="checkbox" v-model="editForm.booked" @change="saveField('booked')" />
-                  <span class="trips-field__lbl">已預定票券</span>
+                  <span class="trips-field__lbl">{{ t('trips.fieldLabel.bookedTicket') }}</span>
                 </label>
                 <div class="trips-ticket">
                   <div v-if="isUrl(editForm.ticket_url) && !editingTicket" class="trips-place-row">
-                    <a :href="editForm.ticket_url" target="_blank" rel="noopener" class="btn trips-place-open">🎫 開啟票券</a>
-                    <button type="button" class="btn trips-place-edit" @click="editingTicket = true">編輯</button>
+                    <a :href="editForm.ticket_url" target="_blank" rel="noopener" class="btn trips-place-open">{{ t('trips.openTicketBtn') }}</a>
+                    <button type="button" class="btn trips-place-edit" @click="editingTicket = true">{{ t('trips.editBtn') }}</button>
                   </div>
                   <input
                     v-else
                     v-model="editForm.ticket_url"
                     type="url"
                     class="trips-field__input"
-                    placeholder="貼上票券連結，按 Enter 送出"
+                    :placeholder="t('trips.ticketUrlPlaceholder')"
                     @keydown.enter.prevent="commitTicket"
                     @blur="commitTicket"
                   />
@@ -301,11 +301,11 @@
 
             <!-- Date + Time combined -->
             <div class="trips-field">
-              <span class="trips-field__lbl">時間</span>
+              <span class="trips-field__lbl">{{ t('trips.fieldLabel.time') }}</span>
               <div class="trips-field__timerow">
                 <input v-model="editForm.start_date" type="date" class="trips-field__input trips-field__dt" @change="saveField('start_date')" />
                 <input v-model="editForm.start_time" type="time" class="trips-field__input trips-field__tm" @change="saveField('start_time')" />
-                <span class="trips-field__sep">→</span>
+                <span class="trips-field__sep">{{ t('trips.arrow') }}</span>
                 <input v-model="editForm.end_date" type="date" class="trips-field__input trips-field__dt" @change="saveField('end_date')" />
                 <input v-model="editForm.end_time" type="time" class="trips-field__input trips-field__tm" @change="saveField('end_time')" />
               </div>
@@ -313,17 +313,17 @@
 
             <!-- Place URL：有地標時顯示「開啟地圖」按鈕，按編輯才切成 input；無地標直接 input -->
             <div class="trips-field">
-              <span class="trips-field__lbl">地標連結</span>
+              <span class="trips-field__lbl">{{ t('trips.fieldLabel.location') }}</span>
               <div v-if="isUrl(editForm.place_name) && !editingPlace" class="trips-place-row">
-                <a :href="editForm.place_name" target="_blank" rel="noopener" class="btn trips-place-open">📍 開啟地圖</a>
-                <button type="button" class="btn trips-place-edit" @click="editingPlace = true">編輯</button>
+                <a :href="editForm.place_name" target="_blank" rel="noopener" class="btn trips-place-open">{{ t('trips.openMapBtn') }}</a>
+                <button type="button" class="btn trips-place-edit" @click="editingPlace = true">{{ t('trips.editBtn') }}</button>
               </div>
               <input
                 v-else
                 v-model="editForm.place_name"
                 type="url"
                 class="trips-field__input"
-                placeholder="貼上 Google Maps 連結或地點，按 Enter 送出"
+                :placeholder="t('trips.placeUrlPlaceholder')"
                 @keydown.enter.prevent="commitPlace"
                 @blur="commitPlace"
               />
@@ -331,7 +331,7 @@
 
             <!-- Tags -->
             <div class="trips-field">
-              <span class="trips-field__lbl">標籤</span>
+              <span class="trips-field__lbl">{{ t('trips.fieldLabel.tags') }}</span>
               <div class="trips-tags-wrap">
                 <button
                   v-for="tag in availableTags"
@@ -345,19 +345,19 @@
                     ref="newTagInputEl"
                     v-model="newTagName"
                     class="trips-newtag__input"
-                    placeholder="標籤名稱"
+                    :placeholder="t('trips.tagNamePlaceholder')"
                     @keydown.enter="confirmNewTag"
                     @keydown.escape="cancelNewTag"
                     @blur="cancelNewTag"
                   />
                 </div>
-                <button v-else class="trips-pill" @click="startAddTag">+ 新標籤</button>
+                <button v-else class="trips-pill" @click="startAddTag">{{ t('trips.addNewTagBtn') }}</button>
               </div>
             </div>
 
             <!-- Note (Tiptap) -->
             <div class="trips-field trips-field--note">
-              <span class="trips-field__lbl">備註</span>
+              <span class="trips-field__lbl">{{ t('trips.fieldLabel.notes') }}</span>
               <div class="trips-tiptap-wrap">
                 <TiptapEditor v-model="editForm.note" />
               </div>
@@ -389,12 +389,12 @@
             class="tep__btn"
             @click="pickEmoji(e)"
           >{{ e }}</button>
-          <div v-if="filteredEmojis.length === 0" class="tep__empty">沒有結果</div>
+          <div v-if="filteredEmojis.length === 0" class="tep__empty">{{ t('trips.noEmojiResult') }}</div>
         </div>
         <input
           v-model="emojiSearch"
           class="tep__search"
-          placeholder="搜尋（咖啡、飯店、海灘…）"
+          :placeholder="t('trips.emojiSearchPlaceholder')"
           @keydown.escape="showEmojiPicker = false"
         />
       </div>
@@ -404,7 +404,7 @@
     <SourceListModal
       :open="sourcesOpen"
       :sources="current?.sources ?? []"
-      :title="`從 ${current?.sources.length ?? 0} 則收藏彙整`"
+      :title="t('trips.sourceCount', { n: current?.sources.length ?? 0 })"
       @close="sourcesOpen = false"
       @select="onSelectSource"
     />
@@ -413,7 +413,7 @@
     <SourceListModal
       :open="itemSourcesOpen"
       :sources="editingItem?.sources ?? []"
-      :title="`有 ${editingItem?.sources?.length ?? 0} 則收藏關聯`"
+      :title="t('trips.sourcesLinked', { n: editingItem?.sources?.length ?? 0 })"
       @close="itemSourcesOpen = false"
       @select="onSelectItemSource"
     />
@@ -425,14 +425,15 @@ import type { Trip, TripItem, TripListItem, TripTag } from '~/types/api'
 
 definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 旅遊行程' })
+const { t, locale } = useI18n()
 
 const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, addItem, updateItem, deleteItem, listTags, createTag, updateTag, deleteTag } = useTrips()
 const { open: openItemModal } = useItemModal()
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const VIEWS = [
-  { key: 'board' as const, label: '行程分類', n: '1' },
-  { key: 'date' as const, label: '依照日期', n: '2' },
+  { key: 'board' as const, n: '1' },
+  { key: 'date' as const, n: '2' },
 ]
 
 const EMOJI_MAP: Array<{ e: string; k: string }> = [
@@ -623,8 +624,9 @@ async function handleCreate() {
   if (creating.value) return
   creating.value = true
   const tempId = `temp-${Date.now()}`
+  const defaultTripName = t('trips.defaultTripName')
   const tempItem: TripListItem = {
-    id: tempId, title: '新行程', summary: null,
+    id: tempId, title: defaultTripName, summary: null,
     start_date: null, end_date: null,
     source_count: 0, item_count: 0, last_edited_by: 'user',
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -633,7 +635,7 @@ async function handleCreate() {
   selectedId.value = tempId
   mobileView.value = 'detail'
   try {
-    const trip = await createTrip({ title: '新行程' })
+    const trip = await createTrip({ title: defaultTripName })
     const idx = trips.value.findIndex(t => t.id === tempId)
     if (idx !== -1) trips.value[idx] = { ...tempItem, id: trip.id }
     selectedId.value = trip.id
@@ -649,7 +651,7 @@ async function handleCreate() {
 
 async function handleDelete() {
   if (!current.value) return
-  if (!confirm(`確定刪除「${current.value.title}」？`)) return
+  if (!confirm(t('trips.confirm.deleteTrip', { title: current.value.title }))) return
   const deletedId = current.value.id
   const deletedTrip = current.value
   const idx = trips.value.findIndex(t => t.id === deletedId)
@@ -686,7 +688,7 @@ async function onTitleBlur(e: Event) {
 // ── Board (by tags) ────────────────────────────────────────────────────────
 const boardColumns = computed(() => [
   ...availableTags.value,
-  { id: '__none__', name: '無標籤', color: null as string | null },
+  { id: '__none__', name: '', color: null as string | null }, // name 在 template 中用 t() 動態顯示
 ])
 
 function itemsByTag(tagId: string) {
@@ -734,9 +736,12 @@ function formatDateRange(start: string | null, end: string | null) {
   return `${s} – ${e}`
 }
 
-function formatMonth(d: string) { return new Date(d).toLocaleDateString('zh-TW', { month: 'short' }) }
+function formatMonth(d: string) { return new Date(d).toLocaleDateString(locale.value, { month: 'short' }) }
 function formatDay(d: string) { return new Date(d).getDate().toString() }
-function formatDow(d: string) { return ['日','一','二','三','四','五','六'][new Date(d).getDay()] }
+function formatDow(d: string) {
+  const locale_str = locale.value === 'en' ? 'en-US' : 'zh-TW'
+  return new Date(d).toLocaleDateString(locale_str, { weekday: 'short' }).slice(0, 1)
+}
 function isUrl(s: string | null | undefined): boolean {
   if (!s) return false
   try { new URL(s); return true } catch { return false }
@@ -842,12 +847,12 @@ async function handleAddItem() {
   if (!current.value) return
   const tripId = current.value.id
   try {
-    const created = await addItem(tripId, { title: '未命名', order_index: current.value.items.length })
+    const created = await addItem(tripId, { title: t('trips.defaultItemName'), order_index: current.value.items.length })
     current.value.items.push(created)
     sidebarItemCount(tripId, 1)
     openItemEditor(created)
   } catch {
-    useToast().show('新增失敗', 'error')
+    useToast().show(t('trips.addFailed'), 'error')
   }
 }
 
@@ -881,7 +886,7 @@ async function patchField(patch: Record<string, unknown>, optimistic: Partial<Tr
     const i2 = current.value.items.findIndex(i => i.id === itemId)
     if (i2 !== -1) current.value.items[i2] = prev
     if (editingItem.value?.id === itemId) editingItem.value = prev
-    useToast().show('儲存失敗，已復原', 'error')
+    useToast().show(t('trips.saveFailed'), 'error')
   }
 }
 
@@ -892,7 +897,7 @@ function saveField(key: SaveKey) {
   if (suppressAutoSave.value) return
   let value: unknown = editForm.value[key]
   if (key === 'title') {
-    value = (value as string).trim() || '未命名'
+    value = (value as string).trim() || t('trips.defaultItemName')
     editForm.value.title = value as string
   } else if (typeof value === 'string') {
     value = value || null
@@ -925,7 +930,7 @@ watch(() => editForm.value.note, () => {
 
 async function handleDeleteItem() {
   if (!current.value || !editingItem.value?.id || isSaving.value) return
-  if (!confirm('確定刪除這張卡片？')) return
+  if (!confirm(t('trips.confirm.deleteCard'))) return
   const tripId = current.value.id
   const itemId = editingItem.value.id
   const itemIdx = current.value.items.findIndex(i => i.id === itemId)
@@ -979,7 +984,7 @@ function cancelEditTag(e: KeyboardEvent) {
 
 // ── Board delete tag ───────────────────────────────────────────────────────
 async function handleDeleteTag(tagId: string, name: string) {
-  if (!confirm(`確定刪除分類「${name}」？該分類下的卡片會移到「無標籤」。`)) return
+  if (!confirm(t('trips.confirm.deleteTag', { name }))) return
   const idx = availableTags.value.findIndex(t => t.id === tagId)
   if (idx === -1) return
   const removed = availableTags.value[idx]
