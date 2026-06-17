@@ -255,7 +255,7 @@ async def reanalyze_item_notes(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     if not user_item.extract or not user_item.extract.get("raw_content"):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="No raw content available for reanalysis",
         )
 
