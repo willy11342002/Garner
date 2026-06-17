@@ -401,6 +401,7 @@
     "semantic_pro_desc": "Semantic search lets you find relevant content using plain language — no need to remember exact keywords.",
     "semantic_pro_btn": "View upgrade plans →",
     "filter_label": "Filter",
+    "tag_search_placeholder": "Search tags…",
     "filter_clear": "× Clear",
     "filter_match": "Match",
     "filter_all": "All",

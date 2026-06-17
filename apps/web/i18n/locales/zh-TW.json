@@ -401,6 +401,7 @@
     "semantic_pro_desc": "語意搜尋讓你用自然語言找到知識庫中的相關內容，不需要記憶精確關鍵字。",
     "semantic_pro_btn": "查看升級方案 →",
     "filter_label": "篩選標籤",
+    "tag_search_placeholder": "搜尋標籤…",
     "filter_clear": "× 清除",
     "filter_match": "符合",
     "filter_all": "全部",

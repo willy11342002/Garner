@@ -98,6 +98,17 @@ const orderedTagGroups = computed(() => {
   return [...active, ...inactive]
 })
 
+const tagSearch = ref('')
+
+const filteredTagGroups = computed(() => {
+  const q = tagSearch.value.trim().toLowerCase()
+  if (!q) return orderedTagGroups.value
+  return orderedTagGroups.value.filter(g =>
+    g.tag.name.toLowerCase().includes(q) ||
+    Object.values(g.tag.name_i18n ?? {}).some((v: unknown) => typeof v === 'string' && v.toLowerCase().includes(q))
+  )
+})
+
 function toggleTag(tagId: string) {
   const next = new Set(selectedTagIds.value)
   if (next.has(tagId)) next.delete(tagId)
@@ -116,11 +127,36 @@ function clearFilters() {
   timeFilter.value = 'all'
 }
 
-// Mobile tag select — pick one to add, then reset
-function onMobileTagSelect(e: Event) {
-  const id = (e.target as HTMLSelectElement).value
-  if (id) toggleTag(id);
-  (e.target as HTMLSelectElement).value = ''
+// Mobile dropdown
+const mobileDropdownOpen = ref(false)
+const mobileSearchRef = ref<HTMLInputElement | null>(null)
+
+const filteredMobileGroups = computed(() => {
+  const q = tagSearch.value.trim().toLowerCase()
+  if (!q) return allTagGroups.value
+  return allTagGroups.value.filter(g =>
+    g.tag.name.toLowerCase().includes(q) ||
+    Object.values(g.tag.name_i18n ?? {}).some((v: unknown) => typeof v === 'string' && v.toLowerCase().includes(q))
+  )
+})
+
+function onMobileSearchInput() {
+  mobileDropdownOpen.value = true
+}
+
+function onMobileSearchFocus() {
+  mobileDropdownOpen.value = true
+}
+
+function selectMobileTag(tagId: string) {
+  toggleTag(tagId)
+  tagSearch.value = ''
+  mobileDropdownOpen.value = false
+  mobileSearchRef.value?.blur()
+}
+
+function closeMobileDropdown() {
+  setTimeout(() => { mobileDropdownOpen.value = false }, 150)
 }
 
 const hasActiveFilters = computed(() =>
@@ -205,6 +241,15 @@ onMounted(async () => {
     <div class="filter-row">
       <span class="filter-row__label">{{ t('home.filter_label') }}</span>
 
+      <div class="filter-tag-search-wrap">
+        <input
+          v-model="tagSearch"
+          type="text"
+          class="filter-tag-search"
+          :placeholder="t('home.tag_search_placeholder')"
+        />
+      </div>
+
       <div
         ref="chipsRef"
         class="filter-chips"
@@ -214,7 +259,7 @@ onMounted(async () => {
         @mouseleave="onChipsMouseUp"
       >
         <button
-          v-for="(group) in orderedTagGroups"
+          v-for="(group) in filteredTagGroups"
           :key="group.tag.id"
           class="tag-filter-chip"
           :class="{ 'tag-filter-chip--active': selectedTagIds.has(group.tag.id) }"
@@ -234,16 +279,37 @@ onMounted(async () => {
         </button>
       </div>
 
-      <!-- Mobile: single select + clear on same row -->
+      <!-- Mobile: search input + custom dropdown -->
       <div class="filter-mobile-row">
-        <select class="filter-tags-select" @change="onMobileTagSelect">
-          <option value="">{{ t('home.filter_label') }}</option>
-          <option
-            v-for="group in allTagGroups"
-            :key="group.tag.id"
-            :value="group.tag.id"
-          >{{ localize(group.tag.name_i18n, group.tag.name) }} ({{ group.count }})</option>
-        </select>
+        <div class="filter-mobile-search-wrap">
+          <input
+            ref="mobileSearchRef"
+            v-model="tagSearch"
+            type="text"
+            class="filter-tag-search filter-tag-search--mobile"
+            :placeholder="t('home.tag_search_placeholder')"
+            @input="onMobileSearchInput"
+            @focus="onMobileSearchFocus"
+            @blur="closeMobileDropdown"
+          />
+          <div v-if="mobileDropdownOpen && filteredMobileGroups.length > 0" class="filter-mobile-dropdown">
+            <button
+              v-for="group in filteredMobileGroups"
+              :key="group.tag.id"
+              class="filter-mobile-dropdown__item"
+              :class="{ 'filter-mobile-dropdown__item--selected': selectedTagIds.has(group.tag.id) }"
+              @mousedown.prevent="selectMobileTag(group.tag.id)"
+            >
+              <span
+                class="tag-filter-chip__dot"
+                :style="`background:var(--tag-${tagColor(tagColorIndex.get(group.tag.id) ?? 0)})`"
+              ></span>
+              {{ localize(group.tag.name_i18n, group.tag.name) }}
+              <span class="filter-mobile-dropdown__count">{{ group.count }}</span>
+              <span v-if="selectedTagIds.has(group.tag.id)" class="filter-mobile-dropdown__check">✓</span>
+            </button>
+          </div>
+        </div>
         <button v-if="hasActiveFilters" class="filter-clear-btn" @click="clearFilters">
           {{ t('home.filter_clear') }}
         </button>
@@ -360,6 +426,83 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.filter-tag-search-wrap {
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .filter-tag-search-wrap {
+    display: none;
+  }
+}
+.filter-tag-search {
+  height: 30px;
+  padding: 0 10px;
+  border: 1.5px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  width: 160px;
+  outline: none;
+  transition: border-color .15s;
+}
+.filter-tag-search:focus {
+  border-color: var(--accent);
+}
+.filter-tag-search::placeholder {
+  color: var(--text-dim);
+}
+.filter-mobile-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.filter-tag-search--mobile {
+  width: 100%;
+  box-sizing: border-box;
+}
+.filter-mobile-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1.5px solid var(--border2);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.filter-mobile-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background .1s;
+}
+.filter-mobile-dropdown__item:hover,
+.filter-mobile-dropdown__item--selected {
+  background: var(--surface2);
+}
+.filter-mobile-dropdown__count {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.filter-mobile-dropdown__check {
+  color: var(--accent);
+  font-size: 13px;
+  flex-shrink: 0;
+}
 .card-chain-btn {
   position: absolute;
   top: 6px;
