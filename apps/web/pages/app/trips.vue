@@ -1,7 +1,7 @@
 <template>
   <div class="trips-app">
     <!-- ===== Sidebar ===== -->
-    <aside class="trips-side">
+    <aside class="trips-side" :class="{ 'trips-side--hidden-mobile': mobileView === 'detail' }">
       <div class="trips-side__head">
         <span class="trips-side__lbl">旅遊行程</span>
         <span class="trips-side__count">{{ trips.length }}</span>
@@ -27,10 +27,16 @@
           </div>
         </button>
       </div>
+      <button class="panel-toggle panel-toggle--right" @click="mobileView = 'detail'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
     </aside>
 
     <!-- ===== Main ===== -->
-    <main class="trips-main">
+    <main class="trips-main" :class="{ 'trips-main--hidden-mobile': mobileView === 'list' }">
+      <button class="panel-toggle panel-toggle--left" @click="mobileView = 'list'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
       <div v-if="!selectedId" class="trips-empty">
         <p>選擇左側行程，或點 + 建立新行程</p>
       </div>
@@ -471,6 +477,7 @@ const activeView = ref<'board' | 'date'>('board')
 const titleEl = ref<HTMLElement | null>(null)
 const availableTags = ref<TripTag[]>([])
 const sourcesOpen = ref(false)
+const mobileView = ref<'list' | 'detail'>('list')
 
 function onSelectSource(id: string) {
   sourcesOpen.value = false
@@ -602,6 +609,7 @@ function handleOutsideClick(e: MouseEvent) {
 // ── Trip selection ─────────────────────────────────────────────────────────
 async function select(id: string) {
   selectedId.value = id
+  mobileView.value = 'detail'
   loadingDetail.value = true
   current.value = null
   try {
@@ -623,6 +631,7 @@ async function handleCreate() {
   }
   trips.value.unshift(tempItem)
   selectedId.value = tempId
+  mobileView.value = 'detail'
   try {
     const trip = await createTrip({ title: '新行程' })
     const idx = trips.value.findIndex(t => t.id === tempId)
@@ -648,6 +657,7 @@ async function handleDelete() {
   if (idx !== -1) trips.value.splice(idx, 1)
   selectedId.value = null
   current.value = null
+  mobileView.value = 'list'
   try {
     await deleteTrip(deletedId)
   } catch {
@@ -1422,8 +1432,26 @@ function cancelNewTag() {
 .modal-enter-from .trips-modal, .modal-leave-to .trips-modal { transform: scale(0.96); opacity: 0; }
 
 @media (max-width: 900px) {
-  .trips-side { display: none; }
-  .trips-doc { padding: 22px 18px 48px; }
+  .trips-app {
+    display: block;
+    position: relative;
+    overflow: hidden;
+  }
+  .trips-side,
+  .trips-main {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transition: transform .3s cubic-bezier(.4, 0, .2, 1);
+    will-change: transform;
+  }
+  .trips-doc__top {flex-direction: column;}
+  .trips-side { transform: translateX(0); flex: none; }
+  .trips-side--hidden-mobile { transform: translateX(-100%); }
+  .trips-main { transform: translateX(100%); flex: none; }
+  .trips-main:not(.trips-main--hidden-mobile) { transform: translateX(0); }
+  .trips-doc { padding: 22px 18px 0px; }
   .trips-modal-overlay { padding: 0; align-items: flex-end; }
   .trips-modal { width: 100vw; max-width: 100vw; max-height: 92vh; border-radius: 16px 16px 0 0; }
 }

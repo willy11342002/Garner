@@ -25,6 +25,7 @@ const reviseOpen = ref(false)
 const reviseText = ref('')
 const copied = ref(false)
 const sourcesOpen = ref(false)
+const mobileView = ref<'list' | 'detail'>('list')
 
 function onSelectSource(id: string) {
   sourcesOpen.value = false
@@ -49,6 +50,7 @@ async function loadList() {
 async function select(id: string) {
   if (editing.value) cancelEdit()
   selectedId.value = id
+  mobileView.value = 'detail'
   loadingDetail.value = true
   current.value = null
   try {
@@ -61,6 +63,7 @@ async function select(id: string) {
 function backToList() {
   selectedId.value = null
   current.value = null
+  mobileView.value = 'list'
 }
 
 function syncListItem(r: Report) {
@@ -165,9 +168,9 @@ function formatDate(iso: string) {
 </script>
 
 <template>
-  <div class="reports" :class="{ 'reports--detail': selectedId }">
+  <div class="reports">
     <!-- 列表 -->
-    <aside class="reports__list">
+    <aside class="reports__list" :class="{ 'reports__list--hidden-mobile': mobileView === 'detail' }">
       <h1 class="reports__heading">{{ t('reports.title') }}</h1>
       <div v-if="loadingList" class="reports__placeholder">…</div>
       <div v-else-if="!reports.length" class="reports__empty">{{ t('reports.empty') }}</div>
@@ -184,10 +187,16 @@ function formatDate(iso: string) {
           <span class="report-item__meta">{{ formatDate(r.updated_at) }}</span>
         </li>
       </ul>
+      <button class="panel-toggle panel-toggle--right" @click="mobileView = 'detail'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
     </aside>
 
     <!-- 詳情 -->
-    <section class="reports__detail">
+    <section class="reports__detail" :class="{ 'reports__detail--hidden-mobile': mobileView === 'list' }">
+      <button class="panel-toggle panel-toggle--left" @click="mobileView = 'list'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
       <div v-if="!selectedId" class="reports__hint">{{ t('reports.selectHint') }}</div>
       <div v-else-if="loadingDetail || !current" class="reports__placeholder">…</div>
       <article v-else class="report-view">
@@ -338,10 +347,25 @@ function formatDate(iso: string) {
 .report-view__body { margin-top: 8px; }
 
 @media (max-width: 768px) {
-  .reports { grid-template-columns: 1fr; height: calc(100vh - 56px); }
-  .reports__detail { display: none; }
-  .reports--detail .reports__list { display: none; }
-  .reports--detail .reports__detail { display: block; width: 100%; }
-  .report-view__back { display: block; }
+  .reports {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    height: calc(100dvh - var(--nav-h, 56px));
+  }
+  .reports__list,
+  .reports__detail {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transition: transform .3s cubic-bezier(.4, 0, .2, 1);
+    will-change: transform;
+  }
+  .reports__list { transform: translateX(0); }
+  .reports__list--hidden-mobile { transform: translateX(-100%); }
+  .reports__detail { transform: translateX(100%); overflow-y: auto; padding: 16px; width: 100%; }
+  .reports__detail:not(.reports__detail--hidden-mobile) { transform: translateX(0); }
+  .report-view__back { display: none; }
 }
 </style>
