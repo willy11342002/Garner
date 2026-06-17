@@ -553,6 +553,7 @@ _AGENTIC_SYSTEM = """\
 - 詢問「來源」「出處」「哪篇」時，一定要呼叫 search，不能憑記憶回答
 - 如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造
 - 用戶要「旅遊行程／旅遊規劃／幾天幾夜／itinerary／玩幾天」時：先呼叫 create_trip 建立空行程，再用 add_trip_card 逐一新增卡片（每個景點／餐廳／交通／住宿各一張，title 只放名稱、細節放 note，一天通常 3～6 張）。不要用 create_report，也不要把整天行程塞進單一卡片
+- 跨日的卡片（住宿連住數晚、租車多日、多日票券）用 end_day 標出結束日：例如「前 3 天住 A 飯店、後 2 天住 B 飯店」就建兩張住宿卡，A 卡 day=1/end_day=3、B 卡 day=4/end_day=5；別把同一間飯店每天各建一張
 - 新增每張卡片時，若卡片的地點與『已找到的知識庫內容』中某些知識的「地點」相符，務必用 add_trip_card 的 source_item_ids 帶上那些知識的「知識id」，讓卡片連回對應的知識；沒有相符的就留空
 - 用戶要其他「報告／指南／清單／彙整（非旅遊行程）」時：呼叫 create_report
 - 上述產出類請求：若已有可用的知識內容（使用者選定的知識節點，或 search 結果），直接用那些內容產出，不要反問主題；只有在完全沒有任何可用內容時才詢問
@@ -629,6 +630,7 @@ _AGENTIC_TOOLS = [
                 "type": "object",
                 "properties": {
                     "day": {"type": "integer", "description": "第幾天，從 1 開始"},
+                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填；住宿連住、租車多日、多日票券才填，例如住前 3 天 day=1、end_day=3"},
                     "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動名稱，簡短（≤20 字），例如「道頓堀」「黑門市場」。不要寫整段說明或多個地點。"},
                     "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位。只放地名，不要放網址。"},
                     "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},

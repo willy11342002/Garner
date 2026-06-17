@@ -250,6 +250,7 @@ async def add_card_from_chat(
     trip_id: UUID,
     *,
     day=None,
+    end_day=None,
     title: str = "未命名",
     place_name: str | None = None,
     category: str | None = None,
@@ -277,14 +278,22 @@ async def add_card_from_chat(
             return None
 
     # day 可能以 int / "1" / 1.0 等形式傳來，統一轉成 int 再算日期
-    day_int = None
-    try:
-        day_int = int(day) if day is not None else None
-    except (ValueError, TypeError):
-        day_int = None
+    def _to_int(v):
+        try:
+            return int(v) if v is not None else None
+        except (ValueError, TypeError):
+            return None
+
+    day_int = _to_int(day)
     item_date = None
     if trip.start_date and day_int and day_int >= 1:
         item_date = trip.start_date + timedelta(days=day_int - 1)
+
+    # end_day → end_date（跨日卡片，例如住宿前三天某飯店）。需 >= day 才視為有效 span
+    end_day_int = _to_int(end_day)
+    end_item_date = None
+    if trip.start_date and end_day_int and end_day_int >= (day_int or 1):
+        end_item_date = trip.start_date + timedelta(days=end_day_int - 1)
 
     # place_name 欄位前端當「可點的地圖連結」用，所以把純地名轉成 Google Maps 連結；
     # geocoding 仍用原始地名取座標（地圖標點靠 lat/lng，不靠這個連結）。
@@ -307,6 +316,7 @@ async def add_card_from_chat(
         category=(category or None),
         booked=False,
         start_date=item_date,
+        end_date=end_item_date,
         start_time=_parse_time(start_time),
         order_index=float(len(trip.items or [])),  # 接在現有卡片之後
         place_name=stored_place,
@@ -559,6 +569,7 @@ _TRIP_EDIT_SYSTEM = """\
 - 一次指示可呼叫多個工具（例如新增好幾張卡、或同時改多張）
 - place_name 只放純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址
 - 用戶提供票券／訂位網址，或要你補上票券連結時，用 ticket_url 帶上完整網址（與地標 place_name 是不同欄位，網址放這裡）
+- 跨日的卡片（住宿連住數晚、租車多日、多日票券）要帶 end_day：例如「前 3 天住 A 飯店、後 2 天住 B 飯店」就建兩張住宿卡，A 卡 day=1/end_day=3、B 卡 day=4/end_day=5
 - 全部改完後，用繁體中文寫 1～2 句話簡短說明你做了哪些調整
 - 若指示與行程編輯無關，簡短說明你只能幫忙編輯這份行程的卡片
 """
@@ -573,6 +584,7 @@ _TRIP_EDIT_TOOLS = [
                 "type": "object",
                 "properties": {
                     "day": {"type": "integer", "description": "第幾天，從 1 開始（行程有起始日才會排到該天）"},
+                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填；住宿／租車／多日票等才填，例如住前 3 天 day=1、end_day=3"},
                     "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動，簡短（≤20 字）"},
                     "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址"},
                     "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
@@ -595,6 +607,7 @@ _TRIP_EDIT_TOOLS = [
                 "properties": {
                     "card_no": {"type": "integer", "description": "要修改的卡片編號（見「目前卡片」清單）"},
                     "day": {"type": "integer", "description": "改成第幾天，從 1 開始（行程有起始日才生效）"},
+                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天）；傳 0 可改回單日"},
                     "title": {"type": "string", "maxLength": 30, "description": "新的卡片名稱（簡短）"},
                     "place_name": {"type": "string", "description": "新的純地點名稱（含城市），用於地圖定位，不要放網址"},
                     "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "新的分類"},
@@ -678,13 +691,23 @@ async def _ai_update_card(
         kwargs["category"] = str(args["category"]).strip()
 
     # day → start_date（需 trip 有起始日）
-    day = args.get("day")
-    try:
-        day_int = int(day) if day is not None else None
-    except (ValueError, TypeError):
-        day_int = None
+    def _to_int(v):
+        try:
+            return int(v) if v not in (None, "") else None
+        except (ValueError, TypeError):
+            return None
+
+    day_int = _to_int(args.get("day"))
     if trip_start_date and day_int and day_int >= 1:
         kwargs["start_date"] = trip_start_date + timedelta(days=day_int - 1)
+
+    # end_day → end_date（跨日卡片）。傳 0／空可清除回單日
+    if "end_day" in args:
+        end_day_int = _to_int(args.get("end_day"))
+        if trip_start_date and end_day_int and end_day_int >= 1:
+            kwargs["end_date"] = trip_start_date + timedelta(days=end_day_int - 1)
+        else:
+            kwargs["end_date"] = None
 
     # place_name 變更 → 存成可點連結 + 背景 geocoding
     geocode_query = None
@@ -770,7 +793,7 @@ async def ai_edit_trip_stream(
         card_map[n] = it.id
         meta = []
         if it.start_date:
-            meta.append(str(it.start_date))
+            meta.append(str(it.start_date) + (f"~{it.end_date}" if it.end_date and it.end_date != it.start_date else ""))
         if it.start_time:
             meta.append(it.start_time.strftime("%H:%M"))
         if it.category:
@@ -799,6 +822,7 @@ async def ai_edit_trip_stream(
             res = await add_card_from_chat(
                 db, user_id, trip_id,
                 day=args.get("day"),
+                end_day=args.get("end_day"),
                 title=args.get("title", "未命名"),
                 place_name=args.get("place_name"),
                 category=args.get("category"),

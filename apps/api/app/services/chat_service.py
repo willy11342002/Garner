@@ -307,6 +307,7 @@ async def stream_reply(
                 res = await trip_service.add_card_from_chat(
                     db, user_id, UUID(created_trip["id"]),
                     day=args.get("day"),
+                    end_day=args.get("end_day"),
                     title=args.get("title", "未命名"),
                     place_name=args.get("place_name"),
                     category=args.get("category"),
