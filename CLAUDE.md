@@ -52,6 +52,7 @@ garner/
 - `ai_service` — OpenRouter 摘要 + OpenAI embedding 產生
 - `search_service` — 語意 / 關鍵字搜尋
 - `chat_service` — Agentic chat 對話處理
+- `stream_registry` — Chat SSE 串流管理：asyncio.Queue pub/sub，解耦 POST（產生）與 GET SSE（消費），支援斷線重連
 - `report_service` — AI 產出層（報告）：生成 / revise / regenerate，與知識分離、不進語料
 - `place_service` — 地點實體處理
 - `geocoding_service` — 地理編碼（地址 ↔ 座標）

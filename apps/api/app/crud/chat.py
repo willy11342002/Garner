@@ -156,6 +156,46 @@ async def add_message(
     return msg
 
 
+async def create_assistant_placeholder(
+    db: AsyncSession,
+    session_id: UUID,
+) -> ChatMessage:
+    msg = ChatMessage(
+        id=uuid4(),
+        session_id=session_id,
+        role=MessageRole.assistant,
+        content="",
+        status="pending",
+    )
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+    return msg
+
+
+async def get_message(db: AsyncSession, message_id: UUID) -> ChatMessage | None:
+    result = await db.execute(
+        select(ChatMessage).where(ChatMessage.id == message_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_message(
+    db: AsyncSession,
+    message_id: UUID,
+    content: str,
+    cited_item_ids: list[UUID] | None = None,
+    process_log: dict | None = None,
+    status: str = "complete",
+) -> None:
+    await db.execute(
+        update(ChatMessage)
+        .where(ChatMessage.id == message_id)
+        .values(content=content, cited_item_ids=cited_item_ids, process_log=process_log, status=status)
+    )
+    await db.commit()
+
+
 async def count_messages(db: AsyncSession, session_id: UUID) -> int:
     from sqlalchemy import func
     result = await db.execute(

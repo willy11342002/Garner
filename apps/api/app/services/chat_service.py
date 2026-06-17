@@ -172,6 +172,9 @@ async def stream_reply(
     user_content: str,
     background_tasks: BackgroundTasks,
     context_item_ids: list[UUID] | None = None,
+    *,
+    skip_user_message: bool = False,
+    assistant_message_id: UUID | None = None,
 ):
     """
     Agentic SSE stream using native LLM tool calling.
@@ -186,10 +189,6 @@ async def stream_reply(
         logger.debug("chat stream abort: session %s not found", session_id)
         yield _sse("error", {"message": "session not found"})
         return
-
-    if not session.title:
-        title = user_content[:40] + ("…" if len(user_content) > 40 else "")
-        await crud_chat.update_session(db, session_id, user_id, title=title)
 
     history = _build_history(session.messages)
     context_summary = session.context_summary
@@ -342,10 +341,11 @@ async def stream_reply(
     process_steps: list[dict] = []
     cited_ids: list[str] = []
 
-    await crud_chat.add_message(
-        db, session_id, MessageRole.user, user_content,
-        cited_item_ids=context_item_ids if context_item_ids else None,
-    )
+    if not skip_user_message:
+        await crud_chat.add_message(
+            db, session_id, MessageRole.user, user_content,
+            cited_item_ids=context_item_ids if context_item_ids else None,
+        )
 
     # 把選定的知識節點當成初始脈絡餵給 LLM（否則 AI 看不到內容，會反問主題）
     preloaded_sources = [_to_chat_source(ui).model_dump(mode="json") for ui, _ in preloaded_items]
@@ -383,11 +383,19 @@ async def stream_reply(
         )
         raise
 
-    await crud_chat.add_message(
-        db, session_id, MessageRole.assistant, reply_text,
-        [UUID(i) for i in cited_ids] if cited_ids else None,
-        process_log={"thinking": "", "steps": process_steps},
-    )
+    if assistant_message_id:
+        await crud_chat.update_message(
+            db, assistant_message_id, reply_text,
+            cited_item_ids=[UUID(i) for i in cited_ids] if cited_ids else None,
+            process_log={"thinking": "", "steps": process_steps},
+            status="complete",
+        )
+    else:
+        await crud_chat.add_message(
+            db, session_id, MessageRole.assistant, reply_text,
+            [UUID(i) for i in cited_ids] if cited_ids else None,
+            process_log={"thinking": "", "steps": process_steps},
+        )
     await crud_chat.touch_session(db, session_id)
     logger.debug(
         "chat stream persisted: session=%s reply_len=%d cited=%d",
@@ -408,6 +416,8 @@ def _build_history(msgs) -> list[dict]:
     item ids/titles），讓模型知道上一輪搜過什麼、拿到哪些 item，避免「重新生一份／微調」
     時又把同樣的 query 重搜一次。其餘訊息只放純文字以控制 token。
     """
+    # 只送已完成的訊息進歷史，排除 pending/streaming placeholder
+    msgs = [m for m in msgs if getattr(m, "status", "complete") == "complete"]
     last_trace_idx = -1
     for i, m in enumerate(msgs):
         if m.role.value == "assistant" and m.process_log and m.process_log.get("steps"):
@@ -498,6 +508,59 @@ async def stream_reply_with_heartbeat(*args, heartbeat_interval: float = 15.0, *
             await pump_task
         except BaseException:
             pass
+
+
+async def run_reply_background(
+    assistant_message_id: UUID,
+    session_id: UUID,
+    user_id: UUID,
+    user_content: str,
+    context_item_ids: list[UUID],
+) -> None:
+    """
+    背景執行 agentic stream，與 SSE 連線解耦。
+    每個 SSE event 推入 StreamRegistry，完成後更新 DB。
+    即使 SSE client 斷線，此 task 仍繼續到底。
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.stream_registry import stream_registry
+    from fastapi import BackgroundTasks
+
+    entry = stream_registry.get(assistant_message_id)
+    if entry is None:
+        logger.warning("run_reply_background: entry not found for %s", assistant_message_id)
+        return
+
+    # Mark as streaming in DB
+    async with AsyncSessionLocal() as db:
+        await crud_chat.update_message(db, assistant_message_id, "", status="streaming")
+
+    try:
+        async with AsyncSessionLocal() as db:
+            bg = BackgroundTasks()
+            async for event_str in stream_reply(
+                db, session_id, user_id, user_content, bg,
+                context_item_ids=context_item_ids,
+                skip_user_message=True,
+                assistant_message_id=assistant_message_id,
+            ):
+                entry.publish(event_str)
+            # Execute any background tasks (e.g., context compression)
+            for task in bg.tasks:
+                try:
+                    await task.func(*task.args, **task.kwargs)
+                except Exception:
+                    pass
+        entry.complete()
+    except Exception as exc:
+        logger.exception("run_reply_background failed: message=%s", assistant_message_id)
+        async with AsyncSessionLocal() as db:
+            await crud_chat.update_message(db, assistant_message_id, "", status="failed")
+        entry.fail(str(exc))
+    finally:
+        # Remove registry entry after a short delay to let late subscribers drain
+        await asyncio.sleep(60)
+        stream_registry.remove(assistant_message_id)
 
 
 async def _compress_context(

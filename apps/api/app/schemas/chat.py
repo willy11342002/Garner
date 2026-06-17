@@ -49,6 +49,7 @@ class ChatMessageRead(BaseModel):
     id: UUID
     role: str
     content: str
+    status: str = "complete"
     cited_item_ids: list[UUID] | None
     process_log: dict | None = None
     created_at: datetime
@@ -77,3 +78,7 @@ class ChatSource(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str
     item_ids: list[UUID] = []  # 明確指定要注入 context 的知識節點（探索頁跳轉用）
+
+
+class SendMessageResponse(BaseModel):
+    message_id: UUID

@@ -8,6 +8,8 @@ import enum
 
 from app.core.database import Base
 
+__all__ = ["ChatFolder", "ChatSession", "ChatMessage", "MessageRole", "MessageStatus"]
+
 
 class ChatFolder(Base):
     __tablename__ = "chat_folders"
@@ -47,6 +49,13 @@ class MessageRole(str, enum.Enum):
     assistant = "assistant"
 
 
+class MessageStatus(str, enum.Enum):
+    pending = "pending"      # assistant placeholder, generation not yet started
+    streaming = "streaming"  # generation in progress
+    complete = "complete"    # generation finished, content saved
+    failed = "failed"        # generation error
+
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
@@ -54,6 +63,7 @@ class ChatMessage(Base):
     session_id: Mapped[UUID] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     role: Mapped[MessageRole] = mapped_column(Enum(MessageRole, name="message_role_enum"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="complete")
     cited_item_ids: Mapped[list[UUID] | None] = mapped_column(ARRAY(PG_UUID(as_uuid=True)), nullable=True)
     process_log: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -246,8 +246,8 @@
             </div>
           </template>
 
-          <!-- 進行中的 agentic process -->
-          <div v-if="loading || streamingText" class="msg msg--assistant">
+          <!-- 進行中的 agentic process（只在對應 session 顯示） -->
+          <div v-if="(loading || streamingText) && streamingSessionId === activeSessionId" class="msg msg--assistant">
             <div v-if="liveProcess.thinking || liveProcess.steps.length" class="process-block">
               <button class="process-block__toggle" @click="toggleThinking('live')">
                 <span class="process-block__icon">💭</span>
@@ -403,6 +403,9 @@ const inputText = ref('')
 const loading = ref(false)
 const sessionLoading = ref(false)
 const streamingText = ref('')
+// 追蹤正在串流的 session/message，供 openSession 切回時識別
+const streamingSessionId = ref<string | null>(null)
+const streamingMessageId = ref<string | null>(null)
 
 // 串流中斷控制：停止鈕呼叫 abort()；idle timer 在長時間無事件時自動 abort 視為斷線
 const abortController = ref<AbortController | null>(null)
@@ -631,6 +634,7 @@ async function openSession(id: string) {
   if (sessionLoading.value) return
   sessionLoading.value = true
   activeSessionId.value = id
+  const resumeStream = id === streamingSessionId.value
   try {
     const detail = await apiFetch<ChatSessionDetail>(`/chat/sessions/${id}`)
     if (activeSessionId.value !== id) { sessionLoading.value = false; return } // 載入期間又切到別的 session
@@ -640,7 +644,15 @@ async function openSession(id: string) {
     userContextMap.value = {}
     processMap.value = {}
     openSources.value = new Set()
-    resetProcess()
+    if (resumeStream) {
+      // 切回正在串流的 session：保留 liveProcess，從 localStorage 還原已收到的文字
+      streamingText.value = lsRead(streamingMessageId.value ?? '')
+    } else if (!streamingSessionId.value) {
+      // 無進行中 stream：正常重置
+      resetProcess()
+    }
+    // 若有其他 session 在 stream 中（resumeStream=false but streamingSessionId != null）：
+    // 不呼叫 resetProcess()，保留 liveProcess 讓切回時能還原
 
     draftMap.value = {}
     tripDraftMap.value = {}
@@ -847,6 +859,30 @@ function onDropUncategorized(e: DragEvent) {
   if (id) moveSession(id, null)
 }
 
+// ── localStorage partial-stream buffer ───────────────────────────────────────
+const LS_PREFIX = 'partial_msg_'
+
+function lsWrite(messageId: string, chunk: string) {
+  try {
+    const key = `${LS_PREFIX}${messageId}`
+    const prev = localStorage.getItem(key)
+    const data = prev ? JSON.parse(prev) : { text: '' }
+    data.text += chunk
+    localStorage.setItem(key, JSON.stringify(data))
+  } catch { /* storage quota or private mode */ }
+}
+
+function lsClear(messageId: string) {
+  try { localStorage.removeItem(`${LS_PREFIX}${messageId}`) } catch {}
+}
+
+function lsRead(messageId: string): string {
+  try {
+    const item = localStorage.getItem(`${LS_PREFIX}${messageId}`)
+    return item ? (JSON.parse(item).text ?? '') : ''
+  } catch { return '' }
+}
+
 // ── Send message ──────────────────────────────────────────────────────────────
 function resetProcess() {
   liveProcess.value = { thinking: '', steps: [], sources: [] }
@@ -879,13 +915,12 @@ async function send() {
   if (!inputText.value.trim() || loading.value || !activeSessionId.value || chatQuotaFull.value) return
 
   const content = inputText.value.trim()
-  let sessionId = activeSessionId.value  // capture，避免切換 session 後寫到錯的地方
+  let sessionId = activeSessionId.value
   inputText.value = ''
   resetInputHeight()
   loading.value = true
   resetProcess()
 
-  // 樂觀建立中的臨時 session：先等真實 id 回來再送訊息，失敗則還原輸入
   if (sessionId.startsWith('temp-')) {
     const real = await resolveSessionId(sessionId)
     if (!real) {
@@ -914,11 +949,14 @@ async function send() {
   const token = session.value?.access_token
   const isFirstMessage = messages.value.filter(m => m.role === 'user').length === 1
 
-  // 串流中斷控制（idle 計時器在 component scope，可隨切頁暫停／恢復）
   const abort = new AbortController()
   abortController.value = abort
 
+  let messageId: string | null = null
+
   try {
+    streamingSessionId.value = sessionId  // 在 POST 前就設定，讓 template 能立即識別 streaming session
+
     const itemIds = pendingItemIds.value.slice()
     pendingItemIds.value = []
 
@@ -941,7 +979,8 @@ async function send() {
 
     armIdle()
 
-    const resp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages`, {
+    // Step 1: POST → 201 + { message_id }
+    const postResp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -950,126 +989,40 @@ async function send() {
       body: JSON.stringify({ content, ...(itemIds.length ? { item_ids: itemIds } : {}) }),
       signal: abort.signal,
     })
-    if (!resp.ok) throw new Error('request failed')
+    if (!postResp.ok) throw new Error('request failed')
+    const json = await postResp.json()
+    messageId = json.message_id
+    streamingMessageId.value = messageId
 
-    const reader = resp.body!.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let pendingSources: ChatSource[] = []
-    const assistantId = crypto.randomUUID()
+    // Step 2: connect SSE stream
+    await connectAndStream(sessionId, messageId!, isActive, isFirstMessage, content)
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      armIdle()
-      buffer += decoder.decode(value, { stream: true })
-
-      const parts = buffer.split('\n\n')
-      buffer = parts.pop() ?? ''
-
-      for (const part of parts) {
-        if (!part.startsWith('event: ')) continue
-        const lines = part.split('\n')
-        const event = lines[0].replace('event: ', '')
-        const data = JSON.parse(lines[1].replace('data: ', ''))
-
-        if (event === 'thinking') {
-          if (!isActive()) continue
-          liveProcess.value.thinking = data.text
-          await nextTick(); scrollBottom()
-
-        } else if (event === 'tool_call') {
-          if (!isActive()) continue
-          liveProcess.value.steps.push({ toolCall: data, toolResult: null })
-          await nextTick(); scrollBottom()
-
-        } else if (event === 'tool_result') {
-          if (!isActive()) continue
-          const steps = liveProcess.value.steps
-          // 保留完整 result（不同工具欄位不同：search 有 count/titles；add_trip_card 有 ok/title…）
-          if (steps.length) steps[steps.length - 1].toolResult = data
-          await nextTick(); scrollBottom()
-
-        } else if (event === 'report_draft') {
-          if (!isActive()) continue
-          liveDraft.value = data as ReportDraft
-          await nextTick(); scrollBottom()
-
-        } else if (event === 'trip_draft') {
-          if (!isActive()) continue
-          liveTripDraft.value = data as TripDraft
-          await nextTick(); scrollBottom()
-
-        } else if (event === 'sources') {
-          pendingSources = data as ChatSource[]
-          if (isActive()) liveProcess.value.sources = pendingSources
-
-        } else if (event === 'delta') {
-          if (!isActive()) continue
-          streamingText.value += data.text
-          await nextTick(); scrollBottom()
-
-        } else if (event === 'done') {
-          // done 一定要處理，不管有沒有切 session，讓 loading 正確結束
-          if (isActive()) {
-            processMap.value[assistantId] = {
-              thinking: liveProcess.value.thinking,
-              steps: liveProcess.value.steps,
-            }
-            if (liveDraft.value) {
-              draftMap.value[assistantId] = liveDraft.value
-              liveDraft.value = null
-            }
-            if (liveTripDraft.value) {
-              tripDraftMap.value[assistantId] = liveTripDraft.value
-              liveTripDraft.value = null
-            }
-            openThinking.value.delete('live')
-            openThinking.value.add(assistantId)
-
-            const assistantMsg: ChatMessage = {
-              id: assistantId,
-              role: 'assistant',
-              content: streamingText.value,
-              cited_item_ids: pendingSources.map(s => s.id),
-              created_at: new Date().toISOString(),
-            }
-            messages.value.push(assistantMsg)
-            if (pendingSources.length) {
-              sourcesMap.value[assistantId] = pendingSources
-            }
-
-            if (isFirstMessage && !activeSession.value?.title) {
-              const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
-              if (activeSession.value) activeSession.value.title = title
-              const idx = sessions.value.findIndex(s => s.id === sessionId)
-              if (idx !== -1) sessions.value[idx].title = title
-            }
-
-            resetProcess()
-            await nextTick(); scrollBottom()
-          } else {
-            // 已切到其他 session，靜默更新 session 列表標題即可
-            if (isFirstMessage) {
-              const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
-              const idx = sessions.value.findIndex(s => s.id === sessionId)
-              if (idx !== -1) sessions.value[idx].title = title
-            }
-          }
-        }
-      }
-    }
   } catch (err: any) {
-    // 使用者主動停止：靜默結束，丟棄半截內容（後端 generator 被取消也不會存 DB）
     if (err?.name === 'AbortError') {
       if (isActive()) resetProcess()
+    } else if (messageId) {
+      // POST 成功但串流中斷 → 顯示 partial，重連一次
+      if (isActive()) streamingText.value = lsRead(messageId)
+      try {
+        await connectAndStream(sessionId, messageId, isActive, isFirstMessage, content, true)
+      } catch {
+        if (isActive()) {
+          resetProcess()
+          messages.value.push({
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: t('chat.error'),
+            cited_item_ids: null,
+            created_at: new Date().toISOString(),
+          })
+        }
+      }
     } else if (isActive()) {
       resetProcess()
-      // 逾時斷線顯示專屬提示，其餘錯誤用通用錯誤訊息
       messages.value.push({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: err?.name === 'TimeoutError' ? t('chat.timeout') : t('chat.error'),
+        content: t('chat.error'),
         cited_item_ids: null,
         created_at: new Date().toISOString(),
       })
@@ -1078,6 +1031,138 @@ async function send() {
     clearIdle()
     abortController.value = null
     loading.value = false
+    streamingSessionId.value = null
+    streamingMessageId.value = null
+  }
+}
+
+async function connectAndStream(
+  sessionId: string,
+  messageId: string,
+  isActive: () => boolean,
+  isFirstMessage: boolean,
+  content: string,
+  isReconnect = false,
+) {
+  const apiBase = config.public.apiBase as string
+  const token = session.value?.access_token
+
+  // 重連時清空 streamingText，讓 replay 從頭重建
+  if (isReconnect) streamingText.value = ''
+
+  const resp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages/${messageId}/stream`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    signal: abortController.value?.signal,
+  })
+  if (!resp.ok) throw new Error('stream request failed')
+
+  const reader = resp.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let pendingSources: ChatSource[] = []
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    armIdle()
+    buffer += decoder.decode(value, { stream: true })
+
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() ?? ''
+
+    for (const part of parts) {
+      if (!part.startsWith('event: ')) continue
+      const lines = part.split('\n')
+      const event = lines[0].replace('event: ', '')
+      const dataLine = lines.find(l => l.startsWith('data: '))
+      if (!dataLine) continue
+      const data = JSON.parse(dataLine.replace('data: ', ''))
+
+      if (event === 'thinking') {
+        if (!isActive()) continue
+        liveProcess.value.thinking = data.text
+        await nextTick(); scrollBottom()
+
+      } else if (event === 'tool_call') {
+        if (!isActive()) continue
+        liveProcess.value.steps.push({ toolCall: data, toolResult: null })
+        await nextTick(); scrollBottom()
+
+      } else if (event === 'tool_result') {
+        if (!isActive()) continue
+        const steps = liveProcess.value.steps
+        if (steps.length) steps[steps.length - 1].toolResult = data
+        await nextTick(); scrollBottom()
+
+      } else if (event === 'report_draft') {
+        if (!isActive()) continue
+        liveDraft.value = data as ReportDraft
+        await nextTick(); scrollBottom()
+
+      } else if (event === 'trip_draft') {
+        if (!isActive()) continue
+        liveTripDraft.value = data as TripDraft
+        await nextTick(); scrollBottom()
+
+      } else if (event === 'sources') {
+        pendingSources = data as ChatSource[]
+        if (isActive()) liveProcess.value.sources = pendingSources
+
+      } else if (event === 'delta') {
+        lsWrite(messageId, data.text)  // 不管 isActive 都寫，切回時可還原
+        if (!isActive()) continue
+        streamingText.value += data.text
+        await nextTick(); scrollBottom()
+
+      } else if (event === 'done') {
+        lsClear(messageId)
+        if (isActive()) {
+          // replay 時 done 帶有 process_log；live 時用 liveProcess
+          processMap.value[messageId] = data.process_log ?? {
+            thinking: liveProcess.value.thinking,
+            steps: liveProcess.value.steps,
+          }
+          if (liveDraft.value) {
+            draftMap.value[messageId] = liveDraft.value
+            liveDraft.value = null
+          }
+          if (liveTripDraft.value) {
+            tripDraftMap.value[messageId] = liveTripDraft.value
+            liveTripDraft.value = null
+          }
+          openThinking.value.delete('live')
+          openThinking.value.add(messageId)
+
+          const assistantMsg: ChatMessage = {
+            id: messageId,
+            role: 'assistant',
+            content: streamingText.value,
+            cited_item_ids: pendingSources.map(s => s.id),
+            created_at: new Date().toISOString(),
+          }
+          messages.value.push(assistantMsg)
+          if (pendingSources.length) {
+            sourcesMap.value[messageId] = pendingSources
+          }
+
+          if (isFirstMessage && !activeSession.value?.title) {
+            const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
+            if (activeSession.value) activeSession.value.title = title
+            const idx = sessions.value.findIndex(s => s.id === sessionId)
+            if (idx !== -1) sessions.value[idx].title = title
+          }
+
+          resetProcess()
+          await nextTick(); scrollBottom()
+        } else {
+          if (isFirstMessage) {
+            const title = content.slice(0, 40) + (content.length > 40 ? '…' : '')
+            const idx = sessions.value.findIndex(s => s.id === sessionId)
+            if (idx !== -1) sessions.value[idx].title = title
+          }
+        }
+      }
+    }
   }
 }
 
