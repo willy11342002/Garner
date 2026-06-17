@@ -1,18 +1,18 @@
 <template>
-  <!-- Panel -->
-  <Transition name="taf-panel">
-    <div
-      v-if="open"
-      class="taf-panel"
-      :class="{ 'taf-panel--left': side === 'left' }"
-      :style="panelStyle"
-    >
+  <BaseFab
+    ref="fabRef"
+    open-title="關閉 AI 修改"
+    close-title="AI 修改行程"
+    :panel-width="380"
+    :panel-height="520"
+  >
+    <template #panel="{ close }">
       <div class="taf-head">
         <span class="taf-head__title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
           AI 修改行程
         </span>
-        <button class="taf-head__close" title="關閉" @click="open = false">✕</button>
+        <button class="taf-head__close" title="關閉" @click="close">✕</button>
       </div>
 
       <div ref="logEl" class="taf-log">
@@ -62,24 +62,8 @@
           <span v-else class="taf-spin" />
         </button>
       </form>
-    </div>
-  </Transition>
-
-  <!-- FAB -->
-  <button
-    ref="fabEl"
-    class="taf-fab"
-    :class="{ 'taf-fab--open': open, 'taf-fab--dragging': dragging }"
-    :style="fabStyle"
-    :title="open ? '關閉 AI 修改' : 'AI 修改行程'"
-    @pointerdown="onPointerDown"
-    @click="onClick"
-  >
-    <Transition name="taf-icon" mode="out-in">
-      <svg v-if="open" key="close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      <svg v-else key="chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    </Transition>
-  </button>
+    </template>
+  </BaseFab>
 </template>
 
 <script setup lang="ts">
@@ -102,16 +86,19 @@ const EXAMPLES = [
   '加一個必去的夜景景點',
 ]
 
-const open = ref(false)
-
-// ── Conversation ─────────────────────────────────────────────────────────────
-interface Msg { id: string; role: 'user' | 'assistant'; text: string; actions: string[] }
-const messages = ref<Msg[]>([])
+const fabRef = ref()
+const inputEl = ref<HTMLTextAreaElement | null>(null)
+const logEl = ref<HTMLElement | null>(null)
 const draft = ref('')
 const sending = ref(false)
 const streamingText = ref('')
-const inputEl = ref<HTMLTextAreaElement | null>(null)
-const logEl = ref<HTMLElement | null>(null)
+
+interface Msg { id: string; role: 'user' | 'assistant'; text: string; actions: string[] }
+const messages = ref<Msg[]>([])
+
+watch(() => fabRef.value?.open, (val) => {
+  if (val) nextTick(() => inputEl.value?.focus())
+})
 
 function scrollLog() {
   nextTick(() => { if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight })
@@ -124,7 +111,6 @@ async function send(preset?: string) {
   sending.value = true
   streamingText.value = ''
 
-  // 把先前對話帶上去（純文字），讓多輪追問有記憶。assistant 若只有動作沒文字，補成文字脈絡。
   const history = messages.value
     .map((m) => {
       const text = m.text || (m.actions.length ? m.actions.join('；') : '')
@@ -209,98 +195,9 @@ function handleToolResult(data: any, assistant: Msg) {
     assistant.actions.push('🗑️ 刪除一張卡片')
   }
 }
-
-// ── Drag / dock（參考首頁 HomeChatFab）──────────────────────────────────────────
-const FAB_SIZE = 52
-const SNAP_GAP = 16
-const EDGE_GAP = 28
-
-const fabEl = ref<HTMLButtonElement | null>(null)
-const dragging = ref(false)
-const side = ref<'left' | 'right'>('right')
-const bottomPx = ref(EDGE_GAP)
-
-let dragStartX = 0
-let dragStartY = 0
-let pointerStartClientX = 0
-let pointerStartClientY = 0
-let moved = false
-
-const fabStyle = computed(() => side.value === 'right'
-  ? { right: `${SNAP_GAP}px`, left: 'auto', bottom: `${bottomPx.value}px`, top: 'auto' }
-  : { left: `${SNAP_GAP}px`, right: 'auto', bottom: `${bottomPx.value}px`, top: 'auto' })
-
-const panelStyle = computed(() => {
-  const bottom = bottomPx.value + FAB_SIZE + 12
-  return side.value === 'right'
-    ? { bottom: `${bottom}px`, right: `${SNAP_GAP}px`, left: 'auto' }
-    : { bottom: `${bottom}px`, left: `${SNAP_GAP}px`, right: 'auto' }
-})
-
-function onPointerDown(e: PointerEvent) {
-  if (e.button !== 0) return
-  moved = false
-  pointerStartClientX = e.clientX
-  pointerStartClientY = e.clientY
-  const rect = fabEl.value!.getBoundingClientRect()
-  dragStartX = rect.left
-  dragStartY = rect.top
-  window.addEventListener('pointermove', onPointerMove)
-  window.addEventListener('pointerup', onPointerUp)
-  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-}
-
-function onPointerMove(e: PointerEvent) {
-  const dx = e.clientX - pointerStartClientX
-  const dy = e.clientY - pointerStartClientY
-  if (!moved && Math.hypot(dx, dy) < 5) return
-  moved = true
-  dragging.value = true
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const newLeft = Math.max(0, Math.min(vw - FAB_SIZE, dragStartX + dx))
-  const newTop = Math.max(0, Math.min(vh - FAB_SIZE, dragStartY + dy))
-  bottomPx.value = vh - newTop - FAB_SIZE
-  side.value = newLeft + FAB_SIZE / 2 < vw / 2 ? 'left' : 'right'
-}
-
-function onPointerUp() {
-  window.removeEventListener('pointermove', onPointerMove)
-  window.removeEventListener('pointerup', onPointerUp)
-  dragging.value = false
-  if (!moved) return
-  const vh = window.innerHeight
-  bottomPx.value = Math.max(SNAP_GAP, Math.min(vh - FAB_SIZE - SNAP_GAP, bottomPx.value))
-}
-
-function onClick() {
-  if (moved) return // 是拖曳不是點擊
-  open.value = !open.value
-  if (open.value) nextTick(() => inputEl.value?.focus())
-}
 </script>
 
 <style scoped>
-/* ── FAB ── */
-.taf-fab {
-  position: fixed;
-  width: 52px; height: 52px; border-radius: 50%;
-  border: none; background: var(--accent); color: var(--accent-fg, #fff);
-  cursor: grab; display: flex; align-items: center; justify-content: center;
-  z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.35);
-  transition: background .2s, transform .2s, box-shadow .2s; touch-action: none; user-select: none;
-}
-.taf-fab:hover { transform: scale(1.07); box-shadow: 0 6px 28px rgba(0,0,0,0.45); }
-.taf-fab--open { background: var(--surface3, var(--surface2)); color: var(--text); }
-.taf-fab--dragging { cursor: grabbing; transform: scale(1.1); box-shadow: 0 8px 32px rgba(0,0,0,0.5); transition: transform .05s, box-shadow .05s; }
-
-/* ── Panel ── */
-.taf-panel {
-  position: fixed; width: 380px; height: 520px; max-height: calc(100vh - 120px);
-  background: var(--bg); border: 1px solid var(--border2); border-radius: 16px;
-  box-shadow: 0 12px 48px rgba(0,0,0,0.45); z-index: 999; overflow: hidden;
-  display: flex; flex-direction: column;
-}
 .taf-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 13px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
@@ -360,16 +257,4 @@ function onClick() {
 .taf-input__send:not(:disabled):hover { transform: scale(1.06); }
 .taf-spin { width: 15px; height: 15px; border: 2px solid color-mix(in oklab, var(--accent-fg, #fff) 45%, transparent); border-top-color: var(--accent-fg, #fff); border-radius: 50%; animation: taf-rot .7s linear infinite; }
 @keyframes taf-rot { to { transform: rotate(360deg); } }
-
-/* Transitions */
-.taf-panel-enter-active { animation: taf-panel-in .22s cubic-bezier(.2,.8,.4,1); }
-.taf-panel-leave-active { animation: taf-panel-in .18s cubic-bezier(.4,0,.8,.2) reverse; }
-@keyframes taf-panel-in { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.taf-icon-enter-active, .taf-icon-leave-active { transition: opacity .15s, transform .15s; }
-.taf-icon-enter-from { opacity: 0; transform: rotate(-45deg) scale(0.7); }
-.taf-icon-leave-to { opacity: 0; transform: rotate(45deg) scale(0.7); }
-
-@media (max-width: 640px) {
-  .taf-panel { bottom: 0 !important; right: 0 !important; left: 0 !important; width: 100vw; height: 72vh; max-height: 72vh; border-radius: 16px 16px 0 0; }
-}
 </style>

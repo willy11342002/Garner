@@ -89,8 +89,9 @@ garner/
 - `layout/` — AppNav, GuestNav, AppFooter
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
+- `report/` — ReportAiFab（報告頁的 AI 修改懸浮球）
 - `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）
-- 根目錄 — TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）
+- 根目錄 — BaseFab（通用懸浮球容器：可拖曳、側邊停靠、badge、icon、panel slot），TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）
 
 ### Web utils（`apps/web/utils/`）
 - `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）

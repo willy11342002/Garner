@@ -5,8 +5,13 @@
         <svg v-if="!mobileMenuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
-      <NuxtLink to="/app" class="nav__logo">Garner</NuxtLink>
+      <NuxtLink class="nav__logo">Garner</NuxtLink>
       <div class="nav__tabs">
+        <NuxtLink
+          to="/app"
+          class="nav__tab"
+          :class="{ 'nav__tab--active': route.path == '/app' }"
+        >{{ t('nav.knowledge') }}</NuxtLink>
         <NuxtLink
           to="/app/chat"
           class="nav__tab"

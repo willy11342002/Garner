@@ -6,7 +6,7 @@ useHead({ title: 'Garner — AI 報告' })
 
 const { t } = useI18n()
 const route = useRoute()
-const { listReports, getReport, updateReport, reviseReport, regenerateReport, deleteReport } = useReports()
+const { listReports, getReport, updateReport, regenerateReport, deleteReport } = useReports()
 const { open: openItemModal } = useItemModal()
 
 const reports = ref<ReportListItem[]>([])
@@ -21,8 +21,6 @@ const editTitle = ref('')
 const editBody = ref('')
 const busy = ref(false)
 
-const reviseOpen = ref(false)
-const reviseText = ref('')
 const copied = ref(false)
 const sourcesOpen = ref(false)
 const mobileView = ref<'list' | 'detail'>('list')
@@ -107,21 +105,9 @@ async function saveEdit() {
   }
 }
 
-// ── AI 調整（revise） ─────────────────────────────────────────────────────────
-async function submitRevise() {
-  if (!current.value || busy.value) return
-  const instruction = reviseText.value.trim()
-  if (!instruction) return
-  busy.value = true
-  try {
-    const updated = await reviseReport(current.value.id, instruction)
-    current.value = updated
-    syncListItem(updated)
-    reviseOpen.value = false
-    reviseText.value = ''
-  } finally {
-    busy.value = false
-  }
+function onRevised(updated: Report) {
+  current.value = updated
+  syncListItem(updated)
 }
 
 // ── 重新生成（覆蓋） ──────────────────────────────────────────────────────────
@@ -223,25 +209,10 @@ function formatDate(iso: string) {
           </template>
           <template v-else>
             <button class="btn" :disabled="busy" @click="startEdit">{{ t('reports.edit') }}</button>
-            <button class="btn" :disabled="busy" @click="reviseOpen = !reviseOpen">{{ t('reports.revise') }}</button>
             <button class="btn" :disabled="busy" @click="doRegenerate">{{ t('reports.regenerate') }}</button>
             <button class="btn" :disabled="busy" @click="copyMd">{{ copied ? t('reports.copied') : t('reports.copy') }}</button>
             <button class="btn btn--danger" :disabled="busy" @click="doDelete">{{ t('reports.delete') }}</button>
           </template>
-        </div>
-
-        <!-- AI 調整輸入 -->
-        <div v-if="reviseOpen && !editing" class="report-view__revise">
-          <input
-            v-model="reviseText"
-            class="report-view__revise-input"
-            :placeholder="t('reports.revisePlaceholder')"
-            :disabled="busy"
-            @keydown.enter="submitRevise"
-          />
-          <button class="btn btn--accent" :disabled="busy || !reviseText.trim()" @click="submitRevise">
-            {{ busy ? t('reports.saving') : t('reports.revise') }}
-          </button>
         </div>
 
         <!-- 內文 -->
@@ -260,6 +231,12 @@ function formatDate(iso: string) {
       @select="onSelectSource"
     />
   </div>
+
+  <ReportAiFab
+    v-if="current"
+    :report-id="current.id"
+    @revised="onRevised"
+  />
 </template>
 
 <style scoped>
@@ -337,12 +314,6 @@ function formatDate(iso: string) {
 .report-view__sources-trigger:hover { color: var(--accent); }
 
 .report-view__toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
-
-.report-view__revise { display: flex; gap: 8px; margin-bottom: 16px; }
-.report-view__revise-input {
-  flex: 1; background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px;
-  padding: 8px 12px; color: var(--text); font-size: 13px;
-}
 
 .report-view__body { margin-top: 8px; }
 
