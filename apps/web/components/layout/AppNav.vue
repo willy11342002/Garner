@@ -1,7 +1,7 @@
 <template>
   <div>
     <nav class="nav">
-      <button class="nav__hamburger" @click="mobileMenuOpen = !mobileMenuOpen">
+      <button class="nav__hamburger" @click="toggleMobileMenu">
         <svg v-if="!mobileMenuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -25,7 +25,7 @@
       </div>
       <div class="nav__right">
         <!-- 新增 -->
-        <button class="nav__add" @click="addOpen = true">
+        <button class="nav__add" @click="openAdd">
           +
         </button>
 
@@ -67,7 +67,7 @@
 
         <!-- 使用者頭像 + 下拉選單 -->
         <div class="nav__user">
-          <button class="nav__avatar" @click.stop="menuOpen = !menuOpen; if (menuOpen) notifOpen = false">
+          <button class="nav__avatar" @click.stop="toggleMenu">
             <img v-if="avatarUrl" :src="avatarUrl" :alt="displayName" referrerpolicy="no-referrer">
             <span v-else>{{ initials }}</span>
           </button>
@@ -169,7 +169,6 @@
     <!-- 手機 drawer -->
     <Transition name="drawer">
       <div v-if="mobileMenuOpen" class="nav__drawer">
-        <div class="nav__drawer-logo">Garner</div>
         <nav class="nav__drawer-nav">
           <NuxtLink to="/app" class="nav__drawer-item" :class="{ 'nav__drawer-item--active': route.path === '/app' }" @click="mobileMenuOpen = false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.3 6H8.3C6.3 13.7 5 11.5 5 9a7 7 0 0 1 7-7z"/><path d="M9 21h6"/><path d="M10 18h4"/></svg>
@@ -277,17 +276,39 @@ const apiFetch = useApiFetch()
 
 // 手機 drawer
 const mobileMenuOpen = ref(false)
-
-// 通知
+const menuOpen = ref(false)
 const notifOpen = ref(false)
+
+function toggleMobileMenu() {
+  const wasOpen = mobileMenuOpen.value
+  closeAllOverlays()
+  mobileMenuOpen.value = !wasOpen
+}
+
+function toggleMenu() {
+  const wasOpen = menuOpen.value
+  closeAllOverlays()
+  menuOpen.value = !wasOpen
+}
+
+function closeAllOverlays() {
+  mobileMenuOpen.value = false
+  menuOpen.value = false
+  notifOpen.value = false
+  addOpen.value = false
+}
 
 // 開啟通知面板即全部標記已讀（badge 歸零），歷史仍保留在列表
 function toggleNotif() {
-  notifOpen.value = !notifOpen.value
-  if (notifOpen.value) {
-    menuOpen.value = false
-    if (notifStore.unreadCount > 0) notifStore.markAllRead()
-  }
+  const wasOpen = notifOpen.value
+  closeAllOverlays()
+  notifOpen.value = !wasOpen
+  if (notifOpen.value && notifStore.unreadCount > 0) notifStore.markAllRead()
+}
+
+function openAdd() {
+  closeAllOverlays()
+  addOpen.value = true
 }
 
 function formatNotifTime(isoStr: string) {
@@ -300,7 +321,6 @@ function formatNotifTime(isoStr: string) {
   return t('notif.daysAgo', { n: Math.floor(hours / 24) })
 }
 
-const menuOpen = ref(false)
 const menuPanel = ref<'main' | 'appearance' | 'language'>('main')
 
 // Item detail modal
