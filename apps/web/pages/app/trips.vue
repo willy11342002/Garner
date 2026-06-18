@@ -79,7 +79,6 @@
                 :class="{ 'is-active': activeView === v.key }"
                 @click="activeView = v.key"
               >
-                <span class="trips-vtab__n">{{ v.n }}</span>
                 {{ t(`trips.viewLabel.${v.key}`) }}
               </button>
             </div>
@@ -568,12 +567,10 @@ const newTagName = ref('')
 const newTagInputEl = ref<HTMLInputElement | null>(null)
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
-onMounted(async () => {
+async function loadInitialData() {
   loadingList.value = true
-  document.addEventListener('click', handleOutsideClick, true)
   try {
     [trips.value, availableTags.value] = await Promise.all([listTrips(), listTags()])
-    // 從 chat「開啟行程」帶 ?open=<id> 進來時，自動選取該行程
     const openId = useRoute().query.open as string | undefined
     if (openId && trips.value.some(t => t.id === openId)) {
       select(openId)
@@ -591,13 +588,34 @@ onMounted(async () => {
       }
     }
     applyStoredTagOrder()
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg === 'Page is not active') {
+      // 頁面在背景，等回到前台時重試
+      loadingList.value = false
+      return
+    }
+    throw err
   } finally {
     loadingList.value = false
   }
+}
+
+function onVisibilityChange() {
+  if (!document.hidden && trips.value.length === 0 && !loadingList.value) {
+    loadInitialData()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleOutsideClick, true)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  loadInitialData()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleOutsideClick, true)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 
 function handleOutsideClick(e: MouseEvent) {
@@ -1459,6 +1477,23 @@ function cancelNewTag() {
   .trips-doc { padding: 22px 18px 0px; }
   .trips-modal-overlay { padding: 0; align-items: flex-end; }
   .trips-modal { width: 100vw; max-width: 100vw; max-height: 92vh; border-radius: 16px 16px 0 0; }
+
+  /* Board: snap one column at a time, each column 90vw centered */
+  .trips-board {
+    margin-inline: -18px;
+    padding-inline: 5vw;
+    gap: 10vw;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .trips-bcol {
+    flex: 0 0 90vw;
+    scroll-snap-align: center;
+  }
+  .trips-bcol--addtag {
+    flex: 0 0 auto;
+    scroll-snap-align: none;
+  }
 }
 </style>
 
