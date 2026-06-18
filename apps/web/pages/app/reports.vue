@@ -173,16 +173,10 @@ function formatDate(iso: string) {
           <span class="report-item__meta">{{ formatDate(r.updated_at) }}</span>
         </li>
       </ul>
-      <button class="panel-toggle panel-toggle--right" @click="mobileView = 'detail'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
     </aside>
 
     <!-- 詳情 -->
     <section class="reports__detail" :class="{ 'reports__detail--hidden-mobile': mobileView === 'list' }">
-      <button class="panel-toggle panel-toggle--left" @click="mobileView = 'list'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
-      </button>
       <div v-if="!selectedId" class="reports__hint">{{ t('reports.selectHint') }}</div>
       <div v-else-if="loadingDetail || !current" class="reports__placeholder">…</div>
       <article v-else class="report-view">
@@ -296,7 +290,8 @@ function formatDate(iso: string) {
 .reports__detail::-webkit-scrollbar { display: none; }
 
 .report-view__head { display: flex; align-items: flex-start; gap: 10px; }
-.report-view__back { display: none; background: none; border: none; color: var(--text-dim); font-size: 20px; cursor: pointer; line-height: 1; }
+.report-view__back { display: none; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-mid); font-size: 18px; cursor: pointer; line-height: 1; transition: background .14s, color .14s; }
+.report-view__back:hover { background: var(--surface2); color: var(--text); }
 .report-view__head-main { flex: 1; min-width: 0; }
 .report-view__title { font-size: 22px; font-weight: 700; color: var(--text); margin: 0 0 8px; }
 .report-view__title-input {
@@ -337,6 +332,6 @@ function formatDate(iso: string) {
   .reports__list--hidden-mobile { transform: translateX(-100%); }
   .reports__detail { transform: translateX(100%); overflow-y: auto; padding: 16px; width: 100%; }
   .reports__detail:not(.reports__detail--hidden-mobile) { transform: translateX(0); }
-  .report-view__back { display: none; }
+  .report-view__back { display: flex; }
 }
 </style>

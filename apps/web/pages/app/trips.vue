@@ -27,16 +27,10 @@
           </div>
         </button>
       </div>
-      <button class="panel-toggle panel-toggle--right" @click="mobileView = 'detail'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
     </aside>
 
     <!-- ===== Main ===== -->
     <main class="trips-main" :class="{ 'trips-main--hidden-mobile': mobileView === 'list' }">
-      <button class="panel-toggle panel-toggle--left" @click="mobileView = 'list'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
-      </button>
       <div v-if="!selectedId" class="trips-empty">
         <p>{{ t('trips.selectHint') }}</p>
       </div>
@@ -47,6 +41,9 @@
 
             <!-- Title row -->
             <div class="trips-doc__top">
+              <button class="trips-back-btn" @click="mobileView = 'list'">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
               <div class="trips-doc__titlewrap">
                 <h1
                   class="trips-doc__title"
@@ -1215,6 +1212,7 @@ function cancelNewTag() {
 .trips-empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--text-dim); font-size: 14px; }
 
 /* Title row */
+.trips-back-btn { display: none; }
 .trips-doc__top { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
 .trips-doc__titlewrap { flex: 1; min-width: 0; }
 .trips-doc__title {
@@ -1469,7 +1467,14 @@ function cancelNewTag() {
     transition: transform .3s cubic-bezier(.4, 0, .2, 1);
     will-change: transform;
   }
-  .trips-doc__top {flex-direction: column;}
+  .trips-doc__top { flex-direction: column; }
+  .trips-back-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    background: none; border: 1px solid var(--border); color: var(--text-mid);
+    cursor: pointer; transition: background .14s, color .14s;
+  }
+  .trips-back-btn:hover { background: var(--surface2); color: var(--text); }
   .trips-side { transform: translateX(0); flex: none; }
   .trips-side--hidden-mobile { transform: translateX(-100%); }
   .trips-main { transform: translateX(100%); flex: none; }

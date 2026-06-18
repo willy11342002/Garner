@@ -93,17 +93,10 @@
         <div v-if="!sessions.length" class="chat-list__empty">{{ t('chat.empty_list') }}</div>
       </div>
       <!-- 手機版：右邊緣切換箭頭 -->
-      <button class="panel-toggle panel-toggle--right" @click="mobileView = 'chat'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
     </aside>
 
     <!-- 右側：對話區 -->
     <div class="chat-view" :class="{ 'chat-view--hidden-mobile': mobileView === 'list' }">
-      <!-- 手機版：左邊緣切換箭頭 -->
-      <button class="panel-toggle panel-toggle--left" @click="mobileView = 'list'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
-      </button>
       <div v-if="!activeSessionId" class="chat-welcome">
         <div class="chat-welcome__icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="44" height="44"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>

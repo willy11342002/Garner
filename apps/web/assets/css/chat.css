@@ -324,6 +324,14 @@
 
 .chat-back-btn { display: none; }
 .panel-toggle { display: none; }
+/* chat-back-btn 樣式（手機版才顯示，見下方 media query） */
+.chat-back-btn {
+  align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px;
+  background: none; border: 1px solid var(--border); color: var(--text-mid);
+  cursor: pointer; transition: background .14s, color .14s;
+}
+.chat-back-btn:hover { background: var(--surface2); color: var(--text); }
 
 @media (max-width: 768px) {
   .chat-page {
@@ -352,41 +360,7 @@
   .chat-view--hidden-mobile { transform: translateX(100%); }
   .chat-view:not(.chat-view--hidden-mobile) { transform: translateX(0); }
 
-  .panel-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 10;
-    width: 22px;
-    height: 48px;
-    background: var(--surface);
-    color: var(--text-mid);
-    cursor: pointer;
-    border: 1px solid var(--border);
-    transition: background .15s, color .15s;
-  }
-  .panel-toggle--right {
-    right: 0;
-    border-right: none;
-    border-radius: 10px 0 0 10px;
-    box-shadow: -2px 0 8px rgba(0,0,0,.06);
-  }
-  .panel-toggle--left {
-    left: 0;
-    border-left: none;
-    border-radius: 0 10px 10px 0;
-    box-shadow: 2px 0 8px rgba(0,0,0,.06);
-  }
-  .panel-toggle:active {
-    background: #16a34a;
-    color: #fff;
-    border-color: #16a34a;
-  }
-
-  .chat-back-btn { display: none; }
+  .chat-back-btn { display: flex; }
   .chat-view__head { display: flex; align-items: center; }
 
   .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block, .context-block, .chat-article-card { width: 92%; max-width: 92%; }
