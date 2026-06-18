@@ -1331,47 +1331,35 @@ async def describe_images(images: list[bytes]) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-async def understand_youtube(
-    video_bytes: bytes | None,
-    mime_type: str,
-    title: str | None,
-    description: str | None,
+async def understand(
+    video_bytes_list: list[bytes] | bytes | None = None,
+    image_bytes_list: list[bytes] | None = None,
+    mime_type: str = "video/mp4",
+    title: str | None = None,
+    description: str | None = None,
 ) -> str | None:
-    """Combine video analysis with title/description into raw_content."""
+    """Combine any mix of videos, images, title and description into raw_content."""
+    import asyncio as _asyncio
+
     parts: list[str] = []
 
     if title:
-        parts.append(f"[影片標題]\n{title}")
+        parts.append(f"[標題]\n{title}")
     if description:
-        parts.append(f"[作者說明]\n{description[:3000]}")
+        parts.append(f"[說明]\n{description[:3000]}")
 
-    if video_bytes:
-        video_text = await describe_video(video_bytes, mime_type)
-        if video_text:
-            parts.append(f"[影片內容分析]\n{video_text}")
+    videos: list[bytes] = []
+    if video_bytes_list is not None:
+        videos = video_bytes_list if isinstance(video_bytes_list, list) else [video_bytes_list]
+    images: list[bytes] = image_bytes_list or []
 
-    return "\n\n".join(parts) if parts else None
-
-
-async def understand_instagram(
-    video_bytes_list: list[bytes],
-    image_bytes_list: list[bytes],
-    caption: str | None,
-) -> str | None:
-    """Combine video and image analysis with caption into raw_content."""
-    parts: list[str] = []
-
-    if caption:
-        parts.append(f"[貼文說明]\n{caption}")
-
-    tasks: list = []
-    if image_bytes_list:
-        tasks.append(("images", describe_images(image_bytes_list)))
-    for i, vb in enumerate(video_bytes_list):
-        tasks.append((f"video_{i}", describe_video(vb, "video/mp4")))
+    tasks: list[tuple[str, object]] = []
+    if images:
+        tasks.append(("images", describe_images(images)))
+    for i, vb in enumerate(videos):
+        tasks.append((f"video_{i}", describe_video(vb, mime_type)))
 
     if tasks:
-        import asyncio as _asyncio
         results = await _asyncio.gather(*[t for _, t in tasks])
         for (label, _), text in zip(tasks, results):
             if not text:
@@ -1380,38 +1368,7 @@ async def understand_instagram(
                 parts.append(f"[圖片內容]\n{text}")
             else:
                 idx = int(label.split("_")[1]) + 1
-                parts.append(f"[影片 {idx} 內容]\n{text}")
-
-    return "\n\n".join(parts) if parts else None
-
-
-async def understand_tiktok(
-    video_bytes_list: list[bytes] | bytes | None,
-    mime_type: str,
-    description: str | None,
-) -> str | None:
-    """Combine video analysis with description into raw_content."""
-    import asyncio as _asyncio
-
-    parts: list[str] = []
-
-    if description:
-        parts.append(f"[影片說明]\n{description[:3000]}")
-
-    # Handle both single bytes and list of bytes
-    if video_bytes_list is None:
-        return "\n\n".join(parts) if parts else None
-
-    videos = video_bytes_list if isinstance(video_bytes_list, list) else [video_bytes_list]
-
-    if videos:
-        tasks = [(f"video_{i}", describe_video(vb, mime_type)) for i, vb in enumerate(videos)]
-        results = await _asyncio.gather(*[t for _, t in tasks])
-        for (label, _), text in zip(tasks, results):
-            if not text:
-                continue
-            idx = int(label.split("_")[1]) + 1
-            parts.append(f"[影片 {idx} 內容分析]\n{text}")
+                parts.append(f"[影片 {idx} 內容分析]\n{text}")
 
     return "\n\n".join(parts) if parts else None
 

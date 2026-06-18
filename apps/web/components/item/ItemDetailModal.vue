@@ -599,6 +599,7 @@ function sourceLabel(url: string) {
   if (/youtu/.test(url)) return 'YouTube'
   if (/instagram\.com/.test(url)) return 'IG'
   if (/tiktok\.com|vt\.tiktok\.com/.test(url)) return 'TikTok'
+  if (/facebook\.com|fb\.watch/.test(url)) return 'Facebook'
   return 'Article'
 }
 

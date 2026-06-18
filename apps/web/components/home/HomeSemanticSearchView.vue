@@ -91,6 +91,8 @@ function applyChip(tagName: string) {
 function sourceLabel(url: string) {
   if (/youtu/.test(url)) return t('home.source_youtube')
   if (/instagram\.com/.test(url)) return t('home.source_ig')
+  if (/tiktok\.com|vt\.tiktok\.com/.test(url)) return t('home.source_tiktok')
+  if (/facebook\.com|fb\.watch/.test(url)) return t('home.source_facebook')
   return t('home.source_article')
 }
 

@@ -193,7 +193,7 @@ const session = useSupabaseSession()
 const chain = useChain()
 const { chainItems } = chain
 
-const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG' }
+const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG', tiktok: '♪ TikTok', facebook_reel: 'Facebook', facebook_post: 'Facebook' }
 
 // ── Quota ──────────────────────────────────────────────────
 const quota = ref<UsageSummary | null>(null)

@@ -65,4 +65,4 @@ class YouTubeProvider(ContentProvider):
         if stage_cb:
             stage_cb("understanding")
 
-        return await ai_service.understand_youtube(video_bytes, mime_type, title, description)
+        return await ai_service.understand(video_bytes, mime_type=mime_type, title=title, description=description)

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _YT_ACTOR = "streamers/youtube-scraper"
 _IG_ACTOR = "apify/instagram-scraper"
 _TT_ACTOR = "clockworks/tiktok-scraper"
+_FB_ACTOR = "clappi/facebook-posts-reels-scraper"
 _WEB_ACTOR = "apify/website-content-crawler"
 _DOWNLOAD_TIMEOUT = 60
 
@@ -128,6 +129,50 @@ async def fetch_tiktok(url: str) -> ApifyMediaResult:
         thumbnail_url=video_meta.get("coverUrl"),
         video_urls=video_urls,
         image_urls=[],
+    )
+
+
+async def fetch_facebook(url: str) -> ApifyMediaResult:
+    """Fetch a single Facebook reel or post via clappi/facebook-posts-reels-scraper.
+
+    Note: this actor returns caption + thumbnail only; video file is not available.
+    """
+    run_input = {"postUrls": [url]}
+    try:
+        items = await asyncio.to_thread(_run_actor, _FB_ACTOR, run_input)
+    except Exception:
+        logger.exception("Apify Facebook scraper failed for url=%s", url)
+        return ApifyMediaResult(raw_data={})
+
+    if not items:
+        return ApifyMediaResult(raw_data={})
+
+    item = items[0]
+
+    # Collect image URLs (photo posts may have multiple)
+    image_urls: list[str] = []
+    for field_name in ("images", "photos", "attachments"):
+        raw = item.get(field_name) or []
+        for entry in raw:
+            if isinstance(entry, str):
+                image_urls.append(entry)
+            elif isinstance(entry, dict):
+                img = entry.get("url") or entry.get("imageUrl") or entry.get("src")
+                if img:
+                    image_urls.append(img)
+
+    thumbnail_url = item.get("thumbnailUrl")
+    if thumbnail_url and thumbnail_url not in image_urls:
+        image_urls.append(thumbnail_url)
+
+    return ApifyMediaResult(
+        raw_data=item,
+        title=None,
+        description=item.get("caption") or item.get("text") or item.get("message"),
+        duration_sec=_parse_duration(item.get("duration") or item.get("videoDuration")),
+        thumbnail_url=thumbnail_url,
+        video_urls=[],   # actor does not provide downloadable video
+        image_urls=image_urls,
     )
 
 

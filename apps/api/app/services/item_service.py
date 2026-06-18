@@ -26,6 +26,10 @@ def _detect_source_type(url: str) -> str:
         return "ig"
     if "tiktok.com" in url or "vt.tiktok.com" in url:
         return "tiktok"
+    if "facebook.com" in url or "fb.watch" in url:
+        if "/reel/" in url or "fb.watch" in url:
+            return "facebook_reel"
+        return "facebook_post"
     return "article"
 
 

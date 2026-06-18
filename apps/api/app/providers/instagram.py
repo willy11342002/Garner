@@ -71,4 +71,4 @@ class InstagramProvider(ContentProvider):
         if stage_cb:
             stage_cb("understanding")
 
-        return await ai_service.understand_instagram(video_bytes_list, image_bytes_list, caption)
+        return await ai_service.understand(video_bytes_list, image_bytes_list, description=caption)

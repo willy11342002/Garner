@@ -74,4 +74,4 @@ class TikTokProvider(ContentProvider):
             stage_cb("understanding")
 
         # Pass all videos for LLM analysis
-        return await ai_service.understand_tiktok(video_bytes_list if video_bytes_list else None, mime_type, description)
+        return await ai_service.understand(video_bytes_list if video_bytes_list else None, mime_type=mime_type, description=description)
