@@ -49,8 +49,8 @@ garner/
 
 ### API services（`apps/api/app/services/`）
 - `item_service` — Item 建立與處理流程主入口
-- `ai_service` — OpenRouter 摘要 + OpenAI embedding 產生
-- `search_service` — 語意 / 關鍵字搜尋
+- `ai_service` — OpenRouter 摘要 + OpenAI embedding 產生；agentic tools：`save_url`（存入 URL）、`search_knowledge`（查詢）、`revise_report`（修改報告）、`ai_edit_trip_stream`（編輯行程）
+- `search_service` — 語意 / 關鍵字搜尋；支援按 `item_ids` 直接查詢（用於 save_url 後快速回傳新存入的知識）
 - `chat_service` — Agentic chat 對話處理
 - `stream_registry` — Chat SSE 串流管理：asyncio.Queue pub/sub，解耦 POST（產生）與 GET SSE（消費），支援斷線重連
 - `report_service` — AI 產出層（報告）：生成 / revise / regenerate，與知識分離、不進語料
@@ -58,7 +58,7 @@ garner/
 - `geocoding_service` — 地理編碼（地址 ↔ 座標）
 - `billing_service` — 訂閱 / 付費額度邏輯
 - `gumroad_service` — Gumroad 金流串接
-- `apify_service` — 外部內容抓取（Apify）
+- `apify_service` — 外部內容抓取（Apify）：支援 YouTube、TikTok、Facebook
 - `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發；`ai_edit_trip_stream` 用 SSE 對既有行程逐張新刪修卡片（搭配 ai_service.stream_tool_loop）
 
 ### API routers（`apps/api/app/routers/`）
@@ -91,8 +91,8 @@ garner/
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
 - `report/` — ReportAiFab（報告頁的 AI 修改懸浮球）
-- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）
-- 根目錄 — BaseFab（通用懸浮球容器：可拖曳、側邊停靠、badge、icon、panel slot），TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）
+- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）；TripCardEditor 支援 touch-drag-to-close 關閉 modal（向上或向下快速拖曳自動關閉）
+- 根目錄 — BaseFab（通用懸浮球容器：可拖曳、側邊停靠、badge、icon、panel slot、支援多球同時共存 multi-FAB），TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）
 
 ### Web utils（`apps/web/utils/`）
 - `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）
