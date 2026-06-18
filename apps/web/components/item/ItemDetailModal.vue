@@ -73,9 +73,12 @@ function onPanelTouchStart(e: TouchEvent) {
 function onPanelTouchMove(e: TouchEvent) {
   const panel = panelRef.value
   if (!panel) return
+  
   const deltaY = e.touches[0].clientY - _touchStartY
+  
+  // 當面板滾動到頂，且用戶向下拖拽時
   if (panel.scrollTop <= 0 && deltaY > 0) {
-    panel.style.transition = 'none'
+    panel.style.transition = 'none' // 拖拽時不需要動畫，才能即時跟手
     panel.style.bottom = `-${deltaY}px`
   } else {
     panel.style.transition = ''
@@ -86,15 +89,35 @@ function onPanelTouchMove(e: TouchEvent) {
 function onPanelTouchEnd(e: TouchEvent) {
   const panel = panelRef.value
   if (!panel) return
+
   const deltaY = e.changedTouches[0].clientY - _touchStartY
+
+  // 判斷是否觸發關閉（向下拖拽超過 80px 且處於頂部）
   if (panel.scrollTop <= 0 && deltaY > 80) {
-    panel.style.transition = 'transform .2s ease'
-    panel.style.transform = 'translateY(100%)'
-    setTimeout(doClose, 200)
-  } else {
-    panel.style.transition = 'transform .3s cubic-bezier(0.32,0.72,0,1)'
-    panel.style.transform = ''
-    setTimeout(() => { if (panel) panel.style.transition = '' }, 300)
+    // 【方案 A：動畫關閉】
+    // 給 bottom 加上平滑動畫，並將其設為 -100vh 移出螢幕外
+    panel.style.transition = 'bottom .2s ease-out'
+    panel.style.bottom = '-100vh'
+    
+    // 等 200ms 動畫結束後，執行真正的關閉邏輯與清理
+    setTimeout(() => {
+      doClose()
+      if (panel) {
+        panel.style.transition = ''
+        panel.style.bottom = '' // 重設樣式，避免下次打開時卡在下面
+      }
+    }, 200)
+
+  } else if (deltaY > 0) {
+    // 【方案 B：動畫復位】
+    // 有被向下拉但沒超過 80px，平滑彈回原本的 bottom: 0
+    panel.style.transition = 'bottom .3s cubic-bezier(0.32, 0.72, 0, 1)'
+    panel.style.bottom = '0px'
+    
+    // 動畫結束後清除 transition 恢復乾淨狀態
+    setTimeout(() => {
+      if (panel) panel.style.transition = ''
+    }, 300)
   }
 }
 
