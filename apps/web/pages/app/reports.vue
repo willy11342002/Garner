@@ -293,7 +293,18 @@ function formatDate(iso: string) {
 .report-view__back { display: none; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-mid); font-size: 18px; cursor: pointer; line-height: 1; transition: background .14s, color .14s; }
 .report-view__back:hover { background: var(--surface2); color: var(--text); }
 .report-view__head-main { flex: 1; min-width: 0; }
-.report-view__title { font-size: 22px; font-weight: 700; color: var(--text); margin: 0 0 8px; }
+.report-view__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  line-clamp: 1;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
 .report-view__title-input {
   width: 100%; font-size: 22px; font-weight: 700; color: var(--text);
   background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px;
