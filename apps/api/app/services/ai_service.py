@@ -584,6 +584,11 @@ _AGENTIC_TOOLS = [
                     "end_date": {"type": "string", "description": "儲存日期上限，格式 YYYY-MM-DD"},
                     "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 15"},
                     "offset": {"type": "integer", "description": "跳過前 N 筆，用於換頁"},
+                    "item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "直接按知識 ID 查詢（例如剛用 save_url 存入的條目）。有此參數時略過語意搜尋，直接回傳指定 ID 的知識。",
+                    },
                 },
             },
         },
@@ -878,6 +883,18 @@ async def agentic_chat_stream(
 
             elif name == "revise_report":
                 tool_result_data = {"tool": name, "revised": bool(result.get("ok")), "report_id": result.get("report_id")}
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            elif name == "save_url":
+                tool_result_data = {
+                    "tool": name,
+                    "ok": bool(result.get("ok")),
+                    "id": result.get("id"),
+                    "title": result.get("title"),
+                    "source_type": result.get("source_type"),
+                    "error": result.get("error"),
+                }
                 process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)
 

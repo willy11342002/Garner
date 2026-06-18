@@ -183,6 +183,16 @@ async function send(preset?: string) {
 }
 
 function handleToolResult(data: any, assistant: Msg) {
+  if (data.name === 'save_url') {
+    if (data.ok) {
+      assistant.actions.push(`📥 已存入「${data.title || ''}」`)
+    } else if (data.error === 'quota_exceeded') {
+      assistant.actions.push('⚠️ 存入額度已用完')
+    } else {
+      assistant.actions.push('⚠️ 存入失敗')
+    }
+    return
+  }
   if (!data.ok) return
   if (data.name === 'add_card' && data._item) {
     emit('card-added', data._item as TripItem)

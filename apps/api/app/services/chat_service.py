@@ -114,6 +114,19 @@ async def _exec_search(
     offset = max(int(tool.get("offset") or 0), 0)
     has_filters = any([source_type, saved_after, saved_before])
 
+    # 直接 by ID 查詢（save_url 剛存入、embedding 尚未就緒時使用）
+    raw_ids = tool.get("item_ids") or []
+    if raw_ids:
+        parsed_ids: list[UUID] = []
+        for raw in raw_ids if isinstance(raw_ids, list) else []:
+            try:
+                parsed_ids.append(UUID(str(raw)))
+            except (ValueError, TypeError):
+                continue
+        if parsed_ids:
+            items = await crud_items.get_by_ids(db, user_id, parsed_ids)
+            return [(ui, None) for ui in items]
+
     seen_ids: set[UUID] = set()
     results: list[ItemWithDist] = []
 
@@ -573,13 +586,11 @@ async def run_reply_background(
                 assistant_message_id=assistant_message_id,
             ):
                 entry.publish(event_str)
-            # Execute any background tasks (e.g., context compression)
-            for task in bg.tasks:
-                try:
-                    await task.func(*task.args, **task.kwargs)
-                except Exception:
-                    pass
+        # Close the SSE connection before running background tasks so the
+        # frontend receives 'done' and the HTTP stream ends immediately.
         entry.complete()
+        for task in bg.tasks:
+            asyncio.create_task(task.func(*task.args, **task.kwargs))
     except Exception as exc:
         logger.exception("run_reply_background failed: message=%s", assistant_message_id)
         async with AsyncSessionLocal() as db:

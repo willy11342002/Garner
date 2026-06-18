@@ -635,6 +635,20 @@ _TRIP_EDIT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_url",
+            "description": "將一個網址（YouTube 影片、網頁文章）存入用戶的知識庫，系統會自動抓取內容、產生摘要與標籤。只在用戶明確提供網址並要求存入時呼叫。會消耗一次存入額度。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
@@ -855,6 +869,37 @@ async def ai_edit_trip_stream(
                 return {"ok": False, "error": "card_no not found"}
             ok = await delete_item(db, user_id, trip_id, item_id)
             return {"ok": ok, "_deleted_id": str(item_id)}
+
+        if name == "save_url":
+            import asyncio as _asyncio
+            from fastapi import BackgroundTasks as _BackgroundTasks
+            from app.quota_depends import _get_plan, _get_limit, _count_monthly_saves
+            from app.services import item_service
+            from app.schemas.item import ItemCreate
+            url = (args.get("url") or "").strip()
+            if not url:
+                return {"ok": False, "error": "url is required"}
+            try:
+                plan_id, _ = await _get_plan(db, user_id)
+                limit = await _get_limit(db, plan_id, "saves_monthly")
+                if limit is not None:
+                    used = await _count_monthly_saves(db, user_id)
+                    if used >= limit:
+                        return {"ok": False, "error": "quota_exceeded", "used": used, "limit": limit}
+                bt = _BackgroundTasks()
+                result = await item_service.create_item(db, user_id, ItemCreate(url=url), bt)
+                for task in bt.tasks:
+                    _asyncio.create_task(task.func(*task.args, **task.kwargs))
+                return {
+                    "ok": True,
+                    "id": str(result.id),
+                    "title": result.title or url,
+                    "source_type": result.source_type,
+                    "status": result.status,
+                }
+            except Exception:
+                logger.exception("save_url failed in trip ai_edit: url=%s", url)
+                return {"ok": False, "error": "failed to save url"}
 
         return {"ok": False, "error": "unknown tool"}
 

@@ -64,6 +64,7 @@
                     <div v-if="step.toolResult" class="process-body__tool-result">
                       <span class="process-body__step-icon">✓</span>
                       <span v-if="step.toolCall.name === 'create_report'">報告已建立：{{ step.toolResult.title }}</span>
+                      <span v-else-if="step.toolCall.name === 'save_url'">{{ step.toolResult.ok ? `已存入「${step.toolResult.title}」` : (step.toolResult.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗') }}</span>
                       <span v-else>找到 {{ step.toolResult.count }} 筆</span>
                       <button
                         v-if="step.toolResult?.titles?.length"
@@ -113,6 +114,7 @@
                 <div v-if="step.toolResult" class="process-body__tool-result">
                   <span class="process-body__step-icon">✓</span>
                   <span v-if="step.toolCall.name === 'create_report'">報告已建立：{{ step.toolResult.title }}</span>
+                  <span v-else-if="step.toolCall.name === 'save_url'">{{ step.toolResult.ok ? `已存入「${step.toolResult.title}」` : (step.toolResult.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗') }}</span>
                   <span v-else>找到 {{ step.toolResult.count }} 筆</span>
                   <button
                     v-if="step.toolResult?.titles?.length"
@@ -129,7 +131,7 @@
                 </Transition>
                 <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                   <span class="process-body__step-icon">⋯</span>
-                  <span>{{ step.toolCall.name === 'create_report' ? '生成中' : t('fab.searching') }}</span>
+                  <span>{{ step.toolCall.name === 'create_report' ? '生成中' : step.toolCall.name === 'save_url' ? '存入中' : t('fab.searching') }}</span>
                 </div>
               </div>
             </div>
@@ -550,6 +552,8 @@ function sourceLabel(type: string | null) {
 .hcp .context-block {
   width: 100%;
   max-width: 100%;
+  text-wrap: auto;
+  overflow-wrap: break-word;
 }
 
 /* Chain attachments */

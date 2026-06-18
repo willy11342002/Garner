@@ -348,7 +348,7 @@
               @input="autoResize"
             ></textarea>
             <button
-              v-if="loading"
+              v-if="loading && streamingSessionId === activeSessionId"
               class="chat-send-btn chat-send-btn--stop"
               :title="t('chat.stop')"
               @click="stopStreaming"
@@ -905,7 +905,8 @@ function toggleContext(id: string) {
 }
 
 async function send() {
-  if (!inputText.value.trim() || loading.value || !activeSessionId.value || chatQuotaFull.value) return
+  const currentSessionStreaming = loading.value && streamingSessionId.value === activeSessionId.value
+  if (!inputText.value.trim() || currentSessionStreaming || !activeSessionId.value || chatQuotaFull.value) return
 
   const content = inputText.value.trim()
   let sessionId = activeSessionId.value
@@ -1192,6 +1193,7 @@ function stepIcon(name: string) {
     : name === 'create_trip' ? '🗺️'
     : name === 'create_report' ? '📝'
     : name === 'filter_sources' ? '🎯'
+    : name === 'save_url' ? '📥'
     : '🔍'
 }
 function stepResultLabel(step: any): string {
@@ -1200,12 +1202,14 @@ function stepResultLabel(step: any): string {
   if (n === 'create_report') return `報告已建立：${r.title ?? ''}`
   if (n === 'create_trip') return `行程已建立：${r.title ?? ''}`
   if (n === 'add_trip_card') return r.ok ? `新增卡片：${r.title ?? ''}` : '卡片新增失敗'
+  if (n === 'save_url') return r.ok ? `已存入「${r.title ?? ''}」` : (r.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗')
   return `找到 ${r.count ?? 0} 筆`
 }
 function stepPendingLabel(name: string): string {
   if (name === 'create_report' || name === 'create_trip') return '生成中'
   if (name === 'add_trip_card') return '新增中'
   if (name === 'filter_sources') return '篩選中'
+  if (name === 'save_url') return '存入中'
   return '搜尋中'
 }
 
