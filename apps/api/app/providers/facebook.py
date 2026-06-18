@@ -75,28 +75,40 @@ class FacebookProvider(ContentProvider):
         if stage_cb:
             stage_cb("fetching_content")
 
-        description = (
-            info.raw_data.get("caption")
-            or info.raw_data.get("text")
-            or info.raw_data.get("message")
-            or ""
-        )
+        raw = info.raw_data
+        sfc = raw.get("short_form_video_context") or {}
 
-        # Collect image URLs (actor does not provide video files)
+        # ── Reel path: has video ──────────────────────────────────────────────
+        if sfc:
+            message = raw.get("message") or {}
+            description = message.get("text") if isinstance(message, dict) else (message or "")
+
+            playback = sfc.get("playback_video") or {}
+            delivery = playback.get("videoDeliveryLegacyFields") or {}
+            video_url = delivery.get("browser_native_sd_url") or delivery.get("browser_native_hd_url")
+
+            if stage_cb:
+                stage_cb("understanding")
+
+            if video_url:
+                video_bytes = await apify_service.download_bytes(video_url)
+                if video_bytes:
+                    return await ai_service.understand(
+                        video_bytes_list=video_bytes,
+                        mime_type="video/mp4",
+                        description=description or None,
+                    )
+
+            return await ai_service.understand(description=description or None) if description else None
+
+        # ── Post path: has images ─────────────────────────────────────────────
+        description = raw.get("text") or ""
+
         image_urls: list[str] = []
-        for field_name in ("images", "photos", "attachments"):
-            raw = info.raw_data.get(field_name) or []
-            for entry in raw:
-                if isinstance(entry, str):
-                    image_urls.append(entry)
-                elif isinstance(entry, dict):
-                    img = entry.get("url") or entry.get("imageUrl") or entry.get("src")
-                    if img:
-                        image_urls.append(img)
-
-        thumbnail = info.raw_data.get("thumbnailUrl")
-        if thumbnail and thumbnail not in image_urls:
-            image_urls.append(thumbnail)
+        for media in raw.get("media", []):
+            uri = (media.get("photo_image") or {}).get("uri") or media.get("thumbnail")
+            if uri:
+                image_urls.append(uri)
 
         if stage_cb:
             stage_cb("understanding")
@@ -107,6 +119,6 @@ class FacebookProvider(ContentProvider):
             image_bytes_list = [b for b in results if b]
 
         if image_bytes_list or description:
-            return await ai_service.understand(image_bytes_list=image_bytes_list, description=description)
+            return await ai_service.understand(image_bytes_list=image_bytes_list, description=description or None)
 
         return None

@@ -1272,6 +1272,13 @@ async def describe_images(images: list[bytes]) -> str:
 
     _log = _logging.getLogger(__name__)
 
+    _IMAGE_MAGIC = (
+        b"\xff\xd8\xff",        # JPEG
+        b"\x89PNG\r\n\x1a\n",  # PNG
+        b"RIFF",                # WebP (RIFF....WEBP)
+        b"GIF8",                # GIF
+    )
+    images = [b for b in images if any(b.startswith(m) for m in _IMAGE_MAGIC)]
     if not images:
         return ""
 
@@ -1344,9 +1351,9 @@ async def understand(
     parts: list[str] = []
 
     if title:
-        parts.append(f"[標題]\n{title}")
+        parts.append(f"[標題]\n{str(title)[:3000]}")
     if description:
-        parts.append(f"[說明]\n{description[:3000]}")
+        parts.append(f"[說明]\n{str(description)[:3000]}")
 
     videos: list[bytes] = []
     if video_bytes_list is not None:

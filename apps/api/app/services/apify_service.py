@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 _YT_ACTOR = "streamers/youtube-scraper"
 _IG_ACTOR = "apify/instagram-scraper"
 _TT_ACTOR = "clockworks/tiktok-scraper"
-_FB_ACTOR = "clappi/facebook-posts-reels-scraper"
+_FB_ACTOR = "apify/facebook-posts-scraper"
 _WEB_ACTOR = "apify/website-content-crawler"
 _DOWNLOAD_TIMEOUT = 60
 
@@ -133,11 +133,8 @@ async def fetch_tiktok(url: str) -> ApifyMediaResult:
 
 
 async def fetch_facebook(url: str) -> ApifyMediaResult:
-    """Fetch a single Facebook reel or post via clappi/facebook-posts-reels-scraper.
-
-    Note: this actor returns caption + thumbnail only; video file is not available.
-    """
-    run_input = {"postUrls": [url]}
+    """Fetch a Facebook post or reel via apify/facebook-posts-scraper."""
+    run_input = {"startUrls": [{"url": url}], "resultsLimit": 1}
     try:
         items = await asyncio.to_thread(_run_actor, _FB_ACTOR, run_input)
     except Exception:
@@ -149,29 +146,49 @@ async def fetch_facebook(url: str) -> ApifyMediaResult:
 
     item = items[0]
 
-    # Collect image URLs (photo posts may have multiple)
-    image_urls: list[str] = []
-    for field_name in ("images", "photos", "attachments"):
-        raw = item.get(field_name) or []
-        for entry in raw:
-            if isinstance(entry, str):
-                image_urls.append(entry)
-            elif isinstance(entry, dict):
-                img = entry.get("url") or entry.get("imageUrl") or entry.get("src")
-                if img:
-                    image_urls.append(img)
+    # ── Reel path ──────────────────────────────────────────────────────────
+    sfc = item.get("short_form_video_context") or {}
+    playback = sfc.get("playback_video") or {}
+    delivery = playback.get("videoDeliveryLegacyFields") or {}
 
-    thumbnail_url = item.get("thumbnailUrl")
-    if thumbnail_url and thumbnail_url not in image_urls:
-        image_urls.append(thumbnail_url)
+    if sfc:
+        # description lives in message.text (message is a dict)
+        message = item.get("message") or {}
+        description = message.get("text") if isinstance(message, dict) else message
+
+        video_url = delivery.get("browser_native_sd_url") or delivery.get("browser_native_hd_url")
+        thumbnail_url = (
+            (sfc.get("video") or {}).get("first_frame_thumbnail")
+            or (playback.get("thumbnailImage") or {}).get("uri")
+        )
+        duration_sec = _parse_duration(playback.get("length_in_second"))
+
+        return ApifyMediaResult(
+            raw_data=item,
+            title=None,
+            description=description,
+            duration_sec=duration_sec,
+            thumbnail_url=thumbnail_url,
+            video_urls=[video_url] if video_url else [],
+            image_urls=[],
+        )
+
+    # ── Post path ───────────────────────────────────────────────────────────
+    image_urls: list[str] = []
+    for media in item.get("media", []):
+        uri = (media.get("photo_image") or {}).get("uri") or media.get("thumbnail")
+        if uri:
+            image_urls.append(uri)
+
+    thumbnail_url = image_urls[0] if image_urls else None
 
     return ApifyMediaResult(
         raw_data=item,
         title=None,
-        description=item.get("caption") or item.get("text") or item.get("message"),
-        duration_sec=_parse_duration(item.get("duration") or item.get("videoDuration")),
+        description=_extract_text(item, "text", "caption"),
+        duration_sec=None,
         thumbnail_url=thumbnail_url,
-        video_urls=[],   # actor does not provide downloadable video
+        video_urls=[],
         image_urls=image_urls,
     )
 
@@ -236,6 +253,15 @@ def _extract_ig_media(item: dict) -> tuple[list[str], list[str], int]:
             image_urls.append(item["displayUrl"])
 
     return image_urls, video_urls, duration_sec
+
+
+def _extract_text(item: dict, *keys: str) -> str | None:
+    """Return the first non-empty string value for the given keys; skip dicts/lists."""
+    for key in keys:
+        val = item.get(key)
+        if isinstance(val, str) and val:
+            return val
+    return None
 
 
 def _parse_duration(value) -> int | None:
