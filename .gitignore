@@ -14,6 +14,7 @@ build/
 
 # Python
 __pycache__/
+downloads/
 *.ipynb
 *.pyc
 .venv/

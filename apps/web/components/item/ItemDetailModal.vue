@@ -596,8 +596,9 @@ const TAG_COLORS = ['a', 'b', 'c', 'd', 'e'] as const
 function tagColor(i: number) { return TAG_COLORS[i % TAG_COLORS.length] }
 
 function sourceLabel(url: string) {
-  if (/youtu/.test(url)) return '▶ YouTube'
+  if (/youtu/.test(url)) return 'YouTube'
   if (/instagram\.com/.test(url)) return 'IG'
+  if (/tiktok\.com|vt\.tiktok\.com/.test(url)) return 'TikTok'
   return 'Article'
 }
 

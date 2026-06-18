@@ -169,6 +169,7 @@ const selectedItems = computed(() => items.value.filter(i => selectedIds.has(i.i
 function sourceLabel(sourceType: string | null): string {
   if (sourceType === 'youtube') return '▶ YouTube'
   if (sourceType === 'ig') return 'Instagram'
+  if (sourceType === 'tiktok') return '♪ TikTok'
   return 'Article'
 }
 

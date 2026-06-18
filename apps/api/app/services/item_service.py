@@ -14,6 +14,7 @@ from app.models.user_item import UserItemStatus
 from app.quota_depends import get_video_max_sec
 from app.schemas.item import ArticleUpdate, ItemCreate, ItemRead, ItemUpdate
 from app.providers.instagram import normalize_instagram_url
+from app.providers.tiktok import normalize_tiktok_url
 from app.providers.youtube import normalize_youtube_url
 from app.workers.process_item import process_item
 
@@ -23,6 +24,8 @@ def _detect_source_type(url: str) -> str:
         return "youtube"
     if "instagram.com" in url:
         return "ig"
+    if "tiktok.com" in url or "vt.tiktok.com" in url:
+        return "tiktok"
     return "article"
 
 
@@ -100,7 +103,7 @@ async def prepare_item_create(
         return _ItemCreateResult(item=_item_to_read(user_item, user_id), needs_processing=False)
 
     # ── 外部 URL ──────────────────────────────────────────────────────────────
-    url = normalize_youtube_url(normalize_instagram_url(data.url))
+    url = normalize_youtube_url(normalize_instagram_url(normalize_tiktok_url(data.url)))
     max_video_sec = await get_video_max_sec(db, user_id)
 
     existing = await crud_items.get_by_url(db, user_id, url, include_deleted=True)

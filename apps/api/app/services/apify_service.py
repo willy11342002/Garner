@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 _YT_ACTOR = "streamers/youtube-scraper"
 _IG_ACTOR = "apify/instagram-scraper"
+_TT_ACTOR = "clockworks/tiktok-scraper"
 _WEB_ACTOR = "apify/website-content-crawler"
 _DOWNLOAD_TIMEOUT = 60
 
@@ -98,6 +99,35 @@ async def fetch_instagram(url: str) -> ApifyMediaResult:
         thumbnail_url=thumbnail_url,
         video_urls=video_urls,
         image_urls=image_urls,
+    )
+
+
+async def fetch_tiktok(url: str) -> ApifyMediaResult:
+    run_input = {"postURLs": [url]}
+    try:
+        items = await asyncio.to_thread(_run_actor, _TT_ACTOR, run_input)
+    except Exception:
+        logger.exception("Apify TikTok scraper failed for url=%s", url)
+        return ApifyMediaResult(raw_data={})
+
+    if not items:
+        return ApifyMediaResult(raw_data={})
+
+    item = items[0]
+    video_meta = item.get("videoMeta") or {}
+
+    # Extract video URL from mediaUrls (array of URLs)
+    media_urls = item.get("mediaUrls") or []
+    video_urls = [u for u in media_urls if u and isinstance(u, str)]
+
+    return ApifyMediaResult(
+        raw_data=item,
+        title=None,
+        description=item.get("text"),
+        duration_sec=_parse_duration(video_meta.get("duration")),
+        thumbnail_url=video_meta.get("coverUrl"),
+        video_urls=video_urls,
+        image_urls=[],
     )
 
 

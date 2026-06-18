@@ -46,7 +46,7 @@ class UserItem(Base):
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str | None] = mapped_column(
-        Enum("youtube", "article", "ig", "note", name="source_type_enum", create_constraint=False),
+        Enum("youtube", "article", "ig", "tiktok", "note", name="source_type_enum", create_constraint=False),
         nullable=True,
     )
     notes_md: Mapped[str | None] = mapped_column(Text, nullable=True)

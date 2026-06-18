@@ -1385,6 +1385,37 @@ async def understand_instagram(
     return "\n\n".join(parts) if parts else None
 
 
+async def understand_tiktok(
+    video_bytes_list: list[bytes] | bytes | None,
+    mime_type: str,
+    description: str | None,
+) -> str | None:
+    """Combine video analysis with description into raw_content."""
+    import asyncio as _asyncio
+
+    parts: list[str] = []
+
+    if description:
+        parts.append(f"[影片說明]\n{description[:3000]}")
+
+    # Handle both single bytes and list of bytes
+    if video_bytes_list is None:
+        return "\n\n".join(parts) if parts else None
+
+    videos = video_bytes_list if isinstance(video_bytes_list, list) else [video_bytes_list]
+
+    if videos:
+        tasks = [(f"video_{i}", describe_video(vb, mime_type)) for i, vb in enumerate(videos)]
+        results = await _asyncio.gather(*[t for _, t in tasks])
+        for (label, _), text in zip(tasks, results):
+            if not text:
+                continue
+            idx = int(label.split("_")[1]) + 1
+            parts.append(f"[影片 {idx} 內容分析]\n{text}")
+
+    return "\n\n".join(parts) if parts else None
+
+
 _EXTRACT_LOCATIONS_PROMPT = """\
 Read the following content and extract ONLY specific, real-world places that are actually visited or featured (e.g. restaurants, landmarks, cities, neighborhoods, scenic spots).
 
