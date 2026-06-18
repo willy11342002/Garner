@@ -23,7 +23,9 @@ from app.crud import items as crud_items
 from app.models.chat import MessageRole
 from app.models.user_item import UserItem
 from app.schemas.chat import ChatSource
+from app.schemas.item import ItemCreate
 from app.services import ai_service
+from app.services import item_service
 from app.services import report_service
 from app.services import trip_service
 
@@ -333,6 +335,32 @@ async def stream_reply(
                 return {"ok": res is not None, "report_id": rid}
             except Exception:
                 return {"ok": False, "report_id": rid}
+
+        if name == "save_url":
+            url = (args.get("url") or "").strip()
+            if not url:
+                return {"ok": False, "error": "url is required"}
+            try:
+                from app.quota_depends import _get_plan, _get_limit, _count_monthly_saves
+                plan_id, plan_name = await _get_plan(db, user_id)
+                limit = await _get_limit(db, plan_id, "saves_monthly")
+                if limit is not None:
+                    used = await _count_monthly_saves(db, user_id)
+                    if used >= limit:
+                        return {"ok": False, "error": "quota_exceeded", "used": used, "limit": limit}
+                result = await item_service.create_item(
+                    db, user_id, ItemCreate(url=url), background_tasks
+                )
+                return {
+                    "ok": True,
+                    "id": str(result.id),
+                    "title": result.title or url,
+                    "source_type": result.source_type,
+                    "status": result.status,
+                }
+            except Exception:
+                logger.exception("save_url failed: url=%s", url)
+                return {"ok": False, "error": "failed to save url"}
 
         return {}
 

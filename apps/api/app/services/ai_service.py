@@ -662,6 +662,20 @@ _AGENTIC_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_url",
+            "description": "將一個網址（YouTube 影片、網頁文章）存入用戶的知識庫，系統會自動抓取內容、產生摘要與標籤。只在用戶明確提供網址並要求存入時呼叫。會消耗一次存入額度。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
