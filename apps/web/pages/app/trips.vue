@@ -238,7 +238,13 @@
     <!-- ===== Item editor Modal ===== -->
     <Transition name="modal">
       <div v-if="editingItem !== null" class="trips-modal-overlay" @click.self="closeItemEditor">
-        <div class="trips-modal">
+        <div
+          ref="panelRef"
+          class="trips-modal"
+          @touchstart.passive="(e: TouchEvent) => { _touchStartY = e.touches[0].clientY }"
+          @touchmove.passive="onPanelTouchMove"
+          @touchend.passive="onPanelTouchEnd"
+        >
           <div class="trips-modal__head">
             <button
               ref="emojiTriggerEl"
@@ -254,19 +260,18 @@
               @blur="onTitleCommit"
               @keydown.enter.prevent="($event.target as HTMLElement).blur()"
             />
-            <button class="trips-modal__close" @click="closeItemEditor">✕</button>
+            <button v-if="editingItem?.id" class="trips-modal__trash" :disabled="isSaving" @click="handleDeleteItem">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
           </div>
           <div class="trips-modal__body">
-            <!-- 已關聯 & 刪除 -->
-            <div class="trips-linked-row">
+            <!-- 已關聯 -->
+            <div v-if="editingItem?.sources?.length" class="trips-linked-row">
               <button
-                v-if="editingItem?.sources?.length"
                 type="button"
                 class="trips-ksrcbtn"
                 @click="itemSourcesOpen = true"
               >{{ t('trips.sourcesLinked', { n: editingItem.sources.length }) }}</button>
-              <span v-else></span>
-              <button v-if="editingItem?.id" class="btn btn--danger" :disabled="isSaving" @click="handleDeleteItem">{{ t('trips.deleteBtn') }}</button>
             </div>
 
             <!-- 已預定票券 + 票券連結（同地標：Enter 送出後變按鈕）-->
@@ -871,10 +876,65 @@ async function handleAddItem() {
   }
 }
 
-function closeItemEditor() {
-  flushNoteSave()  // 關閉前把尚未送出的備註送出
+const panelRef = ref<HTMLElement | null>(null)
+let _touchStartY = 0
+
+function doClose(): Promise<void> {
+  flushNoteSave()
   editingItem.value = null
   showEmojiPicker.value = false
+  return nextTick()
+}
+
+function closeItemEditor() {
+  doClose()
+}
+
+function onPanelTouchMove(e: TouchEvent) {
+  const panel = panelRef.value
+  if (!panel) return
+  
+  const deltaY = e.touches[0].clientY - _touchStartY
+  
+  // 當面板滾動到頂，且用戶向下拖拽時
+  if (panel.scrollTop <= 0 && deltaY > 0) {
+    panel.style.transition = 'none' // 拖拽時不需要動畫，才能即時跟手
+    panel.style.bottom = `-${deltaY}px`
+  } else {
+    panel.style.transition = ''
+    panel.style.bottom = ''
+  }
+}
+
+function onPanelTouchEnd(e: TouchEvent) {
+  const panel = panelRef.value
+  if (!panel) return
+
+  const deltaY = e.changedTouches[0].clientY - _touchStartY
+
+  // 判斷是否觸發關閉（向下拖拽超過 80px 且處於頂部）
+  if (panel.scrollTop <= 0 && deltaY > 80) {
+    // 【方案 A：動畫關閉】
+    // 給 bottom 加上平滑動畫，並將其設為 -100vh 移出螢幕外
+    panel.style.transition = 'bottom .2s ease-out'
+    panel.style.bottom = '-100vh'
+    
+    // 等 200ms 動畫結束後，執行真正的關閉邏輯與清理
+    setTimeout(() => {
+      doClose()
+    }, 200)
+
+  } else if (deltaY > 0) {
+    // 【方案 B：動畫復位】
+    // 有被向下拉但沒超過 80px，平滑彈回原本的 bottom: 0
+    panel.style.transition = 'bottom .3s cubic-bezier(0.32, 0.72, 0, 1)'
+    panel.style.bottom = '0px'
+    
+    // 動畫結束後清除 transition 恢復乾淨狀態
+    setTimeout(() => {
+      if (panel) panel.style.transition = ''
+    }, 300)
+  }
 }
 
 function sidebarItemCount(tripId: string, delta: number) {
@@ -1339,6 +1399,7 @@ function cancelNewTag() {
   display: flex; align-items: center; justify-content: center; padding: 24px;
 }
 .trips-modal {
+  position: relative;
   width: min(max(70vw, calc(494px + 35.7vw)), 100%);
   max-width: 100vw;
   max-height: 88vh;
@@ -1361,8 +1422,13 @@ function cancelNewTag() {
   outline: none; transition: border-color .15s;
 }
 .trips-modal__title:focus { border-color: var(--accent); }
-.trips-modal__close { color: var(--text-dim); font-size: 16px; background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0; }
-.trips-modal__close:hover { background: var(--surface2); color: var(--text); }
+.trips-modal__trash {
+  flex-shrink: 0; background: none; border: none; cursor: pointer; padding: 6px;
+  border-radius: 8px; color: var(--text-dim); display: flex; align-items: center; justify-content: center;
+  transition: color .14s, background .14s;
+}
+.trips-modal__trash:hover { background: var(--surface2); color: var(--text); }
+.trips-modal__trash:disabled { opacity: .4; cursor: not-allowed; }
 .trips-modal__body {
   width: min(max(70%, calc(494px + 35.7%)), 100%);
   margin: auto;
@@ -1423,7 +1489,7 @@ function cancelNewTag() {
 }
 
 /* Tags */
-.trips-linked-row {display: flex; justify-content: space-between;}
+.trips-linked-row { display: flex; }
 /* 已預定票券 + 票券連結 同列 */
 .trips-booked-row { display: flex; flex-direction: row; align-items: center; gap: 14px; }
 .trips-check { display: flex; align-items: center; gap: 8px; flex-shrink: 0; cursor: pointer; }
@@ -1505,6 +1571,27 @@ function cancelNewTag() {
   .trips-bcol--addtag {
     flex: 0 0 auto;
     scroll-snap-align: none;
+  }
+
+  .trips-board, .trips-bcol__cards {
+    list-style: none;
+    display: flex;
+    gap: 15px;
+    overflow-x: auto;
+    li {
+      flex-shrink: 0;
+      width: 90px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 700;
+      padding: 12px 12px;
+    }
+    .active {
+      border-bottom: 4px solid #ff7800;
+    }
+  }
+  .trips-bcol__cards::-webkit-scrollbar,   .trips-board::-webkit-scrollbar {
+    display: none;
   }
 }
 </style>

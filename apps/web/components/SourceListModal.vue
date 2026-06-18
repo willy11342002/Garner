@@ -16,7 +16,6 @@
             <img v-if="s.thumbnail_url" :src="s.thumbnail_url" :alt="s.title || ''" class="slm__thumb">
             <span v-else class="slm__thumb slm__thumb--ph">{{ sourceEmoji(s.source_type) }}</span>
             <span class="slm__name">{{ s.title || s.url || '來源' }}</span>
-            <span class="slm__type">{{ sourceLabel(s.source_type) }}</span>
           </button>
         </div>
       </div>
@@ -100,10 +99,7 @@ function sourceLabel(t: string | null) {
   flex: 1; min-width: 0; font-size: 13px; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.slm__type {
-  flex-shrink: 0; font-family: var(--font-mono); font-size: 9.5px; color: var(--text-dim);
-  border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px;
-}
+
 
 .slm-fade-enter-active, .slm-fade-leave-active { transition: opacity .18s ease; }
 .slm-fade-enter-from, .slm-fade-leave-to { opacity: 0; }
