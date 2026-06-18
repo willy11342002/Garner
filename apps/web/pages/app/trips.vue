@@ -1218,6 +1218,12 @@ function cancelNewTag() {
 .trips-doc__title {
   font-family: var(--font-brand); font-weight: 700; font-size: 32px;
   letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 10px; outline: none; border-radius: 6px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  line-clamp: 1;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
 }
 .trips-doc__title:focus { background: var(--surface2); }
 .trips-doc__sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
@@ -1467,7 +1473,8 @@ function cancelNewTag() {
     transition: transform .3s cubic-bezier(.4, 0, .2, 1);
     will-change: transform;
   }
-  .trips-doc__top { flex-direction: column; }
+  .trips-doc__top { flex-wrap: wrap; align-items: center; }
+  .trips-doc__actions { width: 100%; padding-top: 0; }
   .trips-back-btn {
     display: flex; align-items: center; justify-content: center;
     width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
