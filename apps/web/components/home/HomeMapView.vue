@@ -37,6 +37,7 @@ interface PlaceDetails {
 const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const gmap = useGlobalMap()
+const { toggle: chainToggle, isInChain } = useChain()
 
 // ── Map state ─────────────────────────────────────────────────────────────────
 const mapContainer = ref<HTMLElement | null>(null)
@@ -221,6 +222,16 @@ function openItem(itemId: string) {
   open(itemId)
 }
 
+async function toggleChain(itemId: string) {
+  let item = itemStore.items.find(i => i.id === itemId)
+  if (!item) {
+    try {
+      item = await apiFetch<import('~/types/api').Item>(`/items/${itemId}`)
+    } catch { return }
+  }
+  chainToggle(item)
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 const isMounted = ref(false)
 
@@ -313,6 +324,15 @@ watch(gmap.locationVersion, () => {
               </div>
             </div>
             <div class="map-drawer__item-actions">
+              <button
+                class="map-drawer__action map-drawer__action--chain"
+                :class="{ 'map-drawer__action--chain-active': isInChain(loc.item_id) }"
+                :title="isInChain(loc.item_id) ? '從 AI 移除' : '加入 AI'"
+                @click.stop="toggleChain(loc.item_id)"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                {{ isInChain(loc.item_id) ? '已加入' : '加入 AI' }}
+              </button>
               <button
                 class="map-drawer__action map-drawer__action--delete"
                 @click.stop="deleteLocation(loc)"
@@ -571,6 +591,20 @@ watch(gmap.locationVersion, () => {
   background: rgba(239, 68, 68, 0.08);
   color: #dc2626;
   border-color: rgba(239, 68, 68, 0.2);
+}
+
+.map-drawer__action--chain {
+  background: var(--surface2);
+  color: var(--text-mid);
+  border-color: var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.map-drawer__action--chain-active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent-bdr);
 }
 
 /* ── No-location section ── */

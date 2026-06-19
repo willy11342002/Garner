@@ -39,7 +39,6 @@ function openTrip() {
   border: 1px solid var(--border2);
   border-left: 3px solid var(--accent);
   border-radius: 10px;
-  width: 480px;
   max-width: 480px;
 }
 

@@ -85,6 +85,8 @@
             </div>
           </template>
 
+          <ChatReportCard v-if="msg.role === 'assistant' && draftMap[msg.id]" :draft="draftMap[msg.id]" />
+          <ChatTripCard v-if="msg.role === 'assistant' && tripDraftMap[msg.id]" :draft="tripDraftMap[msg.id]" />
           <div class="msg__bubble">
             <template v-if="msg.role === 'assistant'">
               <TiptapEditor :model-value="msg.content" readonly />
@@ -95,7 +97,7 @@
       </template>
 
       <!-- Streaming / loading -->
-      <div v-if="loading || streamingText" class="msg msg--assistant">
+      <div v-if="loading || streamingText || liveDraft || liveTripDraft" class="msg msg--assistant">
         <div v-if="liveProcess.thinking || liveProcess.steps.length" class="process-block">
           <button class="process-block__toggle" @click="toggleThinking('live')">
             <span class="process-block__icon">💭</span>
@@ -143,6 +145,8 @@
         <div v-if="streamingText" class="msg__bubble msg__bubble--streaming">
           <TiptapEditor :model-value="streamingText" readonly class="streaming-md" />
         </div>
+        <ChatReportCard v-if="liveDraft" :draft="liveDraft" />
+        <ChatTripCard v-if="liveTripDraft" :draft="liveTripDraft" />
       </div>
     </div>
 
@@ -182,7 +186,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
+import type { ChatMessage, ChatSession, ChatSessionDetail, ChatSource, ReportDraft, TripDraft, UsageSummary } from '~/types/api'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -242,6 +246,11 @@ const openThinking = ref<Set<string>>(new Set(['live']))
 const openSteps = ref<Set<string>>(new Set())
 const openContexts = ref<Set<string>>(new Set())
 
+const draftMap = ref<Record<string, ReportDraft>>({})
+const liveDraft = ref<ReportDraft | null>(null)
+const tripDraftMap = ref<Record<string, TripDraft>>({})
+const liveTripDraft = ref<TripDraft | null>(null)
+
 function toggleStep(msgId: string, stepIdx: number) {
   const key = `${msgId}-${stepIdx}`
   const s = openSteps.value
@@ -261,6 +270,8 @@ const inputEl = ref<HTMLTextAreaElement | null>(null)
 function resetProcess() {
   liveProcess.value = { thinking: '', steps: [], sources: [] }
   streamingText.value = ''
+  liveDraft.value = null
+  liveTripDraft.value = null
   openThinking.value = new Set(['live'])
   openSources.value.delete('live')
 }
@@ -324,7 +335,7 @@ async function send() {
   }
 
   try {
-    const resp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages`, {
+    const postResp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -332,13 +343,20 @@ async function send() {
       },
       body: JSON.stringify({ content, ...(itemIds.length ? { item_ids: itemIds } : {}) }),
     })
-    if (!resp.ok) throw new Error('request failed')
+    if (!postResp.ok) throw new Error('request failed')
 
-    const reader = resp.body!.getReader()
+    const { message_id: messageId } = await postResp.json() as { message_id: string }
+
+    const sseResp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages/${messageId}/stream`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+    if (!sseResp.ok) throw new Error('stream failed')
+
+    const reader = sseResp.body!.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let pendingCitedSources: ChatSource[] = []
-    const assistantId = crypto.randomUUID()
+    const assistantId = messageId
 
     while (true) {
       const { done, value } = await reader.read()
@@ -367,11 +385,19 @@ async function send() {
           liveProcess.value.sources = data as ChatSource[]
         } else if (event === 'cited_sources') {
           pendingCitedSources = data as ChatSource[]
+        } else if (event === 'report_draft') {
+          liveDraft.value = data as ReportDraft
+          await nextTick(); scrollBottom()
+        } else if (event === 'trip_draft') {
+          liveTripDraft.value = data as TripDraft
+          await nextTick(); scrollBottom()
         } else if (event === 'delta') {
           streamingText.value += data.text
           await nextTick(); scrollBottom()
         } else if (event === 'done') {
           processMap.value[assistantId] = { thinking: liveProcess.value.thinking, steps: liveProcess.value.steps, sources: liveProcess.value.sources }
+          if (liveDraft.value) draftMap.value[assistantId] = liveDraft.value
+          if (liveTripDraft.value) tripDraftMap.value[assistantId] = liveTripDraft.value
           openThinking.value.delete('live')
           openThinking.value.add(assistantId)
 

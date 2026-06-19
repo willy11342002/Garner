@@ -5,6 +5,7 @@ const { searchSemantic } = useSearch()
 const itemStore = useItemStore()
 const { open: openItemModal } = useItemModal()
 const { t } = useI18n()
+const { toggle: chainToggle, isInChain } = useChain()
 
 const query = ref('')
 const results = ref<Item[]>([])
@@ -96,11 +97,6 @@ function sourceLabel(url: string) {
   return t('home.source_article')
 }
 
-function excerpt(summary: string | null) {
-  if (!summary) return ''
-  return summary.length > 120 ? summary.slice(0, 120) + '...' : summary
-}
-
 function cardTitle(url: string, title: string | null) {
   if (title) return title
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
@@ -164,29 +160,31 @@ function cardTitle(url: string, title: string | null) {
       <div v-if="results.length === 0" class="semantic-empty">
         {{ t('home.semantic_empty') }}
       </div>
-      <div v-else class="semantic-list">
-        <button
+      <div v-else class="card-grid">
+        <a
           v-for="item in results"
           :key="item.id"
-          class="semantic-card"
-          @click="openItemModal(item.id)"
+          class="card"
+          :href="`/app/item/${item.id}`"
+          @click.prevent="openItemModal(item.id)"
         >
-          <div class="semantic-card__thumb">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" alt="" />
-            <div v-else class="placeholder placeholder--b">
+          <div class="card__thumb">
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
+            <div v-else class="placeholder placeholder--a">
               <div class="placeholder__stripes"></div>
             </div>
+            <span class="source-badge">{{ sourceLabel(item.url) }}</span>
+            <button
+              class="card-chain-btn"
+              :class="{ 'card-chain-btn--active': isInChain(item.id) }"
+              :title="isInChain(item.id) ? '移出選取' : '加入 AI 對話'"
+              @click.prevent.stop="chainToggle(item)"
+            >{{ isInChain(item.id) ? '−' : '+' }}</button>
           </div>
-          <div class="semantic-card__body">
-            <p class="semantic-card__title">{{ cardTitle(item.url, item.title) }}</p>
-            <p v-if="excerpt(item.notes_md)" class="semantic-card__excerpt">
-              {{ excerpt(item.notes_md) }}
-            </p>
-            <div class="semantic-card__meta">
-              <span class="source-badge source-badge--sm">{{ sourceLabel(item.url) }}</span>
-            </div>
+          <div class="card__body">
+            <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
           </div>
-        </button>
+        </a>
       </div>
 
       <!-- Infinite scroll sentinel -->
@@ -196,3 +194,50 @@ function cardTitle(url: string, title: string | null) {
     </template>
   </div>
 </template>
+
+<style scoped>
+.card-chain-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border2);
+  background: var(--surface);
+  color: var(--text-mid);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .15s, background .15s, border-color .15s, color .15s;
+  z-index: 2;
+}
+.card:hover .card-chain-btn {
+  opacity: 1;
+}
+@media (hover: none) {
+  .card-chain-btn {
+    opacity: 1;
+  }
+}
+.card-chain-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.card-chain-btn--active {
+  opacity: 1;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.card-chain-btn--active:hover {
+  background: color-mix(in oklab, var(--accent) 70%, var(--surface));
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+</style>
