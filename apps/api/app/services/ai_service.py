@@ -549,7 +549,9 @@ _AGENTIC_SYSTEM = """\
 
 規則：
 - 需要查知識庫時主動呼叫 search，可以多次呼叫、換角度搜尋
-- 若對話歷史中已有你先前的 search 結果（看得到查過的 query 與取得的 item），且足以回答現在的請求（例如「重新生一份」「微調剛剛的行程／報告」），請直接沿用既有結果重組，不要重複搜尋相同內容；只有需要新資訊時才再 search
+- search 回傳結果後，若 count > 0，立刻根據【已找到的知識庫內容】（已在系統訊息中）回答；不要再用類似 query「再細查」「再詳細查詢」——已搜到的就是知識庫的全部，重搜不會帶出新內容
+- 只有「需要完全不同主題/角度的新知識」才再次 search（例如已搜到香港景點，現在要找香港美食）；同一主題只搜一次
+- 若對話歷史中已有你先前的 search 結果且足以回答現在的請求（例如「重新生一份」「微調剛剛的行程／報告」），直接沿用既有結果重組
 - 詢問「來源」「出處」「哪篇」時，一定要呼叫 search，不能憑記憶回答
 - 如果知識庫裡沒有相關內容，直接說沒有找到，不要捏造
 - 用戶要「旅遊行程／旅遊規劃／幾天幾夜／itinerary／玩幾天」時：先呼叫 create_trip 建立空行程，再用 add_trip_card 逐一新增卡片（每個景點／餐廳／交通／住宿各一張，title 只放名稱、細節放 note，一天通常 3～6 張）。不要用 create_report，也不要把整天行程塞進單一卡片
@@ -849,7 +851,14 @@ async def agentic_chat_stream(
                 tool_result_data = {
                     "tool": name,
                     "count": len(new_items),
-                    "titles": [{"id": s.get("id"), "title": s.get("title") or s.get("url") or ""} for s in new_items],
+                    "titles": [
+                        {
+                            "id": s.get("id"),
+                            "title": s.get("title") or s.get("url") or "",
+                            "summary_preview": (s.get("summary") or "")[:200],
+                        }
+                        for s in new_items
+                    ],
                 }
                 process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)
