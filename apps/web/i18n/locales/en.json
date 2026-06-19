@@ -317,7 +317,9 @@
       "get_token": "Get Token",
       "generating": "Generating…",
       "token_label": "Copy and paste into Shortcut settings",
+      "copy": "Copy",
       "copied": "Copied!",
+      "copy_failed": "Auto-copy failed — long-press the token to select and copy manually",
       "token_hint": "Token is shown only once — copy it now",
       "back": "← Back to download"
     },

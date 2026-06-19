@@ -317,7 +317,9 @@
       "get_token": "取得 Token",
       "generating": "生成中…",
       "token_label": "複製後貼入捷徑設定",
+      "copy": "複製",
       "copied": "已複製！",
+      "copy_failed": "自動複製失敗，請長按 Token 手動選取複製",
       "token_hint": "Token 只顯示一次，請立即複製",
       "back": "← 返回下載捷徑"
     },

@@ -92,9 +92,19 @@
           </template>
           <template v-else>
             <p class="connected__ios-label">{{ t('connected.ios.token_label') }}</p>
-            <button class="connected__token-btn" :class="{ copied: iosCopied }" @click="copyIosToken">
-              <span class="connected__token-text">{{ iosCopied ? t('connected.ios.copied') : iosToken }}</span>
-            </button>
+            <div class="connected__token-row" :class="{ expanded: iosCopyFailed }">
+              <span class="connected__token-display" :class="{ expanded: iosCopyFailed }">{{ iosToken }}</span>
+              <button class="connected__copy-btn" :class="{ copied: iosCopied }" :title="iosCopied ? t('connected.ios.copied') : t('connected.ios.copy')" @click="copyIosToken">
+                <svg v-if="!iosCopied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </button>
+            </div>
+            <p v-if="iosCopyFailed" class="connected__copy-failed-hint">{{ t('connected.ios.copy_failed') }}</p>
             <p class="connected__ios-hint">{{ t('connected.ios.token_hint') }}</p>
           </template>
           <button class="connected__skip-link" @click="iosStep = 'download'">
@@ -150,6 +160,7 @@ const iosStep = ref<'download' | 'token'>('download')
 const iosToken = ref<string | null>(null)
 const iosLoading = ref(false)
 const iosCopied = ref(false)
+const iosCopyFailed = ref(false)
 let sessionCache: { access_token: string } | null = null
 
 onMounted(async () => {
@@ -227,9 +238,28 @@ async function generateIosToken() {
 
 async function copyIosToken() {
   if (!iosToken.value) return
-  await navigator.clipboard.writeText(iosToken.value)
-  iosCopied.value = true
-  setTimeout(() => { iosCopied.value = false }, 2000)
+  let ok = false
+  try {
+    await navigator.clipboard.writeText(iosToken.value)
+    ok = true
+  } catch {
+    // iOS Safari fallback: select + execCommand
+    const el = document.createElement('input')
+    el.value = iosToken.value
+    el.style.cssText = 'position:fixed;opacity:0;top:0;left:0'
+    document.body.appendChild(el)
+    el.focus()
+    el.setSelectionRange(0, el.value.length)
+    ok = document.execCommand('copy')
+    document.body.removeChild(el)
+  }
+  if (ok) {
+    iosCopyFailed.value = false
+    iosCopied.value = true
+    setTimeout(() => { iosCopied.value = false }, 2000)
+  } else {
+    iosCopyFailed.value = true
+  }
 }
 </script>
 
@@ -422,36 +452,63 @@ async function copyIosToken() {
 }
 .connected__ios-btn:disabled { opacity: 0.5; cursor: default; }
 
-.connected__token-btn {
+.connected__token-row {
   width: 100%;
-  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 6px;
+  transition: border-color 0.15s;
+}
+.connected__token-row:focus-within { border-color: var(--accent); }
+
+.connected__token-display {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
   font-size: 11px;
   font-family: var(--font-mono, monospace);
-  color: var(--accent);
-  cursor: pointer;
-  word-break: break-all;
-  text-align: center;
-  transition: background 0.15s, border-color 0.15s;
-  margin-bottom: 6px;
-}
-.connected__token-btn:hover { border-color: var(--accent); }
-.connected__token-btn.copied {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.connected__token-text {
-  display: block;
+  color: var(--text-mid);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: all;
+}
+.connected__token-display.expanded {
+  white-space: normal;
+  word-break: break-all;
+  overflow: visible;
+}
+.connected__token-row.expanded { align-items: flex-start; }
+
+.connected__copy-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.connected__copy-btn:hover { background: var(--surface2); color: var(--text); }
+.connected__copy-btn.copied { color: var(--accent); }
+
+.connected__copy-failed-hint {
+  font-size: 11px;
+  color: var(--danger, #e85555);
+  margin: 0 0 6px;
+  line-height: 1.5;
+  text-align: left;
+  width: 100%;
 }
 
 .connected__ios-hint {
