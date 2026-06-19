@@ -1384,7 +1384,16 @@ function cancelNewTag() {
 .trips-addcol-btn:hover { border-color: var(--accent-bdr); color: var(--accent); background: var(--accent-dim); }
 
 /* Date board */
-.trips-dboard { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
+.trips-dboard {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 16px;
+  align-items: stretch;
+}
 .trips-dcol { flex: 0 0 240px; display: flex; flex-direction: column; gap: 10px; }
 .trips-dcol__head { padding: 0 2px; margin-bottom: 2px; }
 .trips-dcol__month { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }

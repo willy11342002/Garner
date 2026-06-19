@@ -49,7 +49,7 @@ garner/
 
 ### API services（`apps/api/app/services/`）
 - `item_service` — Item 建立與處理流程主入口
-- `ai_service` — OpenRouter 摘要 + OpenAI embedding 產生；agentic tools：`save_url`（存入 URL）、`search_knowledge`（查詢）、`revise_report`（修改報告）、`ai_edit_trip_stream`（編輯行程）
+- `ai_service/` — Gemini native API（LLM）+ OpenRouter embedding（text-embedding-3-small 1536d）；拆成子模組：`_client`（Gemini 呼叫基礎）、`chat`（agentic chat loop）、`embed`（embedding）、`ingest`（內容分析/標籤/摘要）、`report`（報告產生）、`chain`（關聯鏈分析）、`tools`（stream_tool_loop）
 - `search_service` — 語意 / 關鍵字搜尋；支援按 `item_ids` 直接查詢（用於 save_url 後快速回傳新存入的知識）
 - `chat_service` — Agentic chat 對話處理
 - `stream_registry` — Chat SSE 串流管理：asyncio.Queue pub/sub，解耦 POST（產生）與 GET SSE（消費），支援斷線重連

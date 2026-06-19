@@ -150,35 +150,39 @@
               <template v-if="msg.role === 'assistant' && blocksMap[msg.id]">
                 <template v-for="(block, bi) in blocksMap[msg.id].blocks" :key="bi">
                   <p v-if="block.type === 'thinking'" class="process-body__reasoning">{{ (block as ThinkingBlock).content }}</p>
-                  <div v-else-if="block.type === 'tool'" class="process-step">
-                    <div class="process-body__tool-call">
-                      <span class="process-body__step-icon">{{ stepIcon((block as ToolBlock).toolCall.name) }}</span>
-                      <code class="process-body__tool-name">{{ (block as ToolBlock).toolCall.name }}</code>
-                      <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
-                      <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
-                      <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
-                        <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
-                        <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
-                        <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
-                      </template>
-                    </div>
-                    <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
-                      <span class="process-body__step-icon">✓</span>
-                      <span>{{ stepResultLabel(block) }}</span>
-                      <button
-                        v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
-                        class="process-body__step-toggle"
-                        @click="toggleStep(msg.id, bi)"
-                      >
-                        <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`${msg.id}-${bi}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
-                      </button>
-                    </div>
-                    <Transition name="thinking">
-                      <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${bi}`)" class="process-body__tool-titles">
-                        <button v-for="item in (block as ToolBlock).toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
+                  <template v-else-if="block.type === 'tool'">
+                    <div class="process-step">
+                      <div class="process-body__tool-call">
+                        <span class="process-body__step-icon">{{ stepIcon((block as ToolBlock).toolCall.name) }}</span>
+                        <code class="process-body__tool-name">{{ (block as ToolBlock).toolCall.name }}</code>
+                        <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
+                        <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
+                        <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
+                          <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
+                          <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
+                          <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
+                        </template>
                       </div>
-                    </Transition>
-                  </div>
+                      <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
+                        <span class="process-body__step-icon">✓</span>
+                        <span>{{ stepResultLabel(block) }}</span>
+                        <button
+                          v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
+                          class="process-body__step-toggle"
+                          @click="toggleStep(msg.id, bi)"
+                        >
+                          <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`${msg.id}-${bi}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
+                      </div>
+                      <Transition name="thinking">
+                        <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${bi}`)" class="process-body__tool-titles">
+                          <button v-for="item in (block as ToolBlock).toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
+                        </div>
+                      </Transition>
+                    </div>
+                    <ChatReportCard v-if="(block as ToolBlock).toolCall.name === 'create_report' && draftMap[msg.id]" :draft="draftMap[msg.id]" />
+                    <ChatTripCard v-if="(block as ToolBlock).toolCall.name === 'create_trip' && tripDraftMap[msg.id]" :draft="tripDraftMap[msg.id]" />
+                  </template>
                   <div v-else-if="block.type === 'text'" class="msg__bubble">
                     <TiptapEditor :model-value="(block as TextBlock).content" readonly />
                   </div>
@@ -203,13 +207,11 @@
                     </div>
                   </div>
                 </Transition>
-                <ChatReportCard v-if="draftMap[msg.id]" :draft="draftMap[msg.id]" />
-                <ChatTripCard v-if="tripDraftMap[msg.id]" :draft="tripDraftMap[msg.id]" />
               </template>
 
               <!-- assistant 訊息：舊格式（歷史訊息，無 blocksMap） -->
               <template v-if="msg.role === 'assistant' && !blocksMap[msg.id]">
-                <template v-if="processMap[msg.id]">
+                <template v-if="processMap[msg.id] && (processMap[msg.id].thinking || processMap[msg.id].steps?.length)">
                   <div class="process-block">
                     <button class="process-block__toggle" @click="toggleThinking(msg.id)">
                       <span class="process-block__icon">💭</span>
@@ -252,6 +254,8 @@
                     </Transition>
                   </div>
                 </template>
+                <ChatReportCard v-if="draftMap[msg.id]" :draft="draftMap[msg.id]" />
+                <ChatTripCard v-if="tripDraftMap[msg.id]" :draft="tripDraftMap[msg.id]" />
                 <div class="msg__bubble" :class="{ 'msg__bubble--has-sources': sourcesMap[msg.id]?.length }">
                   <TiptapEditor :model-value="msg.content" readonly />
                   <button
@@ -275,8 +279,6 @@
                     </div>
                   </div>
                 </Transition>
-                <ChatReportCard v-if="draftMap[msg.id]" :draft="draftMap[msg.id]" />
-                <ChatTripCard v-if="tripDraftMap[msg.id]" :draft="tripDraftMap[msg.id]" />
               </template>
 
               <!-- user 訊息：bubble -->
@@ -297,39 +299,43 @@
               <p v-if="block.type === 'thinking'" class="process-body__reasoning">{{ (block as ThinkingBlock).content }}</p>
 
               <!-- 工具呼叫 inline（不折疊） -->
-              <div v-else-if="block.type === 'tool'" class="process-step">
-                <div class="process-body__tool-call">
-                  <span class="process-body__step-icon">{{ stepIcon((block as ToolBlock).toolCall.name) }}</span>
-                  <code class="process-body__tool-name">{{ (block as ToolBlock).toolCall.name }}</code>
-                  <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
-                  <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
-                  <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
-                    <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
-                    <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
-                    <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
-                  </template>
-                </div>
-                <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
-                  <span class="process-body__step-icon">✓</span>
-                  <span>{{ stepResultLabel(block) }}</span>
-                  <button
-                    v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
-                    class="process-body__step-toggle"
-                    @click="toggleStep('live', bi)"
-                  >
-                    <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`live-${bi}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
-                  </button>
-                </div>
-                <div v-else class="process-body__tool-result process-body__tool-result--pending">
-                  <span class="process-body__step-icon">⋯</span>
-                  <span>{{ stepPendingLabel((block as ToolBlock).toolCall.name) }}</span>
-                </div>
-                <Transition name="thinking">
-                  <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`live-${bi}`)" class="process-body__tool-titles">
-                    <div v-for="title in (block as ToolBlock).toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+              <template v-else-if="block.type === 'tool'">
+                <div class="process-step">
+                  <div class="process-body__tool-call">
+                    <span class="process-body__step-icon">{{ stepIcon((block as ToolBlock).toolCall.name) }}</span>
+                    <code class="process-body__tool-name">{{ (block as ToolBlock).toolCall.name }}</code>
+                    <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
+                    <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
+                    <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
+                      <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
+                      <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
+                      <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
+                    </template>
                   </div>
-                </Transition>
-              </div>
+                  <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
+                    <span class="process-body__step-icon">✓</span>
+                    <span>{{ stepResultLabel(block) }}</span>
+                    <button
+                      v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
+                      class="process-body__step-toggle"
+                      @click="toggleStep('live', bi)"
+                    >
+                      <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`live-${bi}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                  </div>
+                  <div v-else class="process-body__tool-result process-body__tool-result--pending">
+                    <span class="process-body__step-icon">⋯</span>
+                    <span>{{ stepPendingLabel((block as ToolBlock).toolCall.name) }}</span>
+                  </div>
+                  <Transition name="thinking">
+                    <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`live-${bi}`)" class="process-body__tool-titles">
+                      <div v-for="title in (block as ToolBlock).toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                    </div>
+                  </Transition>
+                </div>
+                <ChatReportCard v-if="(block as ToolBlock).toolCall.name === 'create_report' && liveDraft" :draft="liveDraft" />
+                <ChatTripCard v-if="(block as ToolBlock).toolCall.name === 'create_trip' && liveTripDraft" :draft="liveTripDraft" />
+              </template>
 
               <!-- 文字 bubble -->
               <div v-else-if="block.type === 'text'" class="msg__bubble msg__bubble--streaming">
@@ -366,8 +372,6 @@
               </Transition>
             </template>
 
-            <ChatReportCard v-if="liveDraft" :draft="liveDraft" />
-            <ChatTripCard v-if="liveTripDraft" :draft="liveTripDraft" />
           </div>
         </div>
 
