@@ -1163,8 +1163,6 @@ _VIDEO_ANALYSIS_PROMPT = """\
 
 
 _GOOGLE_AI_BASE = "https://generativelanguage.googleapis.com"
-# Extract the bare model name for Google AI API (strip "google/" prefix if present)
-_GEMINI_MODEL = "gemini-2.5-flash"
 
 MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB — Google File API limit
 
@@ -1265,7 +1263,7 @@ async def describe_video(video_bytes: bytes, mime_type: str = "video/mp4") -> st
     try:
         async with httpx.AsyncClient(timeout=180) as client:
             resp = await client.post(
-                f"{_GOOGLE_AI_BASE}/v1beta/models/{_GEMINI_MODEL}:generateContent",
+                f"{_GOOGLE_AI_BASE}/v1beta/models/{_video_llm().removeprefix('google/')}:generateContent",
                 headers={"X-Goog-Api-Key": settings.google_ai_api_key},
                 json={
                     "contents": [{
