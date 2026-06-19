@@ -50,9 +50,10 @@ async def create_item(
     current_user: CurrentUser,
     db: DbSession,
     _quota: SaveQuota,
+    mode: str | None = None,
 ):
     user_id = UUID(current_user["sub"])
-    response_mode = request.headers.get("X-Response-Mode", "sse")
+    response_mode = mode or request.headers.get("X-Response-Mode", "sse")
 
     if response_mode == "async":
         item = await item_service.create_item(db, user_id, data, background_tasks)
