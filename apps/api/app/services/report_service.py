@@ -38,6 +38,110 @@ async def _to_read(db: AsyncSession, user_id: UUID, report: Report) -> ReportRea
     )
 
 
+# ── Report AI FAB (SSE streaming) ──────────────────────────────────────────
+
+_REPORT_EDIT_SYSTEM = """\
+你是一個 AI 助理，負責幫用戶修改他們的報告。
+用戶會提供修改指令，你可以：
+1. 使用 search 工具查詢用戶的個人知識庫，補充相關資料
+2. 使用 update_report 工具更新報告標題（可選）與內文（必填）
+
+報告標題：{title}
+
+目前報告內文：
+{body_md}
+"""
+
+_REPORT_EDIT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "搜尋用戶的個人知識庫，找相關文章、筆記、研究資料。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "查詢字串"},
+                    "limit": {"type": "integer", "description": "回傳筆數（預設 5）", "default": 5},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_report",
+            "description": "更新報告的標題（可選）和完整 Markdown 內文。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "新標題，不更改時省略"},
+                    "body_md": {"type": "string", "description": "完整的 Markdown 內文（含所有修改）"},
+                },
+                "required": ["body_md"],
+            },
+        },
+    },
+]
+
+
+async def ai_edit_report_stream(
+    db: AsyncSession,
+    user_id: UUID,
+    report_id: UUID,
+    instruction: str,
+    history: list[dict] | None = None,
+):
+    """SSE streaming agentic report edit (search + update_report tools)."""
+    from app.services.ai_service.tools import stream_tool_loop
+    from app.services.ai_service._client import _sse
+
+    report = await crud_reports.get_one(db, user_id, report_id)
+    if report is None:
+        yield _sse("error", {"message": "Report not found"})
+        return
+
+    system = _REPORT_EDIT_SYSTEM.format(
+        title=report.title,
+        body_md=(report.body_md or "")[:16000],
+    )
+
+    async def execute_tool(name: str, args: dict) -> dict:
+        if name == "search":
+            from app.services.chat_service import rag_retrieve
+            query = args.get("query", "")
+            limit = int(args.get("limit", 5))
+            hits = await rag_retrieve(db, user_id, query, limit=limit)
+            items_out = [
+                {
+                    "id": str(ui.id),
+                    "title": ui.title or "",
+                    "summary": ui.summary or "",
+                    "tags": [t.name_zh for t in (ui.tags or [])],
+                }
+                for ui, _ in hits
+            ]
+            return {"count": len(items_out), "items": items_out}
+
+        if name == "update_report":
+            new_title = args.get("title") or None
+            new_body = args.get("body_md", "")
+            await crud_reports.update(
+                db, report,
+                title=new_title,
+                body_md=new_body,
+                last_edited_by="ai",
+            )
+            read = await _to_read(db, user_id, report)
+            return {"ok": True, "_report": read.model_dump(mode="json")}
+
+        return {"ok": False, "error": f"unknown tool: {name}"}
+
+    async for sse in stream_tool_loop(system, instruction, _REPORT_EDIT_TOOLS, execute_tool, history=history):
+        yield sse
+
+
 # ── chat tool 入口 ──────────────────────────────────────────────────────────
 
 

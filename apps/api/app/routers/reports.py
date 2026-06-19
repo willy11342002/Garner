@@ -1,10 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.crud import reports as crud_reports
 from app.dependencies import CurrentUser, DbSession
-from app.schemas.report import ReportListItem, ReportRead, ReportReviseRequest, ReportUpdate
+from app.schemas.report import ReportAIEditRequest, ReportListItem, ReportRead, ReportReviseRequest, ReportUpdate
 from app.services import report_service
 
 router = APIRouter()
@@ -56,6 +57,27 @@ async def regenerate_report(report_id: UUID, current_user: CurrentUser, db: DbSe
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
+
+
+@router.post("/{report_id}/ai-edit")
+async def ai_edit_report(
+    report_id: UUID,
+    data: ReportAIEditRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """SSE streaming agentic edit with search + update_report tools."""
+    from app.services import ai_service
+
+    history = [t.model_dump() for t in data.history] if data.history else None
+    agen = report_service.ai_edit_report_stream(
+        db, UUID(current_user["sub"]), report_id, data.instruction.strip(), history=history
+    )
+    return StreamingResponse(
+        ai_service.with_heartbeat(agen),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)

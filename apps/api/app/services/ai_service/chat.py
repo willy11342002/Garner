@@ -1,9 +1,13 @@
 """Chat streams — simple chat_stream and full agentic_chat_stream with tool calling."""
 import logging
 
-import httpx
-
-from ._client import _gemini_call, _gemini_headers, _gemini_url, _to_gemini_body, _sse
+from ._client import (
+    _gemini_call,
+    _gemini_generate_stream,
+    _to_gemini_contents,
+    _make_config,
+    _sse,
+)
 
 logger = logging.getLogger("garner.chat")
 
@@ -222,7 +226,6 @@ async def chat_stream(
     created_article_title: str | None = None,
 ):
     """Yield text chunks from Gemini streaming response."""
-    import json as _json
 
     def _fmt_item(i: int, it: dict) -> str:
         lines = [f"[{i+1}] 標題：{it.get('title') or '(無標題)'}"]
@@ -254,32 +257,15 @@ async def chat_stream(
         query=query,
     )
 
-    body = _to_gemini_body([
+    messages = [
         {"role": "system", "content": _CHAT_SYSTEM},
         {"role": "user", "content": user_content},
-    ])
-    async with httpx.AsyncClient(timeout=60) as client:
-        async with client.stream(
-            "POST", _gemini_url(stream=True),
-            headers=_gemini_headers(),
-            json=body,
-        ) as resp:
-            if resp.status_code == 401:
-                raise RuntimeError("Gemini service unavailable")
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:]
-                if data == "[DONE]":
-                    break
-                try:
-                    chunk = _json.loads(data)
-                    for part in chunk["candidates"][0]["content"].get("parts", []):
-                        if "text" in part and part["text"]:
-                            yield part["text"]
-                except Exception:
-                    continue
+    ]
+
+    async for chunk in _gemini_generate_stream(messages):
+        for part in (chunk.candidates[0].content.parts if chunk.candidates else []):
+            if part.text:
+                yield part.text
 
 
 async def compress_memory(
@@ -378,46 +364,23 @@ async def agentic_chat_stream(
 
     MAX_ROUNDS = 40
     final_answer_done = False
+
     for _round in range(MAX_ROUNDS):
         logger.debug("agentic round %d/%d (history msgs=%d)", _round + 1, MAX_ROUNDS, len(messages))
         sys_content = _sys_with_context()
 
-        request_body = _to_gemini_body(
-            [{"role": "system", "content": sys_content}] + messages,
-            tools=_AGENTIC_TOOLS,
-        )
-
+        full_messages = [{"role": "system", "content": sys_content}] + messages
         accumulated_text = ""
         tool_calls_list: list[dict] = []
 
-        async with httpx.AsyncClient(timeout=90) as client:
-            async with client.stream(
-                "POST", _gemini_url(stream=True),
-                headers=_gemini_headers(),
-                json=request_body,
-            ) as resp:
-                if resp.status_code == 401:
-                    raise RuntimeError("Gemini service unavailable")
-                resp.raise_for_status()
-
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[6:]
-                    if raw == "[DONE]":
-                        break
-                    try:
-                        chunk = _json.loads(raw)
-                        parts = chunk["candidates"][0]["content"].get("parts", [])
-                        for part in parts:
-                            if "text" in part and part["text"]:
-                                accumulated_text += part["text"]
-                                yield _sse("delta", {"text": part["text"]})
-                            elif "functionCall" in part:
-                                fc = part["functionCall"]
-                                tool_calls_list.append({"name": fc["name"], "args": fc.get("args", {})})
-                    except Exception:
-                        continue
+        async for chunk in _gemini_generate_stream(full_messages, tools=_AGENTIC_TOOLS):
+            for part in (chunk.candidates[0].content.parts if chunk.candidates else []):
+                if part.text:
+                    accumulated_text += part.text
+                    yield _sse("delta", {"text": part.text})
+                elif part.function_call:
+                    fc = part.function_call
+                    tool_calls_list.append({"name": fc.name, "args": dict(fc.args or {})})
 
         if not tool_calls_list:
             final_answer_done = True
@@ -518,34 +481,16 @@ async def agentic_chat_stream(
             })
 
     if not final_answer_done:
-        logger.debug("max rounds reached with pending tool calls → forcing final synthesis (no tools)")
+        logger.debug("max rounds reached → forcing final synthesis (no tools)")
         accumulated_text = ""
-        final_body = _to_gemini_body(
-            [{"role": "system", "content": _sys_with_context()}] + messages,
-        )
-        async with httpx.AsyncClient(timeout=90) as client:
-            async with client.stream(
-                "POST", _gemini_url(stream=True),
-                headers=_gemini_headers(),
-                json=final_body,
-            ) as resp:
-                if resp.status_code == 401:
-                    raise RuntimeError("Gemini service unavailable")
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[6:]
-                    if raw == "[DONE]":
-                        break
-                    try:
-                        parts = _json.loads(raw)["candidates"][0]["content"].get("parts", [])
-                        for part in parts:
-                            if "text" in part and part["text"]:
-                                accumulated_text += part["text"]
-                                yield _sse("delta", {"text": part["text"]})
-                    except Exception:
-                        continue
+        sys_content = _sys_with_context()
+        full_messages = [{"role": "system", "content": sys_content}] + messages
+
+        async for chunk in _gemini_generate_stream(full_messages):
+            for part in (chunk.candidates[0].content.parts if chunk.candidates else []):
+                if part.text:
+                    accumulated_text += part.text
+                    yield _sse("delta", {"text": part.text})
 
     logger.debug(
         "agentic stream done: reply_len=%d sources=%d steps=%d preview=%r",

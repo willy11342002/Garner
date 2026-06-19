@@ -1,17 +1,18 @@
-"""Gemini client primitives shared across all ai_service modules."""
+"""Gemini client primitives — uses google-genai SDK."""
 import asyncio
 import json
 import logging
+from typing import AsyncIterator
 
-import httpx
+import google.genai as genai
+from google.genai import types
 
 from app.core.config import settings
-from app.core.tracing import traced
 
 logger = logging.getLogger("garner.chat")
 
+# OpenRouter is still used for embeddings
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 _model_cache: dict[str, str] = {
     "llm": "gemini-2.5-flash",
@@ -19,9 +20,18 @@ _model_cache: dict[str, str] = {
     "embedding": "openai/text-embedding-3-small",
 }
 
+_gemini_client: genai.Client | None = None
+
+
+def _get_client() -> genai.Client:
+    global _gemini_client
+    if _gemini_client is None:
+        _gemini_client = genai.Client(api_key=settings.google_ai_api_key)
+    return _gemini_client
+
 
 async def load_model_configs() -> None:
-    """Load model config from app_settings (keys prefixed with 'model.') into the in-memory cache."""
+    """Load model config from app_settings (keys prefixed with 'model.') into cache."""
     from sqlalchemy import select
     from app.core.database import AsyncSessionLocal
     from app.models.app_setting import AppSetting
@@ -35,7 +45,7 @@ async def load_model_configs() -> None:
 
 
 def _normalize_gemini_model(name: str) -> str:
-    """Convert OpenRouter-style names (provider/model) to bare Gemini model IDs.
+    """Convert OpenRouter-style names to bare Gemini model IDs.
 
     google/gemini-2.5-flash → gemini-2.5-flash
     anthropic/claude-3-haiku → gemini-2.5-flash  (non-Gemini fallback)
@@ -44,7 +54,6 @@ def _normalize_gemini_model(name: str) -> str:
     if name.startswith("google/"):
         return name[len("google/"):]
     if "/" in name:
-        # Non-Gemini OpenRouter model (e.g. anthropic/...) — use default
         return "gemini-2.5-flash"
     return name
 
@@ -61,20 +70,8 @@ def _emb() -> str:
     return _model_cache["embedding"]
 
 
-def _gemini_headers() -> dict:
-    return {"X-Goog-Api-Key": settings.google_ai_api_key}
-
-
-def _gemini_url(stream: bool = False) -> str:
-    action = "streamGenerateContent" if stream else "generateContent"
-    url = f"{_GEMINI_BASE}/{_llm()}:{action}"
-    if stream:
-        url += "?alt=sse"
-    return url
-
-
-def _to_gemini_body(messages: list[dict], tools: list[dict] | None = None) -> dict:
-    """Convert OpenAI-format messages to Gemini native request body.
+def _to_gemini_contents(messages: list[dict]) -> tuple[str | None, list[dict]]:
+    """Convert OpenAI-format messages → (system_instruction, gemini_contents).
 
     Handles: system → systemInstruction, user/assistant/tool roles,
     multimodal image_url → inlineData, tool_calls → functionCall,
@@ -140,39 +137,80 @@ def _to_gemini_body(messages: list[dict], tools: list[dict] | None = None) -> di
             else:
                 contents.append({"role": "user", "parts": [fr_part]})
 
-    body: dict = {"contents": contents}
-    if system_text:
-        body["systemInstruction"] = {"parts": [{"text": system_text}]}
+    return system_text, contents
+
+
+def _oi_tools_to_sdk(tools: list[dict]) -> types.Tool:
+    """Convert OpenAI-format tool list to SDK types.Tool."""
+    declarations = []
+    for t in tools:
+        fn = t["function"]
+        declarations.append(types.FunctionDeclaration(
+            name=fn["name"],
+            description=fn.get("description", ""),
+            parameters=fn.get("parameters", {}),
+        ))
+    return types.Tool(function_declarations=declarations)
+
+
+def _make_config(
+    system_instr: str | None,
+    tools: list[dict] | None = None,
+) -> types.GenerateContentConfig | None:
+    kwargs: dict = {}
+    if system_instr:
+        kwargs["system_instruction"] = system_instr
     if tools:
-        body["tools"] = [{"functionDeclarations": [
-            {
-                "name": t["function"]["name"],
-                "description": t["function"].get("description", ""),
-                "parameters": t["function"].get("parameters", {}),
-            }
-            for t in tools
-        ]}]
-    return body
+        kwargs["tools"] = [_oi_tools_to_sdk(tools)]
+    return types.GenerateContentConfig(**kwargs) if kwargs else None
 
 
-async def _gemini_call(messages: list[dict], *, timeout: int = 90, tools: list[dict] | None = None) -> str:
-    body = _to_gemini_body(messages, tools=tools)
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            _gemini_url(),
-            headers=_gemini_headers(),
-            json=body,
-            timeout=timeout,
+async def _gemini_call(
+    messages: list[dict], *, timeout: int = 90, tools: list[dict] | None = None
+) -> str:
+    """Non-streaming Gemini call. Returns text."""
+    client = _get_client()
+    system_instr, contents = _to_gemini_contents(messages)
+    config = _make_config(system_instr, tools)
+    try:
+        response = await client.aio.models.generate_content(
+            model=_llm(),
+            contents=contents,
+            config=config,
         )
-        if resp.status_code == 401:
+        return response.text or ""
+    except genai.errors.ClientError as e:
+        if getattr(e, "status_code", None) in (401, 403):
             raise RuntimeError("Gemini service unavailable")
-        resp.raise_for_status()
-    parts = resp.json()["candidates"][0]["content"]["parts"]
-    return "".join(p.get("text", "") for p in parts).strip()
+        raise
 
 
 async def _llm_call(prompt: str, timeout: int = 90) -> str:
     return await _gemini_call([{"role": "user", "content": prompt}], timeout=timeout)
+
+
+async def _gemini_generate_stream(
+    messages: list[dict],
+    tools: list[dict] | None = None,
+) -> AsyncIterator:
+    """Yield raw SDK chunks from a Gemini streaming call.
+
+    Each chunk has .candidates[0].content.parts — text parts and/or functionCall parts.
+    """
+    client = _get_client()
+    system_instr, contents = _to_gemini_contents(messages)
+    config = _make_config(system_instr, tools)
+    try:
+        async for chunk in client.aio.models.generate_content_stream(
+            model=_llm(),
+            contents=contents,
+            config=config,
+        ):
+            yield chunk
+    except genai.errors.ClientError as e:
+        if getattr(e, "status_code", None) in (401, 403):
+            raise RuntimeError("Gemini service unavailable")
+        raise
 
 
 def _parse_json(raw: str) -> dict:

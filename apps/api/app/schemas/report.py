@@ -50,3 +50,13 @@ class ReportUpdate(BaseModel):
 
 class ReportReviseRequest(BaseModel):
     instruction: str
+
+
+class ReportAIEditTurn(BaseModel):
+    role: str
+    content: str
+
+
+class ReportAIEditRequest(BaseModel):
+    instruction: str
+    history: list[ReportAIEditTurn] | None = None

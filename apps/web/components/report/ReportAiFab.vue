@@ -4,7 +4,7 @@
     open-title="關閉 AI 調整"
     close-title="AI 調整報告"
     :panel-width="380"
-    :panel-height="380"
+    :panel-height="480"
   >
     <template #panel="{ close }">
       <div class="raf-head">
@@ -17,45 +17,48 @@
 
       <div ref="logEl" class="raf-log">
         <div v-if="messages.length === 0" class="raf-empty">
-          <p>輸入指令，AI 會幫你修改這份報告的內容。</p>
+          <p>輸入指令，AI 會幫你修改這份報告的內容。也可以要求 AI 先查詢你的知識庫再修改。</p>
           <div class="raf-examples">
             <button
               v-for="ex in EXAMPLES"
               :key="ex"
               class="raf-chip"
               type="button"
-              :disabled="busy"
-              @click="submitRevise(ex)"
+              :disabled="sending"
+              @click="send(ex)"
             >{{ ex }}</button>
           </div>
         </div>
 
         <div v-for="m in messages" :key="m.id" class="raf-msg" :class="`raf-msg--${m.role}`">
           <div v-if="m.text" class="raf-bubble">{{ m.text }}</div>
+          <div v-if="m.actions.length" class="raf-actions">
+            <div v-for="(a, i) in m.actions" :key="i" class="raf-action">{{ a }}</div>
+          </div>
         </div>
 
-        <div v-if="busy && messages.length > 0" class="raf-thinking">
+        <div v-if="sending && !streamingText" class="raf-thinking">
           <span class="raf-dot" /><span class="raf-dot" /><span class="raf-dot" />
         </div>
       </div>
 
-      <form class="raf-input" @submit.prevent="submitRevise()">
+      <form class="raf-input" @submit.prevent="send()">
         <textarea
           ref="inputEl"
           v-model="draft"
           class="raf-input__field"
           rows="1"
-          :disabled="busy"
+          :disabled="sending"
           placeholder="例如：讓語氣更輕鬆一點…"
-          @keydown.enter.exact.prevent="submitRevise()"
+          @keydown.enter.exact.prevent="send()"
         />
         <button
           class="raf-input__send"
           type="submit"
-          :disabled="busy || !draft.trim()"
-          :title="busy ? '處理中…' : '送出'"
+          :disabled="sending || !draft.trim()"
+          :title="sending ? '處理中…' : '送出'"
         >
-          <svg v-if="!busy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          <svg v-if="!sending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
           <span v-else class="raf-spin" />
         </button>
       </form>
@@ -69,7 +72,8 @@ import type { Report } from '~/types/api'
 const props = defineProps<{ reportId: string }>()
 const emit = defineEmits<{ (e: 'revised', report: Report): void }>()
 
-const { reviseReport } = useReports()
+const config = useRuntimeConfig()
+const session = useSupabaseSession()
 
 const EXAMPLES = [
   '讓語氣更輕鬆易讀',
@@ -81,9 +85,10 @@ const fabRef = ref()
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const logEl = ref<HTMLElement | null>(null)
 const draft = ref('')
-const busy = ref(false)
+const sending = ref(false)
+const streamingText = ref('')
 
-interface Msg { id: string; role: 'user' | 'assistant'; text: string }
+interface Msg { id: string; role: 'user' | 'assistant'; text: string; actions: string[] }
 const messages = ref<Msg[]>([])
 
 watch(() => fabRef.value?.open, (val) => {
@@ -94,23 +99,84 @@ function scrollLog() {
   nextTick(() => { if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight })
 }
 
-async function submitRevise(preset?: string) {
-  const instruction = (preset ?? draft.value).trim()
-  if (!instruction || busy.value) return
+async function send(preset?: string) {
+  const content = (preset ?? draft.value).trim()
+  if (!content || sending.value) return
   draft.value = ''
-  busy.value = true
+  sending.value = true
+  streamingText.value = ''
 
-  messages.value.push({ id: crypto.randomUUID(), role: 'user', text: instruction })
+  const history = messages.value
+    .map((m) => {
+      const text = m.text || (m.actions.length ? m.actions.join('；') : '')
+      return text ? { role: m.role, content: text } : null
+    })
+    .filter((t): t is { role: 'user' | 'assistant'; content: string } => t !== null)
+    .slice(-12)
+
+  messages.value.push({ id: crypto.randomUUID(), role: 'user', text: content, actions: [] })
+  const assistant: Msg = { id: crypto.randomUUID(), role: 'assistant', text: '', actions: [] }
+  messages.value.push(assistant)
   scrollLog()
 
+  const apiBase = config.public.apiBase as string
+  const token = session.value?.access_token
+
   try {
-    const updated = await reviseReport(props.reportId, instruction)
-    emit('revised', updated)
-    messages.value.push({ id: crypto.randomUUID(), role: 'assistant', text: '✓ 報告已更新。' })
+    const resp = await fetch(`${apiBase}/reports/${props.reportId}/ai-edit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ instruction: content, history }),
+    })
+    if (!resp.ok || !resp.body) throw new Error('request failed')
+
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() ?? ''
+
+      for (const part of parts) {
+        if (!part.startsWith('event: ')) continue
+        const lines = part.split('\n')
+        const event = lines[0].replace('event: ', '')
+        let data: any = {}
+        try { data = JSON.parse(lines[1].replace('data: ', '')) } catch { continue }
+
+        if (event === 'delta') {
+          streamingText.value += data.text
+          assistant.text = streamingText.value
+          scrollLog()
+        } else if (event === 'tool_result') {
+          if (data.name === 'search') {
+            const count = data.count ?? 0
+            assistant.actions.push(`🔍 搜尋知識庫，找到 ${count} 筆資料`)
+          } else if (data.name === 'update_report' && data.ok && data._report) {
+            emit('revised', data._report as Report)
+            assistant.actions.push('✓ 報告已更新')
+          }
+          scrollLog()
+        } else if (event === 'error') {
+          assistant.actions.push('⚠️ ' + (data.message || '發生錯誤'))
+        }
+      }
+    }
+    if (!assistant.text && assistant.actions.length === 0) {
+      assistant.text = '沒有需要調整的地方。'
+    }
   } catch {
-    messages.value.push({ id: crypto.randomUUID(), role: 'assistant', text: '⚠️ 調整失敗，請稍後再試。' })
+    assistant.actions.push('⚠️ AI 調整失敗，請稍後再試。')
   } finally {
-    busy.value = false
+    sending.value = false
+    streamingText.value = ''
     scrollLog()
   }
 }
@@ -147,6 +213,13 @@ async function submitRevise(preset?: string) {
 }
 .raf-msg--user .raf-bubble { background: var(--accent); color: var(--accent-fg, #fff); border-bottom-right-radius: 4px; }
 .raf-msg--assistant .raf-bubble { background: var(--surface2); color: var(--text); border-bottom-left-radius: 4px; }
+.raf-actions { display: flex; flex-direction: column; gap: 4px; }
+.raf-action {
+  font-size: 11.5px; color: var(--text-mid); font-family: var(--font-mono);
+  background: color-mix(in oklab, var(--tag-a, #34c759) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--tag-a, #34c759) 24%, transparent);
+  padding: 3px 9px; border-radius: 7px; width: fit-content;
+}
 
 .raf-thinking { display: flex; gap: 4px; padding: 4px 2px; }
 .raf-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: raf-bounce 1.2s infinite ease-in-out; }

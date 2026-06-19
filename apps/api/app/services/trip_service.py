@@ -560,10 +560,13 @@ async def reorder_items(
 _TRIP_EDIT_SYSTEM = """\
 你是 Garner 的旅遊行程編輯助理。用戶有一份「既有」的旅遊行程，會給你修改指示。
 你的工作是依指示，用工具對這份行程的卡片做「新增／修改／刪除」，把行程調整到位。
+你也可以查詢用戶的知識庫，把存過的景點／美食資訊帶進行程卡片。
 
 規則：
 - 只能用工具改動行程，不要把行程內容用文字重貼一遍
+- 需要查知識庫時主動呼叫 search，例如「幫我補上我存過的大阪美食」→ 先 search 再 add_card
 - 新增景點／餐廳／交通／住宿：用 add_card，一個地點一張卡，title 只放名稱（≤20 字），細節放 note
+  - 若某張卡的地點與知識庫搜尋結果的「地點」相符，用 source_item_ids 帶上對應知識的 id
 - 修改某張卡片：用 update_card，card_no 用下方「目前卡片」清單的編號；只填要改的欄位
 - 刪除某張卡片：用 delete_card，card_no 用清單編號
 - 一次指示可呼叫多個工具（例如新增好幾張卡、或同時改多張）
@@ -575,6 +578,21 @@ _TRIP_EDIT_SYSTEM = """\
 """
 
 _TRIP_EDIT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "搜尋用戶的個人知識庫，找存過的景點、美食、住宿、交通等資訊。用戶說「補上我存過的...」或需要查知識庫時呼叫。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "語意搜尋描述句，例如「大阪必吃美食」「京都景點」"},
+                    "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 12"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -592,6 +610,11 @@ _TRIP_EDIT_TOOLS = [
                     "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
                     "note": {"type": "string", "description": "卡片細節（玩法、交通、提醒等），markdown 格式，可選"},
                     "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址），可選"},
+                    "source_item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "從 search 結果中，與這張卡片地點相符的知識 id 陣列。可選，沒有相符就省略。",
+                    },
                 },
                 "required": ["title"],
             },
@@ -832,7 +855,39 @@ async def ai_edit_trip_stream(
     trip_start_date = trip.start_date
 
     async def execute_tool(name: str, args: dict) -> dict:
+        if name == "search":
+            from app.services import ai_service as _ai
+            from app.crud import items as crud_items, chunks as crud_chunks
+            query = (args.get("query") or "").strip()
+            if not query:
+                return {"count": 0, "items": []}
+            try:
+                limit = min(int(args.get("limit") or 6), 12)
+                embedding = await _ai.embed(query)
+                from app.services.chat_service import rag_retrieve
+                hits = await rag_retrieve(db, user_id, query, limit=limit)
+                items_out = []
+                for ui, _dist in hits:
+                    tags = [t.name for t in (ui.tags or [])]
+                    locs = [l.name for l in (ui.locations or [])]
+                    summary = ""
+                    if ui.notes_md:
+                        summary = next(iter(ui.notes_md.values()), "") if isinstance(ui.notes_md, dict) else str(ui.notes_md)
+                    items_out.append({
+                        "id": str(ui.id),
+                        "title": ui.title or "",
+                        "summary": summary[:500] if summary else "",
+                        "tags": tags,
+                        "locations": locs,
+                    })
+                return {"count": len(items_out), "items": items_out}
+            except Exception:
+                logger.exception("search tool failed in trip ai_edit")
+                return {"count": 0, "items": []}
+
         if name == "add_card":
+            raw_ids = args.get("source_item_ids") or []
+            source_ids = [str(x) for x in raw_ids if x]
             res = await add_card_from_chat(
                 db, user_id, trip_id,
                 day=args.get("day"),
@@ -844,6 +899,7 @@ async def ai_edit_trip_stream(
                 start_time=args.get("start_time"),
                 note=args.get("note"),
                 ticket_url=args.get("ticket_url"),
+                source_item_ids=source_ids or None,
             )
             if not res or not res.get("id"):
                 return {"ok": False}

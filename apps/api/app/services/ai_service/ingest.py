@@ -1,13 +1,15 @@
 """Content ingestion — analysis, tagging, title, vision, video, location extraction."""
 import asyncio
+import io
 import logging
 
-import httpx
+import google.genai as genai
+from google.genai import types
 
 from app.core.config import settings
 from app.core.tracing import traced
 
-from ._client import _gemini_call, _llm_call, _parse_json, _video_llm
+from ._client import _gemini_call, _get_client, _llm_call, _parse_json, _video_llm
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +168,6 @@ Output format:
 Content:
 """
 
-_GOOGLE_AI_BASE = "https://generativelanguage.googleapis.com"
 MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB — Google File API limit
 
 
@@ -243,67 +244,24 @@ async def extract_locations(text: str) -> list[dict]:
     return []
 
 
-async def _upload_to_google_file_api(video_bytes: bytes, mime_type: str) -> str:
-    """Upload video bytes to Google File API and return the file URI.
-
-    The file is automatically deleted by Google after 48 hours.
-    Polls until state == ACTIVE before returning.
-    """
-    api_key = settings.google_ai_api_key
-
-    async with httpx.AsyncClient(timeout=60) as client:
-        init_resp = await client.post(
-            f"{_GOOGLE_AI_BASE}/upload/v1beta/files",
-            params={"key": api_key},
-            headers={
-                "X-Goog-Upload-Protocol": "resumable",
-                "X-Goog-Upload-Command": "start",
-                "X-Goog-Upload-Header-Content-Length": str(len(video_bytes)),
-                "X-Goog-Upload-Header-Content-Type": mime_type,
-                "Content-Type": "application/json",
-            },
-            json={"file": {"display_name": "garner_video"}},
-        )
-        if not init_resp.is_success:
-            logger.error("File API CreateFile failed %d: %s", init_resp.status_code, init_resp.text)
-        init_resp.raise_for_status()
-        upload_url = init_resp.headers["x-goog-upload-url"]
-
-        upload_resp = await client.post(
-            upload_url,
-            headers={
-                "Content-Length": str(len(video_bytes)),
-                "X-Goog-Upload-Offset": "0",
-                "X-Goog-Upload-Command": "upload, finalize",
-                "Content-Type": mime_type,
-            },
-            content=video_bytes,
-            timeout=300,
-        )
-        upload_resp.raise_for_status()
-        file_info = upload_resp.json().get("file", {})
-        file_name = file_info.get("name")
-        file_uri = file_info.get("uri")
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        for _ in range(30):
-            state_resp = await client.get(
-                f"{_GOOGLE_AI_BASE}/v1beta/{file_name}",
-                params={"key": api_key},
-            )
-            state_resp.raise_for_status()
-            state = state_resp.json().get("state")
-            if state == "ACTIVE":
-                return file_uri
-            if state == "FAILED":
-                raise RuntimeError(f"Google File API processing failed for {file_name}")
-            await asyncio.sleep(1)
-
-    raise RuntimeError(f"Google File API did not become ACTIVE in time: {file_name}")
+async def _upload_video_via_sdk(client: genai.Client, video_bytes: bytes, mime_type: str) -> str:
+    """Upload video bytes via google-genai SDK File API. Returns the file URI."""
+    file_ref = await client.aio.files.upload(
+        file=io.BytesIO(video_bytes),
+        config=types.UploadFileConfig(mime_type=mime_type, display_name="garner_video"),
+    )
+    for _ in range(60):
+        if str(file_ref.state) in ("FileState.ACTIVE", "ACTIVE"):
+            return file_ref.uri
+        if str(file_ref.state) in ("FileState.FAILED", "FAILED"):
+            raise RuntimeError(f"Google File API processing failed for {file_ref.name}")
+        await asyncio.sleep(1)
+        file_ref = await client.aio.files.get(name=file_ref.name)
+    raise RuntimeError(f"Google File API did not become ACTIVE in time: {file_ref.name}")
 
 
 async def describe_video(video_bytes: bytes, mime_type: str = "video/mp4") -> str:
-    """Analyse a video via Google File API + Gemini.
+    """Analyse a video via Google File API + Gemini SDK.
 
     Returns "" on any failure so callers can continue gracefully.
     """
@@ -318,32 +276,24 @@ async def describe_video(video_bytes: bytes, mime_type: str = "video/mp4") -> st
         logger.warning("describe_video: video too large (%d bytes), skipping", len(video_bytes))
         return ""
 
+    client = _get_client()
+
     try:
-        file_uri = await _upload_to_google_file_api(video_bytes, mime_type)
+        file_uri = await _upload_video_via_sdk(client, video_bytes, mime_type)
         logger.info("describe_video: uploaded to Google File API → %s", file_uri)
     except Exception:
         logger.exception("describe_video: File API upload failed")
         return ""
 
     try:
-        async with httpx.AsyncClient(timeout=180) as client:
-            resp = await client.post(
-                f"{_GOOGLE_AI_BASE}/v1beta/models/{_video_llm().removeprefix('google/')}:generateContent",
-                headers={"X-Goog-Api-Key": settings.google_ai_api_key},
-                json={
-                    "contents": [{
-                        "parts": [
-                            {"file_data": {"mime_type": mime_type, "file_uri": file_uri}},
-                            {"text": _VIDEO_ANALYSIS_PROMPT},
-                        ]
-                    }]
-                },
-            )
-        if not resp.is_success:
-            logger.error("describe_video Gemini %d: %s", resp.status_code, resp.text)
-            return ""
-        resp.raise_for_status()
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        response = await client.aio.models.generate_content(
+            model=_video_llm(),
+            contents=[types.Content(parts=[
+                types.Part(file_data=types.FileData(file_uri=file_uri, mime_type=mime_type)),
+                types.Part(text=_VIDEO_ANALYSIS_PROMPT),
+            ])],
+        )
+        return (response.text or "").strip()
     except Exception:
         logger.exception("describe_video: Gemini call failed")
         return ""
