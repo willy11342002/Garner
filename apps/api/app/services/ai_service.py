@@ -1162,56 +1162,127 @@ _VIDEO_ANALYSIS_PROMPT = """\
 """
 
 
-async def describe_video(video_bytes: bytes, mime_type: str = "video/mp4") -> str:
-    """Send a video file to the video-capable LLM for visual + audio analysis.
+_GOOGLE_AI_BASE = "https://generativelanguage.googleapis.com"
+# Extract the bare model name for Google AI API (strip "google/" prefix if present)
+_GEMINI_MODEL = "gemini-2.5-flash"
 
-    Returns a text description combining visual content and spoken audio.
+MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB — Google File API limit
+
+
+async def _upload_to_google_file_api(video_bytes: bytes, mime_type: str) -> str:
+    """Upload video bytes to Google File API and return the file URI.
+
+    The file is automatically deleted by Google after 48 hours.
+    Polls until state == ACTIVE before returning.
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    api_key = settings.google_ai_api_key
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        # Step 1: initiate resumable upload — key must be in query string
+        init_resp = await client.post(
+            f"{_GOOGLE_AI_BASE}/upload/v1beta/files",
+            params={"key": api_key},
+            headers={
+                "X-Goog-Upload-Protocol": "resumable",
+                "X-Goog-Upload-Command": "start",
+                "X-Goog-Upload-Header-Content-Length": str(len(video_bytes)),
+                "X-Goog-Upload-Header-Content-Type": mime_type,
+                "Content-Type": "application/json",
+            },
+            json={"file": {"display_name": "garner_video"}},
+        )
+        if not init_resp.is_success:
+            _log.error("File API CreateFile failed %d: %s", init_resp.status_code, init_resp.text)
+        init_resp.raise_for_status()
+        upload_url = init_resp.headers["x-goog-upload-url"]
+
+        # Step 2: upload bytes in one shot (upload_url already contains auth)
+        upload_resp = await client.post(
+            upload_url,
+            headers={
+                "Content-Length": str(len(video_bytes)),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+                "Content-Type": mime_type,
+            },
+            content=video_bytes,
+            timeout=300,
+        )
+        upload_resp.raise_for_status()
+        file_info = upload_resp.json().get("file", {})
+        file_name = file_info.get("name")  # e.g. "files/abc123"
+        file_uri = file_info.get("uri")
+
+    # Step 3: poll until ACTIVE (usually < 5 s)
+    async with httpx.AsyncClient(timeout=30) as client:
+        for _ in range(30):
+            state_resp = await client.get(
+                f"{_GOOGLE_AI_BASE}/v1beta/{file_name}",
+                params={"key": api_key},
+            )
+            state_resp.raise_for_status()
+            state = state_resp.json().get("state")
+            if state == "ACTIVE":
+                return file_uri
+            if state == "FAILED":
+                raise RuntimeError(f"Google File API processing failed for {file_name}")
+            await asyncio.sleep(1)
+
+    raise RuntimeError(f"Google File API did not become ACTIVE in time: {file_name}")
+
+
+async def describe_video(video_bytes: bytes, mime_type: str = "video/mp4") -> str:
+    """Analyse a video via Google File API + Gemini (direct, not via OpenRouter).
+
+    Uploads the video to Google's temporary storage (auto-deleted after 48 h),
+    then calls Gemini with the file URI. Bypasses the 20 MB data-uri limit.
     Returns "" on any failure so callers can continue gracefully.
     """
-    import base64
     import logging as _logging
-
     _log = _logging.getLogger(__name__)
 
     if not video_bytes:
         return ""
 
-    MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB hard cap
+    if not settings.google_ai_api_key:
+        _log.warning("describe_video: GOOGLE_AI_API_KEY not set, skipping")
+        return ""
+
     if len(video_bytes) > MAX_VIDEO_BYTES:
         _log.warning("describe_video: video too large (%d bytes), skipping", len(video_bytes))
         return ""
 
-    b64 = base64.b64encode(video_bytes).decode()
+    try:
+        file_uri = await _upload_to_google_file_api(video_bytes, mime_type)
+        _log.info("describe_video: uploaded to Google File API → %s", file_uri)
+    except Exception:
+        _log.exception("describe_video: File API upload failed")
+        return ""
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=180) as client:
             resp = await client.post(
-                OPENROUTER_URL,
-                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                f"{_GOOGLE_AI_BASE}/v1beta/models/{_GEMINI_MODEL}:generateContent",
+                headers={"X-Goog-Api-Key": settings.google_ai_api_key},
                 json={
-                    "model": _video_llm(),
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "video_url",
-                                "video_url": {"url": f"data:{mime_type};base64,{b64}"},
-                            },
-                            {"type": "text", "text": _VIDEO_ANALYSIS_PROMPT},
-                        ],
-                    }],
+                    "contents": [{
+                        "parts": [
+                            {"file_data": {"mime_type": mime_type, "file_uri": file_uri}},
+                            {"text": _VIDEO_ANALYSIS_PROMPT},
+                        ]
+                    }]
                 },
-                timeout=180,
             )
-        if resp.status_code == 401:
-            raise RuntimeError("OpenRouter service unavailable")
-        if resp.status_code == 400:
-            _log.error("describe_video 400 (model=%s): %s", _video_llm(), resp.text)
+        if not resp.is_success:
+            _log.error("describe_video Gemini %d: %s", resp.status_code, resp.text)
             return ""
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception:
-        _log.exception("describe_video failed")
+        _log.exception("describe_video: Gemini call failed")
         return ""
 
 

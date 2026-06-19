@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     gumroad_client_secret: str = ""
     gumroad_redirect_uri: str = "https://garner-brain.up.railway.app/auth/gumroad/callback"
     google_maps_api_key: str = ""
+    google_ai_api_key: str = ""  # Google AI Studio key — used for File API + direct Gemini calls
 
 
 settings = Settings()

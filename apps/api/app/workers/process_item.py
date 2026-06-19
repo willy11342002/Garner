@@ -226,11 +226,9 @@ async def _run_pipeline(
         await _fail(db, user_id, user_item_id, url)
         return
 
-    # The "saved" notification is sent later — after the note stage commits the
-    # AI-generated title — so it shows the knowledge title rather than the raw
-    # URL. It fires in parallel with the embedding stage (see _note_and_embedding)
-    # so it doesn't wait for embedding to finish. The modal shows per-stage
-    # progress live via events regardless.
+    # Content confirmed — notify immediately so the user can navigate to the
+    # item while AI analysis runs in the background.
+    await _notify_saved(user_id, user_item_id, url)
 
     # note (+chunk embed +main embed) and landmarks run concurrently, each in
     # its own session. They write disjoint columns/tables, so this is safe.
@@ -289,25 +287,24 @@ async def _note_and_embedding(
     if note_exc is not None:
         return note_exc
 
-    # The note stage has committed the AI-generated title, so the "saved"
-    # notification can now show it. Fire the notification in parallel with the
-    # embedding stage — it only needs the title (already saved), so it doesn't
-    # wait for embedding to finish.
     async def _embed():
         try:
             await _stage_embedding(user_item_id, analysis, chunk_texts, chunk_embeddings)
         except Exception:
             pass  # embedding failure doesn't abort — item is already readable
 
-    await asyncio.gather(_notify_saved(user_id, user_item_id, url), _embed())
+    await _embed()
 
     return None
 
 
 async def _notify_saved(user_id: UUID, user_item_id: UUID, url: str) -> None:
-    """Send the "saved" notification using the AI-generated title (set by the
-    note stage). Opens its own session so it can run alongside the embedding
-    stage. Best-effort — a notification failure never aborts processing."""
+    """Send 'saved' notification right after raw content is confirmed valid.
+
+    Title comes from Apify metadata (committed in the fetch stage), so it's
+    readable immediately. Body tells the user AI analysis is still running.
+    Best-effort — failure never aborts processing.
+    """
     try:
         async with AsyncSessionLocal() as db:
             item = await db.get(UserItem, user_item_id)
@@ -318,11 +315,12 @@ async def _notify_saved(user_id: UUID, user_item_id: UUID, url: str) -> None:
                 user_id=user_id,
                 type=NotificationType.item_processed,
                 title=item.title or url,
+                body="已儲存，AI 分析中...",
                 item_id=user_item_id,
             )
             await db.commit()
     except Exception:
-        logger.warning("saved-notification failed for item %s", user_item_id, exc_info=True)
+        logger.warning("fetch-notification failed for item %s", user_item_id, exc_info=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
