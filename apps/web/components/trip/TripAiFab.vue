@@ -31,7 +31,40 @@
         </div>
 
         <div v-for="m in messages" :key="m.id" class="taf-msg" :class="`taf-msg--${m.role}`">
-          <div v-if="m.text" class="taf-bubble">{{ m.text }}</div>
+          <!-- 思考過程 -->
+          <div v-if="m.role === 'assistant' && m.steps.length" class="taf-process">
+            <button class="taf-process__toggle" @click="toggleProcess(m.id)">
+              <span class="taf-process__icon">💭</span>
+              <span class="taf-process__label">思考過程</span>
+              <svg class="taf-process__chevron" :class="{ 'taf-process__chevron--open': openProcess.has(m.id) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div v-if="openProcess.has(m.id)" class="taf-process__body">
+              <div v-for="(step, i) in m.steps" :key="i" class="taf-step">
+                <div class="taf-step__call">
+                  <span>{{ stepIcon(step.toolCall.name) }}</span>
+                  <code class="taf-step__name">{{ step.toolCall.name }}</code>
+                  <span v-if="step.toolCall.query" class="taf-step__param">"{{ step.toolCall.query }}"</span>
+                  <span v-else-if="step.toolCall.title" class="taf-step__param">"{{ step.toolCall.title }}"</span>
+                </div>
+                <div v-if="step.toolResult !== null" class="taf-step__result">
+                  <template v-if="step.toolCall.name === 'search'">
+                    ✓ 找到 {{ step.toolResult.count }} 筆
+                  </template>
+                  <template v-else-if="step.toolResult.ok">✓ 完成</template>
+                  <template v-else>⚠️ 失敗</template>
+                </div>
+                <div v-else class="taf-step__pending">⋯ 執行中</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 對話泡泡 -->
+          <div v-if="m.text" class="taf-bubble">
+            <TiptapEditor v-if="m.role === 'assistant'" :model-value="m.text" :readonly="true" class="taf-md" />
+            <template v-else>{{ m.text }}</template>
+          </div>
+
+          <!-- 動作標籤 -->
           <div v-if="m.actions.length" class="taf-actions">
             <div v-for="(a, i) in m.actions" :key="i" class="taf-action">{{ a }}</div>
           </div>
@@ -93,8 +126,21 @@ const draft = ref('')
 const sending = ref(false)
 const streamingText = ref('')
 
-interface Msg { id: string; role: 'user' | 'assistant'; text: string; actions: string[] }
+interface Step { toolCall: Record<string, any>; toolResult: Record<string, any> | null }
+interface Msg { id: string; role: 'user' | 'assistant'; text: string; actions: string[]; steps: Step[] }
 const messages = ref<Msg[]>([])
+
+const openProcess = ref(new Set<string>())
+function toggleProcess(id: string) {
+  openProcess.value.has(id) ? openProcess.value.delete(id) : openProcess.value.add(id)
+}
+function stepIcon(name: string): string {
+  if (name === 'search') return '🔍'
+  if (name.startsWith('add_') || name.startsWith('create_')) return '➕'
+  if (name.startsWith('update_')) return '✏️'
+  if (name.startsWith('delete_')) return '🗑️'
+  return '⚙️'
+}
 
 watch(() => fabRef.value?.open, (val) => {
   if (val) nextTick(() => inputEl.value?.focus())
@@ -119,8 +165,8 @@ async function send(preset?: string) {
     .filter((t): t is { role: 'user' | 'assistant'; content: string } => t !== null)
     .slice(-12)
 
-  messages.value.push({ id: crypto.randomUUID(), role: 'user', text: content, actions: [] })
-  const assistant: Msg = { id: crypto.randomUUID(), role: 'assistant', text: '', actions: [] }
+  messages.value.push({ id: crypto.randomUUID(), role: 'user', text: content, actions: [], steps: [] })
+  const assistant: Msg = { id: crypto.randomUUID(), role: 'assistant', text: '', actions: [], steps: [] }
   messages.value.push(assistant)
   scrollLog()
 
@@ -160,7 +206,14 @@ async function send(preset?: string) {
           streamingText.value += data.text
           assistant.text = streamingText.value
           scrollLog()
+        } else if (event === 'tool_call') {
+          assistant.steps.push({ toolCall: data, toolResult: null })
+          openProcess.value.add(assistant.id)
+          scrollLog()
         } else if (event === 'tool_result') {
+          if (assistant.steps.length) {
+            assistant.steps[assistant.steps.length - 1].toolResult = data
+          }
           handleToolResult(data, assistant)
           scrollLog()
         } else if (event === 'error') {
@@ -170,7 +223,7 @@ async function send(preset?: string) {
         }
       }
     }
-    if (!assistant.text && assistant.actions.length === 0) {
+    if (!assistant.text && assistant.actions.length === 0 && assistant.steps.every(s => s.toolResult !== null)) {
       assistant.text = '沒有需要調整的地方。'
     }
   } catch {
@@ -183,6 +236,7 @@ async function send(preset?: string) {
 }
 
 function handleToolResult(data: any, assistant: Msg) {
+  if (data.name === 'search') return  // shown in process block only
   if (data.name === 'save_url') {
     if (data.ok) {
       assistant.actions.push(`📥 已存入「${data.title || ''}」`)
@@ -229,12 +283,51 @@ function handleToolResult(data: any, assistant: Msg) {
 
 .taf-msg { display: flex; flex-direction: column; gap: 6px; }
 .taf-msg--user { align-items: flex-end; }
+
+/* 思考過程 */
+.taf-process {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  font-size: 12px; overflow: hidden; align-self: flex-start; max-width: 100%;
+}
+.taf-process__toggle {
+  display: flex; align-items: center; gap: 5px; width: 100%;
+  padding: 6px 10px; background: none; border: none; cursor: pointer;
+  color: var(--text-mid); text-align: left;
+}
+.taf-process__toggle:hover { background: var(--surface2); }
+.taf-process__icon { font-size: 12px; }
+.taf-process__label { flex: 1; font-size: 11.5px; }
+.taf-process__chevron { color: var(--text-dim); transition: transform .15s; flex-shrink: 0; }
+.taf-process__chevron--open { transform: rotate(180deg); }
+.taf-process__body { padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--border); }
+
+.taf-step { display: flex; flex-direction: column; gap: 2px; }
+.taf-step__call { display: flex; align-items: center; gap: 5px; color: var(--text-mid); font-size: 11.5px; }
+.taf-step__name { font-family: var(--font-mono); font-size: 10.5px; background: var(--surface2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+.taf-step__param { color: var(--text-dim); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.taf-step__result { font-size: 11px; color: color-mix(in oklab, var(--tag-a, #34c759) 70%, var(--text)); padding-left: 2px; }
+.taf-step__pending { font-size: 11px; color: var(--text-dim); padding-left: 2px; }
+
 .taf-bubble {
-  max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.55;
+  max-width: 92%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.55;
   white-space: pre-wrap; word-break: break-word;
 }
 .taf-msg--user .taf-bubble { background: var(--accent); color: var(--accent-fg, #fff); border-bottom-right-radius: 4px; }
-.taf-msg--assistant .taf-bubble { background: var(--surface2); color: var(--text); border-bottom-left-radius: 4px; }
+.taf-msg--assistant .taf-bubble { background: var(--surface2); color: var(--text); border-bottom-left-radius: 4px; white-space: normal; }
+
+/* TipTap readonly 樣式覆蓋 */
+.taf-md :deep(.tiptap) {
+  padding: 0; outline: none;
+  font-size: 13px; line-height: 1.55; color: var(--text);
+}
+.taf-md :deep(.tiptap p) { margin: 0 0 6px; }
+.taf-md :deep(.tiptap p:last-child) { margin-bottom: 0; }
+.taf-md :deep(.tiptap ul), .taf-md :deep(.tiptap ol) { padding-left: 18px; margin: 4px 0; }
+.taf-md :deep(.tiptap li) { margin: 2px 0; }
+.taf-md :deep(.tiptap h1), .taf-md :deep(.tiptap h2), .taf-md :deep(.tiptap h3) { font-size: 13px; font-weight: 600; margin: 6px 0 3px; }
+.taf-md :deep(.tiptap code) { font-size: 11.5px; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.taf-md :deep(.tiptap pre) { background: var(--surface); border-radius: 6px; padding: 8px; margin: 4px 0; }
+
 .taf-actions { display: flex; flex-direction: column; gap: 4px; }
 .taf-action {
   font-size: 11.5px; color: var(--text-mid); font-family: var(--font-mono);
