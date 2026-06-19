@@ -92,8 +92,8 @@
           </template>
           <template v-else>
             <p class="connected__ios-label">{{ t('connected.ios.token_label') }}</p>
-            <div class="connected__token-row">
-              <span class="connected__token-display">{{ iosToken }}</span>
+            <div class="connected__token-row" :class="{ expanded: iosCopyFailed }">
+              <span class="connected__token-display" :class="{ expanded: iosCopyFailed }">{{ iosToken }}</span>
               <button class="connected__copy-btn" :class="{ copied: iosCopied }" :title="iosCopied ? t('connected.ios.copied') : t('connected.ios.copy')" @click="copyIosToken">
                 <svg v-if="!iosCopied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -104,6 +104,7 @@
                 </svg>
               </button>
             </div>
+            <p v-if="iosCopyFailed" class="connected__copy-failed-hint">{{ t('connected.ios.copy_failed') }}</p>
             <p class="connected__ios-hint">{{ t('connected.ios.token_hint') }}</p>
           </template>
           <button class="connected__skip-link" @click="iosStep = 'download'">
@@ -159,6 +160,7 @@ const iosStep = ref<'download' | 'token'>('download')
 const iosToken = ref<string | null>(null)
 const iosLoading = ref(false)
 const iosCopied = ref(false)
+const iosCopyFailed = ref(false)
 let sessionCache: { access_token: string } | null = null
 
 onMounted(async () => {
@@ -252,8 +254,11 @@ async function copyIosToken() {
     document.body.removeChild(el)
   }
   if (ok) {
+    iosCopyFailed.value = false
     iosCopied.value = true
     setTimeout(() => { iosCopied.value = false }, 2000)
+  } else {
+    iosCopyFailed.value = true
   }
 }
 </script>
@@ -473,6 +478,12 @@ async function copyIosToken() {
   white-space: nowrap;
   user-select: all;
 }
+.connected__token-display.expanded {
+  white-space: normal;
+  word-break: break-all;
+  overflow: visible;
+}
+.connected__token-row.expanded { align-items: flex-start; }
 
 .connected__copy-btn {
   flex-shrink: 0;
@@ -490,6 +501,15 @@ async function copyIosToken() {
 }
 .connected__copy-btn:hover { background: var(--surface2); color: var(--text); }
 .connected__copy-btn.copied { color: var(--accent); }
+
+.connected__copy-failed-hint {
+  font-size: 11px;
+  color: var(--danger, #e85555);
+  margin: 0 0 6px;
+  line-height: 1.5;
+  text-align: left;
+  width: 100%;
+}
 
 .connected__ios-hint {
   font-size: 11px;
