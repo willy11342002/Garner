@@ -201,11 +201,12 @@ async def _gemini_generate_stream(
     system_instr, contents = _to_gemini_contents(messages)
     config = _make_config(system_instr, tools)
     try:
-        async for chunk in client.aio.models.generate_content_stream(
+        stream = await client.aio.models.generate_content_stream(
             model=_llm(),
             contents=contents,
             config=config,
-        ):
+        )
+        async for chunk in stream:
             yield chunk
     except genai.errors.ClientError as e:
         if getattr(e, "status_code", None) in (401, 403):
