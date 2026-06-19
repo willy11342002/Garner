@@ -35,9 +35,13 @@ class InstagramProvider(ContentProvider):
         if not thumbnail_url:
             thumbnail_url = result.thumbnail_url
 
+        caption = result.raw_data.get("caption") or result.raw_data.get("text") or ""
+        first_line = caption.strip().splitlines()[0] if caption.strip() else ""
+        title = first_line[:20] or None
+
         return FetchInfo(
             raw_data=result.raw_data,
-            title=None,  # generated from summary later
+            title=title,
             duration_sec=result.duration_sec,
             thumbnail_url=thumbnail_url,
         )

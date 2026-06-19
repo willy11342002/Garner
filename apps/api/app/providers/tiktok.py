@@ -34,9 +34,13 @@ class TikTokProvider(ContentProvider):
         if not thumbnail_url:
             thumbnail_url = result.thumbnail_url
 
+        description = result.raw_data.get("text") or ""
+        first_line = description.strip().splitlines()[0] if description.strip() else ""
+        title = first_line[:20] or None
+
         return FetchInfo(
             raw_data=result.raw_data,
-            title=None,
+            title=title,
             duration_sec=result.duration_sec,
             thumbnail_url=thumbnail_url,
         )
