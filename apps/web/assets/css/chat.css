@@ -212,6 +212,31 @@
   border-left-color: var(--accent);
 }
 
+/* Inline tool step（有序模式下直接顯示，不在 process-block 折疊框內） */
+.process-step {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  width: 480px;
+  max-width: 480px;
+  font-size: 12.5px;
+}
+
+/* Source badge — standalone（在 bubble 外），與 bubble 下方對齊 */
+.src-badge--standalone {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
 /* User context block（知識節點摺疊框，右對齊） */
 .context-block {
   width: 480px;
@@ -363,5 +388,5 @@
   .chat-back-btn { display: flex; }
   .chat-view__head { display: flex; align-items: center; }
 
-  .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block, .context-block, .chat-article-card { width: 92%; max-width: 92%; }
+  .msg__bubble, .msg__bubble--streaming, .sources-list, .process-block, .process-step, .context-block, .chat-article-card { width: 92%; max-width: 92%; }
 }

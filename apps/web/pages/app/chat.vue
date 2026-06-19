@@ -146,72 +146,210 @@
                 </div>
               </template>
 
-              <!-- assistant 訊息：顯示永久保存的 process log -->
-              <template v-if="msg.role === 'assistant' && processMap[msg.id]">
-                <div class="process-block">
-                  <button class="process-block__toggle" @click="toggleThinking(msg.id)">
-                    <span class="process-block__icon">💭</span>
-                    <span class="process-block__label">{{ t('chat.thinking') }}</span>
-                    <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openThinking.has(msg.id) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
-                  </button>
-                  <Transition name="thinking">
-                  <div v-if="openThinking.has(msg.id)" class="process-block__body">
-                    <p v-if="processMap[msg.id].thinking" class="process-body__reasoning">{{ processMap[msg.id].thinking }}</p>
-                    <div v-for="(step, i) in processMap[msg.id].steps" :key="i" class="process-body__step">
-                      <div class="process-body__tool-call">
-                        <span class="process-body__step-icon">{{ stepIcon(step.toolCall.name) }}</span>
-                        <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
-                        <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
-                        <span v-if="step.toolCall.name === 'add_trip_card' && step.toolCall.title" class="process-body__param">{{ step.toolCall.title }}</span>
-                        <template v-if="step.toolCall.name === 'structured_filter'">
-                          <span v-if="step.toolCall.tags?.length" class="process-body__param">tags: {{ step.toolCall.tags.join(', ') }}</span>
-                          <span v-if="step.toolCall.source_type" class="process-body__param">source: {{ step.toolCall.source_type }}</span>
-                          <span v-if="step.toolCall.start_date || step.toolCall.end_date" class="process-body__param">date: {{ step.toolCall.start_date ?? '…' }} ～ {{ step.toolCall.end_date ?? '…' }}</span>
-                        </template>
-                      </div>
-                      <div v-if="step.toolResult" class="process-body__tool-result">
-                        <span class="process-body__step-icon">✓</span>
-                        <span>{{ stepResultLabel(step) }}</span>
-                        <button
-                          v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
-                          class="process-body__step-toggle"
-                          @click="toggleStep(msg.id, i)"
-                        >
-                          <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`${msg.id}-${i}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
-                        </button>
-                      </div>
-                      <Transition name="thinking">
-                        <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
-                          <button v-for="item in step.toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
-                        </div>
-                      </Transition>
+              <!-- assistant 訊息：新格式（有序 blocks，當次串流即時產生） -->
+              <template v-if="msg.role === 'assistant' && blocksMap[msg.id]">
+                <template v-for="(block, bi) in blocksMap[msg.id].blocks" :key="bi">
+                  <p v-if="block.type === 'thinking'" class="process-body__reasoning">{{ (block as ThinkingBlock).content }}</p>
+                  <div v-else-if="block.type === 'tool'" class="process-step">
+                    <div class="process-body__tool-call">
+                      <span class="process-body__step-icon">{{ stepIcon((block as ToolBlock).toolCall.name) }}</span>
+                      <code class="process-body__tool-name">{{ (block as ToolBlock).toolCall.name }}</code>
+                      <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
+                      <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
+                      <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
+                        <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
+                        <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
+                        <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
+                      </template>
                     </div>
+                    <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
+                      <span class="process-body__step-icon">✓</span>
+                      <span>{{ stepResultLabel(block) }}</span>
+                      <button
+                        v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
+                        class="process-body__step-toggle"
+                        @click="toggleStep(msg.id, bi)"
+                      >
+                        <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`${msg.id}-${bi}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                      </button>
+                    </div>
+                    <Transition name="thinking">
+                      <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${bi}`)" class="process-body__tool-titles">
+                        <button v-for="item in (block as ToolBlock).toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
+                      </div>
+                    </Transition>
                   </div>
-                  </Transition>
-                </div>
-              </template>
-
-              <div
-                class="msg__bubble"
-                :class="{ 'msg__bubble--has-sources': msg.role === 'assistant' && sourcesMap[msg.id]?.length }"
-              >
-                <template v-if="msg.role === 'assistant'">
-                  <TiptapEditor :model-value="msg.content" readonly />
+                  <div v-else-if="block.type === 'text'" class="msg__bubble">
+                    <TiptapEditor :model-value="(block as TextBlock).content" readonly />
+                  </div>
                 </template>
-                <template v-else>{{ msg.content }}</template>
                 <button
-                  v-if="msg.role === 'assistant' && sourcesMap[msg.id]?.length"
-                  class="src-badge"
+                  v-if="sourcesMap[msg.id]?.length"
+                  class="src-badge src-badge--standalone"
                   :class="{ 'src-badge--open': openSources.has(msg.id) }"
                   @click.stop="toggleSources(msg.id)"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
                 </button>
+                <Transition name="sources">
+                  <div v-if="openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
+                    <div v-for="src in sourcesMap[msg.id]" :key="src.id" class="src-card" role="button" @click="previewItemId = src.id">
+                      <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
+                      <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                      <div class="src-card__body">
+                        <span class="src-card__title">{{ src.title || src.url }}</span>
+                        <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+                <ChatReportCard v-if="draftMap[msg.id]" :draft="draftMap[msg.id]" />
+                <ChatTripCard v-if="tripDraftMap[msg.id]" :draft="tripDraftMap[msg.id]" />
+              </template>
+
+              <!-- assistant 訊息：舊格式（歷史訊息，無 blocksMap） -->
+              <template v-if="msg.role === 'assistant' && !blocksMap[msg.id]">
+                <template v-if="processMap[msg.id]">
+                  <div class="process-block">
+                    <button class="process-block__toggle" @click="toggleThinking(msg.id)">
+                      <span class="process-block__icon">💭</span>
+                      <span class="process-block__label">{{ t('chat.thinking') }}</span>
+                      <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openThinking.has(msg.id) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                    <Transition name="thinking">
+                    <div v-if="openThinking.has(msg.id)" class="process-block__body">
+                      <p v-if="processMap[msg.id].thinking" class="process-body__reasoning">{{ processMap[msg.id].thinking }}</p>
+                      <div v-for="(step, i) in processMap[msg.id].steps" :key="i" class="process-body__step">
+                        <div class="process-body__tool-call">
+                          <span class="process-body__step-icon">{{ stepIcon(step.toolCall.name) }}</span>
+                          <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
+                          <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
+                          <span v-if="step.toolCall.name === 'add_trip_card' && step.toolCall.title" class="process-body__param">{{ step.toolCall.title }}</span>
+                          <template v-if="step.toolCall.name === 'structured_filter'">
+                            <span v-if="step.toolCall.tags?.length" class="process-body__param">tags: {{ step.toolCall.tags.join(', ') }}</span>
+                            <span v-if="step.toolCall.source_type" class="process-body__param">source: {{ step.toolCall.source_type }}</span>
+                            <span v-if="step.toolCall.start_date || step.toolCall.end_date" class="process-body__param">date: {{ step.toolCall.start_date ?? '…' }} ～ {{ step.toolCall.end_date ?? '…' }}</span>
+                          </template>
+                        </div>
+                        <div v-if="step.toolResult" class="process-body__tool-result">
+                          <span class="process-body__step-icon">✓</span>
+                          <span>{{ stepResultLabel(step) }}</span>
+                          <button
+                            v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
+                            class="process-body__step-toggle"
+                            @click="toggleStep(msg.id, i)"
+                          >
+                            <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`${msg.id}-${i}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                          </button>
+                        </div>
+                        <Transition name="thinking">
+                          <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
+                            <button v-for="item in step.toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
+                          </div>
+                        </Transition>
+                      </div>
+                    </div>
+                    </Transition>
+                  </div>
+                </template>
+                <div class="msg__bubble" :class="{ 'msg__bubble--has-sources': sourcesMap[msg.id]?.length }">
+                  <TiptapEditor :model-value="msg.content" readonly />
+                  <button
+                    v-if="sourcesMap[msg.id]?.length"
+                    class="src-badge"
+                    :class="{ 'src-badge--open': openSources.has(msg.id) }"
+                    @click.stop="toggleSources(msg.id)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                </div>
+                <Transition name="sources">
+                  <div v-if="openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
+                    <div v-for="src in sourcesMap[msg.id]" :key="src.id" class="src-card" role="button" @click="previewItemId = src.id">
+                      <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
+                      <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                      <div class="src-card__body">
+                        <span class="src-card__title">{{ src.title || src.url }}</span>
+                        <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+                <ChatReportCard v-if="draftMap[msg.id]" :draft="draftMap[msg.id]" />
+                <ChatTripCard v-if="tripDraftMap[msg.id]" :draft="tripDraftMap[msg.id]" />
+              </template>
+
+              <!-- user 訊息：bubble -->
+              <div v-if="msg.role === 'user'" class="msg__bubble">{{ msg.content }}</div>
+            </div>
+          </template>
+
+          <!-- 進行中的 agentic process（只在對應 session 顯示） -->
+          <div v-if="(loading || liveBlocks.length) && streamingSessionId === activeSessionId" class="msg msg--assistant">
+            <!-- 等待第一個 block 前顯示載入點 -->
+            <div v-if="loading && !liveBlocks.length" class="msg-thinking">
+              <span></span><span></span><span></span>
+            </div>
+
+            <!-- 依 SSE 到達順序顯示各 block -->
+            <template v-for="(block, bi) in liveBlocks" :key="bi">
+              <!-- 思考過程 -->
+              <p v-if="block.type === 'thinking'" class="process-body__reasoning">{{ (block as ThinkingBlock).content }}</p>
+
+              <!-- 工具呼叫 inline（不折疊） -->
+              <div v-else-if="block.type === 'tool'" class="process-step">
+                <div class="process-body__tool-call">
+                  <span class="process-body__step-icon">{{ stepIcon((block as ToolBlock).toolCall.name) }}</span>
+                  <code class="process-body__tool-name">{{ (block as ToolBlock).toolCall.name }}</code>
+                  <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
+                  <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
+                  <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
+                    <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
+                    <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
+                    <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
+                  </template>
+                </div>
+                <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
+                  <span class="process-body__step-icon">✓</span>
+                  <span>{{ stepResultLabel(block) }}</span>
+                  <button
+                    v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
+                    class="process-body__step-toggle"
+                    @click="toggleStep('live', bi)"
+                  >
+                    <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`live-${bi}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                </div>
+                <div v-else class="process-body__tool-result process-body__tool-result--pending">
+                  <span class="process-body__step-icon">⋯</span>
+                  <span>{{ stepPendingLabel((block as ToolBlock).toolCall.name) }}</span>
+                </div>
+                <Transition name="thinking">
+                  <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`live-${bi}`)" class="process-body__tool-titles">
+                    <div v-for="title in (block as ToolBlock).toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                  </div>
+                </Transition>
               </div>
+
+              <!-- 文字 bubble -->
+              <div v-else-if="block.type === 'text'" class="msg__bubble msg__bubble--streaming">
+                <TiptapEditor :model-value="(block as TextBlock).content" readonly class="streaming-md" />
+              </div>
+            </template>
+
+            <!-- 來源徽章（在所有 block 之後） -->
+            <template v-if="liveBlockSources.length">
+              <button
+                class="src-badge src-badge--standalone"
+                :class="{ 'src-badge--open': openSources.has('live') }"
+                @click.stop="toggleSources('live')"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
               <Transition name="sources">
-                <div v-if="msg.role === 'assistant' && openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
+                <div v-if="openSources.has('live')" class="sources-list">
                   <div
-                    v-for="src in sourcesMap[msg.id]"
+                    v-for="src in liveBlockSources"
                     :key="src.id"
                     class="src-card"
                     role="button"
@@ -226,112 +364,10 @@
                   </div>
                 </div>
               </Transition>
-              <!-- AI 報告卡片 -->
-              <ChatReportCard
-                v-if="msg.role === 'assistant' && draftMap[msg.id]"
-                :draft="draftMap[msg.id]"
-              />
-              <!-- AI 旅遊行程卡片 -->
-              <ChatTripCard
-                v-if="msg.role === 'assistant' && tripDraftMap[msg.id]"
-                :draft="tripDraftMap[msg.id]"
-              />
-            </div>
-          </template>
+            </template>
 
-          <!-- 進行中的 agentic process（只在對應 session 顯示） -->
-          <div v-if="(loading || streamingText) && streamingSessionId === activeSessionId" class="msg msg--assistant">
-            <div v-if="liveProcess.thinking || liveProcess.steps.length" class="process-block">
-              <button class="process-block__toggle" @click="toggleThinking('live')">
-                <span class="process-block__icon">💭</span>
-                <span class="process-block__label">{{ t('chat.thinking') }}</span>
-                <svg class="process-block__chevron" :class="{ 'process-block__chevron--open': openThinking.has('live') }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <Transition name="thinking">
-              <div v-if="openThinking.has('live')" class="process-block__body">
-                <p v-if="liveProcess.thinking" class="process-body__reasoning">{{ liveProcess.thinking }}</p>
-                <div v-for="(step, i) in liveProcess.steps" :key="i" class="process-body__step">
-                  <div class="process-body__tool-call">
-                    <span class="process-body__step-icon">{{ stepIcon(step.toolCall.name) }}</span>
-                    <code class="process-body__tool-name">{{ step.toolCall.name }}</code>
-                    <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
-                    <span v-if="step.toolCall.name === 'add_trip_card' && step.toolCall.title" class="process-body__param">{{ step.toolCall.title }}</span>
-                    <template v-if="step.toolCall.name === 'structured_filter'">
-                      <span v-if="step.toolCall.tags?.length" class="process-body__param">tags: {{ step.toolCall.tags.join(', ') }}</span>
-                      <span v-if="step.toolCall.source_type" class="process-body__param">source: {{ step.toolCall.source_type }}</span>
-                      <span v-if="step.toolCall.start_date || step.toolCall.end_date" class="process-body__param">date: {{ step.toolCall.start_date ?? '…' }} ～ {{ step.toolCall.end_date ?? '…' }}</span>
-                    </template>
-                  </div>
-                  <div v-if="step.toolResult" class="process-body__tool-result">
-                    <span class="process-body__step-icon">✓</span>
-                    <span>{{ stepResultLabel(step) }}</span>
-                    <button
-                      v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
-                      class="process-body__step-toggle"
-                      @click="toggleStep('live', i)"
-                    >
-                      <svg :class="{ 'process-body__step-chevron--open': openSteps.has(`live-${i}`) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M6 9l6 6 6-6"/></svg>
-                    </button>
-                  </div>
-                  <Transition name="thinking">
-                    <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report' && openSteps.has(`live-${i}`)" class="process-body__tool-titles">
-                      <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
-                    </div>
-                  </Transition>
-                  <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
-                    <span class="process-body__step-icon">⋯</span>
-                    <span>{{ stepPendingLabel(step.toolCall.name) }}</span>
-                  </div>
-                </div>
-              </div>
-              </Transition>
-            </div>
-
-            <div v-if="loading && !streamingText" class="msg-thinking">
-              <span></span><span></span><span></span>
-            </div>
-
-            <div
-              v-if="streamingText"
-              class="msg__bubble msg__bubble--streaming"
-              :class="{ 'msg__bubble--has-sources': liveProcess.sources.length }"
-            >
-              <TiptapEditor :model-value="streamingText" readonly class="streaming-md" />
-              <button
-                v-if="liveProcess.sources.length"
-                class="src-badge"
-                :class="{ 'src-badge--open': openSources.has('live') }"
-                @click.stop="toggleSources('live')"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-            </div>
-            <Transition name="sources">
-              <div v-if="openSources.has('live') && liveProcess.sources.length" class="sources-list">
-                <div
-                  v-for="src in liveProcess.sources"
-                  :key="src.id"
-                  class="src-card"
-                  role="button"
-                  @click="previewItemId = src.id"
-                >
-                  <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
-                  <div v-else class="src-card__thumb src-card__thumb--empty"></div>
-                  <div class="src-card__body">
-                    <span class="src-card__title">{{ src.title || src.url }}</span>
-                    <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
-                  </div>
-                </div>
-              </div>
-            </Transition>
-            <ChatReportCard
-              v-if="liveDraft"
-              :draft="liveDraft"
-            />
-            <ChatTripCard
-              v-if="liveTripDraft"
-              :draft="liveTripDraft"
-            />
+            <ChatReportCard v-if="liveDraft" :draft="liveDraft" />
+            <ChatTripCard v-if="liveTripDraft" :draft="liveTripDraft" />
           </div>
         </div>
 
@@ -395,7 +431,6 @@ const sourcesMap = ref<Record<string, ChatSource[]>>({})
 const inputText = ref('')
 const loading = ref(false)
 const sessionLoading = ref(false)
-const streamingText = ref('')
 // 追蹤正在串流的 session/message，供 openSession 切回時識別
 const streamingSessionId = ref<string | null>(null)
 const streamingMessageId = ref<string | null>(null)
@@ -449,7 +484,14 @@ const openSources = ref<Set<string>>(new Set())
 
 type ProcessStep = { toolCall: Record<string, any>; toolResult: Record<string, any> | null }
 type ProcessLog = { thinking: string; steps: ProcessStep[] }
-const liveProcess = ref<ProcessLog & { sources: ChatSource[] }>({ thinking: '', steps: [], sources: [] })
+type TextBlock = { type: 'text'; content: string }
+type ToolBlock = { type: 'tool'; toolCall: Record<string, any>; toolResult: Record<string, any> | null }
+type ThinkingBlock = { type: 'thinking'; content: string }
+type LiveBlock = TextBlock | ToolBlock | ThinkingBlock
+
+const liveBlocks = ref<LiveBlock[]>([])
+const liveBlockSources = ref<ChatSource[]>([])
+const blocksMap = ref<Record<string, { blocks: LiveBlock[]; sources: ChatSource[] }>>({})
 
 const processMap = ref<Record<string, ProcessLog>>({})
 
@@ -577,6 +619,7 @@ async function newSession() {
   sourcesMap.value = {}
   userContextMap.value = {}
   processMap.value = {}
+  blocksMap.value = {}
   draftMap.value = {}
   tripDraftMap.value = {}
   openSources.value = new Set()
@@ -636,16 +679,16 @@ async function openSession(id: string) {
     sourcesMap.value = {}
     userContextMap.value = {}
     processMap.value = {}
+    blocksMap.value = {}
     openSources.value = new Set()
     if (resumeStream) {
-      // 切回正在串流的 session：保留 liveProcess，從 localStorage 還原已收到的文字
-      streamingText.value = lsRead(streamingMessageId.value ?? '')
+      // 切回正在串流的 session：liveBlocks 一直保持最新，無需還原
     } else if (!streamingSessionId.value) {
       // 無進行中 stream：正常重置
       resetProcess()
     }
     // 若有其他 session 在 stream 中（resumeStream=false but streamingSessionId != null）：
-    // 不呼叫 resetProcess()，保留 liveProcess 讓切回時能還原
+    // 不呼叫 resetProcess()，保留 liveBlocks 讓切回時能還原
 
     draftMap.value = {}
     tripDraftMap.value = {}
@@ -869,17 +912,10 @@ function lsClear(messageId: string) {
   try { localStorage.removeItem(`${LS_PREFIX}${messageId}`) } catch {}
 }
 
-function lsRead(messageId: string): string {
-  try {
-    const item = localStorage.getItem(`${LS_PREFIX}${messageId}`)
-    return item ? (JSON.parse(item).text ?? '') : ''
-  } catch { return '' }
-}
-
 // ── Send message ──────────────────────────────────────────────────────────────
 function resetProcess() {
-  liveProcess.value = { thinking: '', steps: [], sources: [] }
-  streamingText.value = ''
+  liveBlocks.value = []
+  liveBlockSources.value = []
   liveDraft.value = null
   liveTripDraft.value = null
   openThinking.value = new Set(['live'])
@@ -995,8 +1031,8 @@ async function send() {
     if (err?.name === 'AbortError') {
       if (isActive()) resetProcess()
     } else if (messageId) {
-      // POST 成功但串流中斷 → 顯示 partial，重連一次
-      if (isActive()) streamingText.value = lsRead(messageId)
+      // POST 成功但串流中斷 → 清空 blocks 讓 replay 重建
+      if (isActive()) liveBlocks.value = []
       try {
         await connectAndStream(sessionId, messageId, isActive, isFirstMessage, content, true)
       } catch {
@@ -1041,8 +1077,8 @@ async function connectAndStream(
   const apiBase = config.public.apiBase as string
   const token = session.value?.access_token
 
-  // 重連時清空 streamingText，讓 replay 從頭重建
-  if (isReconnect) streamingText.value = ''
+  // 重連時清空 liveBlocks，讓 replay 從頭重建
+  if (isReconnect) liveBlocks.value = []
 
   const resp = await fetch(`${apiBase}/chat/sessions/${sessionId}/messages/${messageId}/stream`, {
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -1073,19 +1109,25 @@ async function connectAndStream(
       const data = JSON.parse(dataLine.replace('data: ', ''))
 
       if (event === 'thinking') {
+        // 思考 block：置於所有 block 之前（若已有則更新）
+        const existing = liveBlocks.value.find((b): b is ThinkingBlock => b.type === 'thinking')
+        if (existing) { existing.content = data.text } else { liveBlocks.value.unshift({ type: 'thinking', content: data.text }) }
         if (!isActive()) continue
-        liveProcess.value.thinking = data.text
         await nextTick(); scrollBottom()
 
       } else if (event === 'tool_call') {
+        // 工具呼叫 block：按 SSE 順序插入
+        liveBlocks.value.push({ type: 'tool', toolCall: data, toolResult: null })
         if (!isActive()) continue
-        liveProcess.value.steps.push({ toolCall: data, toolResult: null })
         await nextTick(); scrollBottom()
 
       } else if (event === 'tool_result') {
+        // 找最後一個尚無結果的 tool block 填入
+        for (let i = liveBlocks.value.length - 1; i >= 0; i--) {
+          const b = liveBlocks.value[i]
+          if (b.type === 'tool' && b.toolResult === null) { (b as ToolBlock).toolResult = data; break }
+        }
         if (!isActive()) continue
-        const steps = liveProcess.value.steps
-        if (steps.length) steps[steps.length - 1].toolResult = data
         await nextTick(); scrollBottom()
 
       } else if (event === 'report_draft') {
@@ -1100,21 +1142,31 @@ async function connectAndStream(
 
       } else if (event === 'sources') {
         pendingSources = data as ChatSource[]
-        if (isActive()) liveProcess.value.sources = pendingSources
+        liveBlockSources.value = pendingSources
 
       } else if (event === 'delta') {
         lsWrite(messageId, data.text)  // 不管 isActive 都寫，切回時可還原
+        // 依 SSE 順序：若最後一個 block 是 text 就繼續追加，否則新建 text block
+        const last = liveBlocks.value[liveBlocks.value.length - 1]
+        if (last?.type === 'text') {
+          (last as TextBlock).content += data.text
+        } else {
+          liveBlocks.value.push({ type: 'text', content: data.text })
+        }
         if (!isActive()) continue
-        streamingText.value += data.text
         await nextTick(); scrollBottom()
 
       } else if (event === 'done') {
         lsClear(messageId)
         if (isActive()) {
-          // replay 時 done 帶有 process_log；live 時用 liveProcess
+          // 儲存有序 blocks 供 done 後渲染
+          blocksMap.value[messageId] = { blocks: [...liveBlocks.value], sources: [...liveBlockSources.value] }
+          // 同時維護 processMap（供 replay 相容）
           processMap.value[messageId] = data.process_log ?? {
-            thinking: liveProcess.value.thinking,
-            steps: liveProcess.value.steps,
+            thinking: '',
+            steps: liveBlocks.value
+              .filter((b): b is ToolBlock => b.type === 'tool')
+              .map(b => ({ toolCall: b.toolCall, toolResult: b.toolResult })),
           }
           if (liveDraft.value) {
             draftMap.value[messageId] = liveDraft.value
@@ -1127,10 +1179,13 @@ async function connectAndStream(
           openThinking.value.delete('live')
           openThinking.value.add(messageId)
 
+          const fullText = liveBlocks.value
+            .filter((b): b is TextBlock => b.type === 'text')
+            .map(b => b.content).join('')
           const assistantMsg: ChatMessage = {
             id: messageId,
             role: 'assistant',
-            content: streamingText.value,
+            content: fullText,
             cited_item_ids: pendingSources.map(s => s.id),
             created_at: new Date().toISOString(),
           }
