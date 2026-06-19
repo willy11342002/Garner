@@ -118,7 +118,6 @@ async def ai_edit_report_stream(
                     "id": str(ui.id),
                     "title": ui.title or "",
                     "summary": ui.summary or "",
-                    "tags": [t.name_zh for t in (ui.tags or [])],
                 }
                 for ui, _ in hits
             ]

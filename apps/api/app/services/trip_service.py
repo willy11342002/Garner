@@ -868,8 +868,6 @@ async def ai_edit_trip_stream(
                 hits = await rag_retrieve(db, user_id, query, limit=limit)
                 items_out = []
                 for ui, _dist in hits:
-                    tags = [t.name for t in (ui.tags or [])]
-                    locs = [l.name for l in (ui.locations or [])]
                     summary = ""
                     if ui.notes_md:
                         summary = next(iter(ui.notes_md.values()), "") if isinstance(ui.notes_md, dict) else str(ui.notes_md)
@@ -877,8 +875,6 @@ async def ai_edit_trip_stream(
                         "id": str(ui.id),
                         "title": ui.title or "",
                         "summary": summary[:500] if summary else "",
-                        "tags": tags,
-                        "locations": locs,
                     })
                 return {"count": len(items_out), "items": items_out}
             except Exception:
