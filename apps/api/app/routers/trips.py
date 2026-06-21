@@ -9,11 +9,15 @@ from app.quota_depends import ChatQuota
 from app.schemas.trip import (
     TripAIEditRequest,
     TripCreate,
+    TripInviteLinkUpdate,
     TripItemCreate,
     TripItemRead,
     TripItemReorderRequest,
     TripItemUpdate,
     TripListItem,
+    TripMemberCreate,
+    TripMemberRead,
+    TripMemberUpdate,
     TripRead,
     TripTagCreate,
     TripTagRead,
@@ -138,5 +142,77 @@ async def reorder_items(
     )
     if not ok:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+
+# ── Trip Members ──────────────────────────────────────────────────────────────
+
+@router.get("/{trip_id}/members", response_model=list[TripMemberRead])
+async def list_members(trip_id: UUID, current_user: CurrentUser, db: DbSession):
+    members = await trip_service.list_members(db, UUID(current_user["sub"]), trip_id)
+    if members is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return members
+
+
+@router.post("/{trip_id}/members", response_model=TripMemberRead, status_code=status.HTTP_201_CREATED)
+async def invite_member(
+    trip_id: UUID, data: TripMemberCreate, current_user: CurrentUser, db: DbSession
+):
+    member = await trip_service.invite_member_by_email(
+        db, UUID(current_user["sub"]), trip_id, data.email, data.role
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Trip or user not found")
+    return member
+
+
+@router.patch("/{trip_id}/members/{member_id}", response_model=TripMemberRead)
+async def update_member_role(
+    trip_id: UUID, member_id: UUID, data: TripMemberUpdate, current_user: CurrentUser, db: DbSession
+):
+    member = await trip_service.update_member_role(
+        db, UUID(current_user["sub"]), trip_id, member_id, data.role
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Trip or member not found")
+    return member
+
+
+@router.delete("/{trip_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_member(
+    trip_id: UUID, member_id: UUID, current_user: CurrentUser, db: DbSession
+):
+    ok = await trip_service.remove_member(
+        db, UUID(current_user["sub"]), trip_id, member_id
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Trip or member not found")
+
+
+@router.post("/{trip_id}/invite-link", response_model=TripRead)
+async def generate_invite_link(
+    trip_id: UUID, data: TripInviteLinkUpdate, current_user: CurrentUser, db: DbSession
+):
+    trip = await trip_service.generate_invite_link(
+        db, UUID(current_user["sub"]), trip_id, data.role
+    )
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return trip
+
+
+@router.delete("/{trip_id}/invite-link", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_invite_link(trip_id: UUID, current_user: CurrentUser, db: DbSession):
+    ok = await trip_service.revoke_invite_link(db, UUID(current_user["sub"]), trip_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+
+@router.post("/join/{token}", response_model=TripMemberRead)
+async def join_trip_by_token(token: UUID, current_user: CurrentUser, db: DbSession):
+    member = await trip_service.join_by_invite_token(db, UUID(current_user["sub"]), token)
+    if member is None:
+        raise HTTPException(status_code=404, detail="Invite link invalid or already joined as owner")
+    return member
 
 

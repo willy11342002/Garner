@@ -153,7 +153,38 @@
     "defaultItemName": "未命名",
     "addFailed": "新增失敗",
     "saveFailed": "儲存失敗，已復原",
-    "dayOfWeek": "日一二三四五六"
+    "dayOfWeek": "日一二三四五六",
+    "shareBtn": "共用",
+    "role": {
+      "owner": "擁有者",
+      "editor": "可編輯",
+      "viewer": "可檢視"
+    },
+    "share": {
+      "title": "共用行程",
+      "membersSection": "成員",
+      "inviteSection": "邀請成員",
+      "emailPlaceholder": "輸入對方的 Garner 帳號 Email",
+      "roleLabel": "權限",
+      "inviteBtn": "邀請",
+      "inviting": "邀請中…",
+      "inviteSuccess": "已邀請",
+      "inviteFailed": "邀請失敗，請確認對方已有 Garner 帳號",
+      "linkSection": "邀請連結",
+      "linkRole": "連結權限",
+      "generateLink": "產生連結",
+      "generating": "產生中…",
+      "copyLink": "複製連結",
+      "copied": "已複製！",
+      "revokeLink": "撤銷連結",
+      "revokeConfirm": "確定撤銷邀請連結？持有連結的人將無法再透過此連結加入。",
+      "removeMember": "移除",
+      "leaveTrip": "離開行程",
+      "leaveConfirm": "確定要離開「{title}」？你將無法再存取此行程，除非重新被邀請。",
+      "removeFailed": "操作失敗",
+      "joinSuccess": "已成功加入行程！",
+      "joinFailed": "加入失敗，邀請連結可能已失效"
+    }
   },
   "reports": {
     "title": "報告",

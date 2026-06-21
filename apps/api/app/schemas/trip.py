@@ -119,6 +119,32 @@ class TripItemReorderRequest(BaseModel):
     items: list[TripItemReorderEntry]
 
 
+# ── Member schemas ────────────────────────────────────────────────────────────
+
+class TripMemberRead(BaseModel):
+    id: UUID
+    member_user_id: UUID
+    email: str
+    display_name: str | None = None
+    role: str  # "editor" | "viewer"
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TripMemberCreate(BaseModel):
+    email: str
+    role: str = "viewer"
+
+
+class TripMemberUpdate(BaseModel):
+    role: str
+
+
+class TripInviteLinkUpdate(BaseModel):
+    role: str = "viewer"
+
+
 # ── Trip schemas ──────────────────────────────────────────────────────────────
 
 class TripRead(BaseModel):
@@ -130,6 +156,10 @@ class TripRead(BaseModel):
     last_edited_by: str | None = None
     sources: list[TripSourceItem] = []
     items: list[TripItemRead] = []
+    my_role: str = "owner"              # "owner" | "editor" | "viewer"
+    members: list[TripMemberRead] = []  # 非 owner 成員（owner only 可看 invite_token）
+    invite_token: UUID | None = None    # 只有 owner 才填入
+    invite_role: str = "viewer"
     created_at: datetime
     updated_at: datetime
 
@@ -145,6 +175,8 @@ class TripListItem(BaseModel):
     end_date: date | None = None
     source_count: int = 0
     item_count: int = 0
+    member_count: int = 0
+    my_role: str = "owner"              # "owner" | "editor" | "viewer"
     last_edited_by: str | None = None
     created_at: datetime
     updated_at: datetime

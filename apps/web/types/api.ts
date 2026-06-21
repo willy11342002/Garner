@@ -313,7 +313,7 @@ export interface UsageSummary {
   video_max_minutes: number
 }
 
-export type NotificationType = 'item_processed' | 'item_failed' | 'system'
+export type NotificationType = 'item_processed' | 'item_failed' | 'system' | 'trip_invited'
 
 export interface Notification {
   id: string
@@ -321,11 +321,36 @@ export interface Notification {
   title: string
   body: string | null
   item_id: string | null
+  trip_id: string | null
   is_read: boolean
   created_at: string
 }
 
 // ── Trip types ────────────────────────────────────────────────────────────────
+
+export type TripRole = 'owner' | 'editor' | 'viewer'
+
+export interface TripMember {
+  id: string
+  member_user_id: string
+  email: string
+  display_name: string | null
+  role: 'editor' | 'viewer'
+  created_at: string
+}
+
+export interface TripMemberCreate {
+  email: string
+  role?: 'editor' | 'viewer'
+}
+
+export interface TripMemberUpdate {
+  role: 'editor' | 'viewer'
+}
+
+export interface TripInviteLinkUpdate {
+  role?: 'editor' | 'viewer'
+}
 
 export interface TripTag {
   id: string
@@ -446,6 +471,10 @@ export interface Trip {
   last_edited_by: string | null
   sources: TripSourceItem[]
   items: TripItem[]
+  my_role: TripRole
+  members: TripMember[]
+  invite_token: string | null  // only filled for owner
+  invite_role: string
   created_at: string
   updated_at: string
 }
@@ -458,6 +487,8 @@ export interface TripListItem {
   end_date: string | null
   source_count: number
   item_count: number
+  member_count: number
+  my_role: TripRole
   last_edited_by: string | null
   created_at: string
   updated_at: string

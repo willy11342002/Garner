@@ -24,6 +24,7 @@
           <div class="trips-ritem__meta">
             <span v-if="trip.start_date" class="trips-ritem__date">{{ formatDateRange(trip.start_date, trip.end_date) }}</span>
             <span class="trips-ritem__count">{{ t('trips.itemCount', { n: trip.item_count }) }}</span>
+            <span v-if="trip.my_role !== 'owner'" :class="`trips-ritem__role trips-ritem__role--${trip.my_role}`">{{ t(`trips.role.${trip.my_role}`) }}</span>
           </div>
         </button>
       </div>
@@ -59,11 +60,13 @@
                   <template v-if="current.sources.length">
                     · <button class="trips-doc__srcbtn" @click="sourcesOpen = true">{{ t('trips.sourceCount', { n: current.sources.length }) }}</button>
                   </template>
+                  <span :class="`trips-doc__rolebadge trips-doc__rolebadge--${current.my_role}`">{{ t(`trips.role.${current.my_role}`) }}</span>
                 </div>
               </div>
               <div class="trips-doc__actions">
-                <button class="btn" @click="handleAddItem">{{ t('trips.addCardBtn') }}</button>
-                <button class="btn btn--danger" @click="handleDelete">{{ t('trips.deleteBtn') }}</button>
+                <button v-if="isEditor" class="btn" @click="handleAddItem">{{ t('trips.addCardBtn') }}</button>
+                <button class="btn" @click="shareOpen = true">{{ t('trips.shareBtn') }}</button>
+                <button v-if="current.my_role === 'owner'" class="btn btn--danger" @click="handleDelete">{{ t('trips.deleteBtn') }}</button>
               </div>
             </div>
 
@@ -246,21 +249,27 @@
           @touchend.passive="onPanelTouchEnd"
         >
           <div class="trips-modal__head">
+            <!-- Emoji: viewer = static span; editor = clickable button -->
             <button
+              v-if="isEditor"
               ref="emojiTriggerEl"
               class="trips-emoji-trigger"
               type="button"
               :title="editForm.emoji ? t('trips.changeEmojiTooltip') : t('trips.selectEmojiTooltip')"
               @click="toggleEmojiPicker"
             >{{ editForm.emoji || '😊' }}</button>
+            <span v-else class="trips-emoji-trigger trips-emoji-trigger--ro">{{ editForm.emoji || '😊' }}</span>
+
             <input
               v-model="editForm.title"
               class="trips-modal__title"
+              :class="{ 'trips-modal__title--ro': !isEditor }"
               :placeholder="t('trips.itemNamePlaceholder')"
-              @blur="onTitleCommit"
-              @keydown.enter.prevent="($event.target as HTMLElement).blur()"
+              :readonly="!isEditor"
+              @blur="isEditor ? onTitleCommit() : undefined"
+              @keydown.enter.prevent="isEditor && ($event.target as HTMLElement).blur()"
             />
-            <button v-if="editingItem?.id" class="trips-modal__trash" :disabled="isSaving" @click="handleDeleteItem">
+            <button v-if="editingItem?.id && isEditor" class="trips-modal__trash" :disabled="isSaving" @click="handleDeleteItem">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
             </button>
           </div>
@@ -274,10 +283,19 @@
               >{{ t('trips.sourcesLinked', { n: editingItem.sources.length }) }}</button>
             </div>
 
-            <!-- 已預定票券 + 票券連結（同地標：Enter 送出後變按鈕）-->
+            <!-- 已預定票券 + 票券連結 -->
             <div class="trips-field">
               <span class="trips-field__lbl">{{ t('trips.fieldLabel.ticket') }}</span>
-              <div class="trips-booked-row">
+
+              <!-- viewer: read-only display -->
+              <div v-if="!isEditor" class="trips-booked-row">
+                <span v-if="editForm.booked" class="trips-booked">{{ t('trips.bookedLabel') }}</span>
+                <a v-if="isUrl(editForm.ticket_url)" :href="editForm.ticket_url" target="_blank" rel="noopener" class="btn trips-place-open">{{ t('trips.openTicketBtn') }}</a>
+                <span v-if="!editForm.booked && !isUrl(editForm.ticket_url)" class="trips-ro-empty">—</span>
+              </div>
+
+              <!-- editor: editable -->
+              <div v-else class="trips-booked-row">
                 <label class="trips-check">
                   <input type="checkbox" v-model="editForm.booked" @change="saveField('booked')" />
                   <span class="trips-field__lbl">{{ t('trips.fieldLabel.bookedTicket') }}</span>
@@ -304,63 +322,87 @@
             <div class="trips-field">
               <span class="trips-field__lbl">{{ t('trips.fieldLabel.time') }}</span>
               <div class="trips-field__timerow">
-                <input v-model="editForm.start_date" type="date" class="trips-field__input trips-field__dt" @change="saveField('start_date')" />
-                <input v-model="editForm.start_time" type="time" class="trips-field__input trips-field__tm" @change="saveField('start_time')" />
+                <input v-model="editForm.start_date" type="date" class="trips-field__input trips-field__dt" :disabled="!isEditor" @change="saveField('start_date')" />
+                <input v-model="editForm.start_time" type="time" class="trips-field__input trips-field__tm" :disabled="!isEditor" @change="saveField('start_time')" />
                 <span class="trips-field__sep">{{ t('trips.arrow') }}</span>
-                <input v-model="editForm.end_date" type="date" class="trips-field__input trips-field__dt" @change="saveField('end_date')" />
-                <input v-model="editForm.end_time" type="time" class="trips-field__input trips-field__tm" @change="saveField('end_time')" />
+                <input v-model="editForm.end_date" type="date" class="trips-field__input trips-field__dt" :disabled="!isEditor" @change="saveField('end_date')" />
+                <input v-model="editForm.end_time" type="time" class="trips-field__input trips-field__tm" :disabled="!isEditor" @change="saveField('end_time')" />
               </div>
             </div>
 
-            <!-- Place URL：有地標時顯示「開啟地圖」按鈕，按編輯才切成 input；無地標直接 input -->
+            <!-- Place URL -->
             <div class="trips-field">
               <span class="trips-field__lbl">{{ t('trips.fieldLabel.location') }}</span>
-              <div v-if="isUrl(editForm.place_name) && !editingPlace" class="trips-place-row">
-                <a :href="editForm.place_name" target="_blank" rel="noopener" class="btn trips-place-open">{{ t('trips.openMapBtn') }}</a>
-                <button type="button" class="btn trips-place-edit" @click="editingPlace = true">{{ t('trips.editBtn') }}</button>
-              </div>
-              <input
-                v-else
-                v-model="editForm.place_name"
-                type="url"
-                class="trips-field__input"
-                :placeholder="t('trips.placeUrlPlaceholder')"
-                @keydown.enter.prevent="commitPlace"
-                @blur="commitPlace"
-              />
+
+              <!-- viewer: open link only (no edit/input) -->
+              <template v-if="!isEditor">
+                <a v-if="isUrl(editForm.place_name)" :href="editForm.place_name" target="_blank" rel="noopener" class="btn trips-place-open">{{ t('trips.openMapBtn') }}</a>
+                <span v-else class="trips-ro-empty">—</span>
+              </template>
+
+              <!-- editor: current behavior -->
+              <template v-else>
+                <div v-if="isUrl(editForm.place_name) && !editingPlace" class="trips-place-row">
+                  <a :href="editForm.place_name" target="_blank" rel="noopener" class="btn trips-place-open">{{ t('trips.openMapBtn') }}</a>
+                  <button type="button" class="btn trips-place-edit" @click="editingPlace = true">{{ t('trips.editBtn') }}</button>
+                </div>
+                <input
+                  v-else
+                  v-model="editForm.place_name"
+                  type="url"
+                  class="trips-field__input"
+                  :placeholder="t('trips.placeUrlPlaceholder')"
+                  @keydown.enter.prevent="commitPlace"
+                  @blur="commitPlace"
+                />
+              </template>
             </div>
 
             <!-- Tags -->
             <div class="trips-field">
               <span class="trips-field__lbl">{{ t('trips.fieldLabel.tags') }}</span>
               <div class="trips-tags-wrap">
-                <button
-                  v-for="tag in availableTags"
-                  :key="tag.id"
-                  class="trips-pill"
-                  :class="{ 'is-active': editForm.tag_ids.includes(tag.id) }"
-                  @click="toggleTag(tag.id)"
-                >{{ tag.name }}</button>
-                <div v-if="addingTag" class="trips-newtag">
-                  <input
-                    ref="newTagInputEl"
-                    v-model="newTagName"
-                    class="trips-newtag__input"
-                    :placeholder="t('trips.tagNamePlaceholder')"
-                    @keydown.enter="confirmNewTag"
-                    @keydown.escape="cancelNewTag"
-                    @blur="cancelNewTag"
-                  />
-                </div>
-                <button v-else class="trips-pill" @click="startAddTag">{{ t('trips.addNewTagBtn') }}</button>
+
+                <!-- viewer: show item's current tags as static chips -->
+                <template v-if="!isEditor">
+                  <span v-if="!editingItem?.tags?.length" class="trips-ro-empty">—</span>
+                  <span
+                    v-for="tag in editingItem?.tags ?? []"
+                    :key="tag.trip_tag_id"
+                    class="trips-pill is-active trips-pill--ro"
+                  >{{ tag.name }}</span>
+                </template>
+
+                <!-- editor: interactive tag picker -->
+                <template v-else>
+                  <button
+                    v-for="tag in availableTags"
+                    :key="tag.id"
+                    class="trips-pill"
+                    :class="{ 'is-active': editForm.tag_ids.includes(tag.id) }"
+                    @click="toggleTag(tag.id)"
+                  >{{ tag.name }}</button>
+                  <div v-if="addingTag" class="trips-newtag">
+                    <input
+                      ref="newTagInputEl"
+                      v-model="newTagName"
+                      class="trips-newtag__input"
+                      :placeholder="t('trips.tagNamePlaceholder')"
+                      @keydown.enter="confirmNewTag"
+                      @keydown.escape="cancelNewTag"
+                      @blur="cancelNewTag"
+                    />
+                  </div>
+                  <button v-else class="trips-pill" @click="startAddTag">{{ t('trips.addNewTagBtn') }}</button>
+                </template>
               </div>
             </div>
 
             <!-- Note (Tiptap) -->
             <div class="trips-field trips-field--note">
               <span class="trips-field__lbl">{{ t('trips.fieldLabel.notes') }}</span>
-              <div class="trips-tiptap-wrap">
-                <TiptapEditor v-model="editForm.note" />
+              <div class="trips-tiptap-wrap" :class="{ 'trips-tiptap-wrap--ro': !isEditor }">
+                <TiptapEditor v-model="editForm.note" :readonly="!isEditor" />
               </div>
             </div>
 
@@ -370,14 +412,23 @@
       </div>
     </Transition>
 
-    <!-- ===== AI 修改懸浮球（僅在選定行程時顯示）===== -->
+    <!-- ===== AI 修改懸浮球（僅在選定行程且有編輯權限時顯示）===== -->
     <TripAiFab
-      v-if="current"
+      v-if="current && isEditor"
       :trip-id="current.id"
       @card-added="onAiCardAdded"
       @card-updated="onAiCardUpdated"
       @card-deleted="onAiCardDeleted"
       @done="onAiDone"
+    />
+
+    <!-- ===== Share modal ===== -->
+    <TripShareModal
+      v-if="current"
+      :open="shareOpen"
+      :trip="current"
+      @close="shareOpen = false"
+      @updated="refreshCurrentTrip"
     />
 
     <!-- Emoji picker (Teleport to body to escape overflow) -->
@@ -428,8 +479,9 @@ definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 旅遊行程' })
 const { t, locale } = useI18n()
 
-const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, addItem, updateItem, deleteItem, listTags, createTag, updateTag, deleteTag } = useTrips()
+const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, addItem, updateItem, deleteItem, listTags, createTag, updateTag, deleteTag, joinByToken } = useTrips()
 const { open: openItemModal } = useItemModal()
+const router = useRouter()
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const VIEWS = [
@@ -479,7 +531,25 @@ const activeView = ref<'board' | 'date'>('board')
 const titleEl = ref<HTMLElement | null>(null)
 const availableTags = ref<TripTag[]>([])
 const sourcesOpen = ref(false)
+const shareOpen = ref(false)
 const mobileView = ref<'list' | 'detail'>('list')
+
+const isEditor = computed(() => current.value?.my_role === 'owner' || current.value?.my_role === 'editor')
+
+async function refreshCurrentTrip() {
+  if (!current.value) return
+  try {
+    current.value = await getTrip(current.value.id)
+    // Also refresh sidebar list so member_count etc. stays in sync
+    const idx = trips.value.findIndex(t => t.id === current.value!.id)
+    if (idx !== -1) {
+      trips.value[idx] = {
+        ...trips.value[idx],
+        member_count: current.value.members.length + 1,
+      }
+    }
+  } catch { /* ignore */ }
+}
 
 function onSelectSource(id: string) {
   sourcesOpen.value = false
@@ -572,6 +642,18 @@ const newTagInputEl = ref<HTMLInputElement | null>(null)
 async function loadInitialData() {
   loadingList.value = true
   try {
+    // Handle join_token before loading list (join first so new trip appears in list)
+    const joinToken = useRoute().query.join_token as string | undefined
+    if (joinToken) {
+      try {
+        await joinByToken(joinToken)
+        useToast().show(t('trips.share.joinSuccess'), 'success')
+      } catch {
+        useToast().show(t('trips.share.joinFailed'), 'error')
+      }
+      router.replace({ query: { ...useRoute().query, join_token: undefined } })
+    }
+
     [trips.value, availableTags.value] = await Promise.all([listTrips(), listTags()])
     const openId = useRoute().query.open as string | undefined
     if (openId && trips.value.some(t => t.id === openId)) {
@@ -648,7 +730,8 @@ async function handleCreate() {
   const tempItem: TripListItem = {
     id: tempId, title: defaultTripName, summary: null,
     start_date: null, end_date: null,
-    source_count: 0, item_count: 0, last_edited_by: 'user',
+    source_count: 0, item_count: 0, member_count: 0, my_role: 'owner',
+    last_edited_by: 'user',
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }
   trips.value.unshift(tempItem)
@@ -706,10 +789,22 @@ async function onTitleBlur(e: Event) {
 }
 
 // ── Board (by tags) ────────────────────────────────────────────────────────
-const boardColumns = computed(() => [
-  ...availableTags.value,
-  { id: '__none__', name: '', color: null as string | null }, // name 在 template 中用 t() 動態顯示
-])
+const boardColumns = computed(() => {
+  // Start from the user's own tags (editable columns)
+  const cols: Array<{ id: string; name: string; color: string | null }> = [...availableTags.value]
+  // For shared trips, the trip owner's tags won't be in availableTags (filtered by user_id).
+  // Supplement from the tags actually used on the trip's cards so the board renders correctly.
+  if (current.value) {
+    for (const item of current.value.items) {
+      for (const tag of item.tags) {
+        if (!cols.find(c => c.id === tag.trip_tag_id)) {
+          cols.push({ id: tag.trip_tag_id, name: tag.name, color: tag.color })
+        }
+      }
+    }
+  }
+  return [...cols, { id: '__none__', name: '', color: null as string | null }]
+})
 
 function itemsByTag(tagId: string) {
   if (!current.value) return []
@@ -1264,6 +1359,11 @@ function cancelNewTag() {
 .trips-ritem__meta { display: flex; align-items: center; gap: 8px; }
 .trips-ritem__date { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
 .trips-ritem__count { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+.trips-ritem__role {
+  font-size: 9.5px; padding: 1px 6px; border-radius: 99px; white-space: nowrap;
+}
+.trips-ritem__role--editor { background: #dbeafe; color: #1e40af; }
+.trips-ritem__role--viewer { background: var(--surface2); color: var(--text-dim); }
 
 /* ── Main ── */
 .trips-main { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1287,6 +1387,13 @@ function cancelNewTag() {
 }
 .trips-doc__title:focus { background: var(--surface2); }
 .trips-doc__sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
+.trips-doc__rolebadge {
+  font-size: 10px; padding: 1px 7px; border-radius: 99px; white-space: nowrap;
+  display: inline-block; vertical-align: middle; margin-left: 6px;
+}
+.trips-doc__rolebadge--owner  { background: #fef3c7; color: #92400e; }
+.trips-doc__rolebadge--editor { background: #dbeafe; color: #1e40af; }
+.trips-doc__rolebadge--viewer { background: var(--surface2); color: var(--text-dim); }
 .trips-doc__actions { display: flex; gap: 8px; flex-shrink: 0; padding-top: 6px; }
 
 /* Sources trigger */
@@ -1390,7 +1497,7 @@ function cancelNewTag() {
   display: flex;
   gap: 16px;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   padding-bottom: 16px;
   align-items: stretch;
 }
@@ -1521,6 +1628,21 @@ function cancelNewTag() {
 }
 .trips-pill:hover { border-color: var(--border2); color: var(--text); }
 .trips-pill.is-active { background: var(--accent-dim); border-color: var(--accent-bdr); color: var(--accent); }
+.trips-pill--ro { cursor: default; pointer-events: none; }
+.trips-pill--ro:hover { border-color: var(--accent-bdr); }
+
+/* Viewer read-only states */
+.trips-emoji-trigger--ro {
+  cursor: default; pointer-events: none;
+}
+.trips-modal__title--ro {
+  background: transparent; border-color: transparent; cursor: default;
+}
+.trips-modal__title--ro:focus { border-color: transparent; }
+.trips-tiptap-wrap--ro { background: transparent; border-color: var(--border); }
+.trips-tiptap-wrap--ro:focus-within { border-color: var(--border); }
+.trips-ro-empty { font-size: 13px; color: var(--text-dim); }
+.trips-field__input:disabled { opacity: .55; cursor: not-allowed; }
 .trips-newtag { display: inline-flex; align-items: center; }
 .trips-newtag__input {
   background: var(--surface); border: 1px solid var(--accent); border-radius: 20px;

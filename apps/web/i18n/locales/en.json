@@ -153,7 +153,38 @@
     "defaultItemName": "Untitled",
     "addFailed": "Failed to add",
     "saveFailed": "Save failed, reverted",
-    "dayOfWeek": "SunMonTueWedThuFriSat"
+    "dayOfWeek": "SunMonTueWedThuFriSat",
+    "shareBtn": "Share",
+    "role": {
+      "owner": "Owner",
+      "editor": "Editor",
+      "viewer": "Viewer"
+    },
+    "share": {
+      "title": "Share trip",
+      "membersSection": "Members",
+      "inviteSection": "Invite member",
+      "emailPlaceholder": "Enter their Garner account email",
+      "roleLabel": "Role",
+      "inviteBtn": "Invite",
+      "inviting": "Inviting…",
+      "inviteSuccess": "Invited",
+      "inviteFailed": "Invite failed – check that they have a Garner account",
+      "linkSection": "Invite link",
+      "linkRole": "Link role",
+      "generateLink": "Generate link",
+      "generating": "Generating…",
+      "copyLink": "Copy link",
+      "copied": "Copied!",
+      "revokeLink": "Revoke link",
+      "revokeConfirm": "Revoke the invite link? Anyone with the link won't be able to join this way anymore.",
+      "removeMember": "Remove",
+      "leaveTrip": "Leave trip",
+      "leaveConfirm": "Leave \"{title}\"? You won't be able to access it unless re-invited.",
+      "removeFailed": "Operation failed",
+      "joinSuccess": "Successfully joined the trip!",
+      "joinFailed": "Failed to join — the invite link may have expired"
+    }
   },
   "reports": {
     "title": "Reports",

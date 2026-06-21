@@ -1,11 +1,11 @@
 import asyncio
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import trips as crud_trips
-from app.models.trip import Trip, TripItem
+from app.models.trip import Trip, TripItem, TripMember
 from app.schemas.trip import (
     TripCreate,
     TripItemCreate,
@@ -14,6 +14,7 @@ from app.schemas.trip import (
     TripItemTagRead,
     TripItemUpdate,
     TripListItem,
+    TripMemberRead,
     TripRead,
     TripSourceItem,
     TripUpdate,
@@ -23,6 +24,58 @@ from app.schemas.trip import (
 SourceMap = dict[UUID, TripSourceItem]
 
 logger = logging.getLogger(__name__)
+
+# ── 角色權限 helper ────────────────────────────────────────────────────────────
+
+_ROLE_RANK = {"viewer": 0, "editor": 1, "owner": 2}
+
+
+def _get_effective_role(trip: Trip, user_id: UUID) -> str | None:
+    if trip.user_id == user_id:
+        return "owner"
+    for m in trip.members:
+        if m.member_user_id == user_id:
+            return m.role
+    return None
+
+
+async def _get_accessible_trip(
+    db: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    required_role: str = "viewer",
+) -> tuple[Trip, str] | None:
+    """取得行程並驗證最低角色需求。回傳 (trip, effective_role) 或 None（無權限 → 呼叫端回 404）。"""
+    trip = await crud_trips.get_trip(db, user_id, trip_id)
+    if trip is None:
+        return None
+    role = _get_effective_role(trip, user_id)
+    if role is None or _ROLE_RANK.get(role, -1) < _ROLE_RANK.get(required_role, 0):
+        return None
+    return trip, role
+
+
+async def _get_member_reads(db: AsyncSession, members: list[TripMember]) -> list[TripMemberRead]:
+    """批次查詢成員的 email / username，組成 TripMemberRead 列表。"""
+    if not members:
+        return []
+    from sqlalchemy import select
+    from app.models.user import User
+    ids = [m.member_user_id for m in members]
+    result = await db.execute(select(User).where(User.id.in_(ids)))
+    user_map = {u.id: u for u in result.scalars().all()}
+    return [
+        TripMemberRead(
+            id=m.id,
+            member_user_id=m.member_user_id,
+            email=user_map[m.member_user_id].email or "" if m.member_user_id in user_map else "",
+            display_name=user_map[m.member_user_id].username if m.member_user_id in user_map else None,
+            role=m.role,
+            created_at=m.created_at,
+        )
+        for m in members
+    ]
+
 
 # category → 標籤顏色，對齊前端 trips.vue 建立的預設標籤（同名會被 get_or_create_tag 沿用）
 _CATEGORY_TAG_COLORS = {"景點": "d", "美食": "e", "交通": "b", "住宿": "a"}
@@ -96,7 +149,11 @@ async def _build_item_source_map(
     }
 
 
-async def _build_trip_read(db: AsyncSession, user_id: UUID, trip: Trip) -> TripRead:
+async def _build_trip_read(
+    db: AsyncSession, user_id: UUID, trip: Trip, my_role: str | None = None
+) -> TripRead:
+    if my_role is None:
+        my_role = _get_effective_role(trip, user_id) or "owner"
     sources_raw = await crud_trips.resolve_sources(db, user_id, trip.source_item_ids)
     sources = [
         TripSourceItem(
@@ -109,6 +166,7 @@ async def _build_trip_read(db: AsyncSession, user_id: UUID, trip: Trip) -> TripR
     ]
     items = sorted(trip.items or [], key=lambda i: (str(i.start_date) if i.start_date else "", i.order_index))
     source_map = await _build_item_source_map(db, user_id, items)
+    members = await _get_member_reads(db, trip.members or [])
     return TripRead(
         id=trip.id,
         title=trip.title,
@@ -118,6 +176,10 @@ async def _build_trip_read(db: AsyncSession, user_id: UUID, trip: Trip) -> TripR
         last_edited_by=trip.last_edited_by,
         sources=sources,
         items=[_build_item_read(i, source_map) for i in items],
+        my_role=my_role,
+        members=members,
+        invite_token=trip.invite_token if my_role == "owner" else None,
+        invite_role=trip.invite_role,
         created_at=trip.created_at,
         updated_at=trip.updated_at,
     )
@@ -134,6 +196,8 @@ async def list_trips(db: AsyncSession, user_id: UUID) -> list[TripListItem]:
             end_date=t.end_date,
             source_count=len(t.source_item_ids or []),
             item_count=len(t.items or []),
+            member_count=len(t.members or []),
+            my_role=_get_effective_role(t, user_id) or "owner",
             last_edited_by=t.last_edited_by,
             created_at=t.created_at,
             updated_at=t.updated_at,
@@ -146,7 +210,8 @@ async def get_trip(db: AsyncSession, user_id: UUID, trip_id: UUID) -> TripRead |
     trip = await crud_trips.get_trip(db, user_id, trip_id)
     if trip is None:
         return None
-    return await _build_trip_read(db, user_id, trip)
+    my_role = _get_effective_role(trip, user_id) or "owner"
+    return await _build_trip_read(db, user_id, trip, my_role=my_role)
 
 
 async def create_trip(
@@ -162,7 +227,7 @@ async def create_trip(
         last_edited_by="user",
     )
     trip = await crud_trips.get_trip(db, user_id, trip.id)
-    return await _build_trip_read(db, user_id, trip)
+    return await _build_trip_read(db, user_id, trip, my_role="owner")
 
 
 async def create_trip_from_chat(
@@ -383,9 +448,10 @@ async def _geocode_items_bg(items: list[tuple[UUID, str]]) -> None:
 async def update_trip(
     db: AsyncSession, user_id: UUID, trip_id: UUID, data: TripUpdate
 ) -> TripRead | None:
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    result = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if result is None:
         return None
+    trip, my_role = result
     trip = await crud_trips.update_trip(
         db,
         trip,
@@ -396,13 +462,14 @@ async def update_trip(
         last_edited_by="user",
     )
     trip = await crud_trips.get_trip(db, user_id, trip.id)
-    return await _build_trip_read(db, user_id, trip)
+    return await _build_trip_read(db, user_id, trip, my_role=my_role)
 
 
 async def delete_trip(db: AsyncSession, user_id: UUID, trip_id: UUID) -> bool:
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    result = await _get_accessible_trip(db, user_id, trip_id, required_role="owner")
+    if result is None:
         return False
+    trip, _ = result
     await crud_trips.delete_trip(db, trip)
     return True
 
@@ -412,9 +479,10 @@ async def delete_trip(db: AsyncSession, user_id: UUID, trip_id: UUID) -> bool:
 async def add_item(
     db: AsyncSession, user_id: UUID, trip_id: UUID, data: TripItemCreate
 ) -> TripItemRead | None:
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    result = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if result is None:
         return None
+    trip, _ = result
 
     kwargs: dict = dict(
         user_item_id=data.user_item_id,
@@ -477,8 +545,7 @@ async def update_item(
     item_id: UUID,
     data: TripItemUpdate,
 ) -> TripItemRead | None:
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    if await _get_accessible_trip(db, user_id, trip_id, required_role="editor") is None:
         return None
     item = await crud_trips.get_item(db, trip_id, item_id)
     if item is None:
@@ -530,8 +597,7 @@ async def _geocode_item(db: AsyncSession, item_id: UUID, place_name: str) -> Non
 async def delete_item(
     db: AsyncSession, user_id: UUID, trip_id: UUID, item_id: UUID
 ) -> bool:
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    if await _get_accessible_trip(db, user_id, trip_id, required_role="editor") is None:
         return False
     item = await crud_trips.get_item(db, trip_id, item_id)
     if item is None:
@@ -546,8 +612,7 @@ async def reorder_items(
     trip_id: UUID,
     entries: list[TripItemReorderEntry],
 ) -> bool:
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    if await _get_accessible_trip(db, user_id, trip_id, required_role="editor") is None:
         return False
     await crud_trips.reorder_items(
         db, [{"id": e.id, "order_index": e.order_index} for e in entries]
@@ -815,10 +880,11 @@ async def ai_edit_trip_stream(
     """
     from app.services import ai_service
 
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if accessible is None:
         yield ai_service._sse("error", {"message": "trip not found"})
         return
+    trip, _ = accessible
 
     # 以與詳情頁相同的排序呈現卡片，並建立 編號 → item_id 的對照
     items_sorted = sorted(
@@ -964,6 +1030,149 @@ async def ai_edit_trip_stream(
         yield ev
 
     # 標記為 AI 最後編輯（靜默，不另發事件）
-    trip2 = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip2 is not None:
-        await crud_trips.update_trip(db, trip2, last_edited_by="ai")
+    accessible2 = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if accessible2 is not None:
+        await crud_trips.update_trip(db, accessible2[0], last_edited_by="ai")
+
+
+# ── Trip 成員管理 ──────────────────────────────────────────────────────────────
+
+async def list_members(
+    db: AsyncSession, requester_id: UUID, trip_id: UUID
+) -> list[TripMemberRead] | None:
+    if await _get_accessible_trip(db, requester_id, trip_id, required_role="viewer") is None:
+        return None
+    members = await crud_trips.list_trip_members(db, trip_id)
+    return await _get_member_reads(db, members)
+
+
+async def invite_member_by_email(
+    db: AsyncSession,
+    owner_id: UUID,
+    trip_id: UUID,
+    email: str,
+    role: str,
+) -> TripMemberRead | None:
+    """回傳 TripMemberRead；None 表示無權限或用戶不存在（呼叫端依 detail 判斷）。"""
+    result = await _get_accessible_trip(db, owner_id, trip_id, required_role="owner")
+    if result is None:
+        return None
+    trip, _ = result
+
+    from app.crud import notifications as crud_notifications
+    from app.models.notification import NotificationType
+    from app.models.user import User
+    from sqlalchemy import select
+
+    # 查被邀請者
+    invitee = await crud_trips.get_user_by_email(db, email)
+    if invitee is None:
+        return None  # 呼叫端區分 404 "user not found"
+
+    if invitee.id == owner_id:
+        return None  # 不能邀請自己
+
+    existing = await crud_trips.get_trip_member(db, trip_id, invitee.id)
+    if existing:
+        # 已是成員 → 更新角色
+        member = await crud_trips.update_trip_member_role(db, existing, role)
+    else:
+        member = await crud_trips.add_trip_member(db, trip_id, invitee.id, role, owner_id)
+
+    # 取邀請者資訊組通知標題
+    owner_result = await db.execute(select(User).where(User.id == owner_id))
+    owner_user = owner_result.scalar_one_or_none()
+    inviter_name = (owner_user.username or owner_user.email or "某人") if owner_user else "某人"
+
+    await crud_notifications.create(
+        db,
+        user_id=invitee.id,
+        type=NotificationType.trip_invited,
+        title=f"{inviter_name} 邀請你加入旅遊行程「{trip.title}」",
+        trip_id=trip_id,
+    )
+    await db.commit()
+
+    reads = await _get_member_reads(db, [member])
+    return reads[0] if reads else None
+
+
+async def remove_member(
+    db: AsyncSession, requester_id: UUID, trip_id: UUID, member_id: UUID
+) -> bool:
+    """owner 可移除任何成員；成員自己可離開行程。"""
+    accessible = await _get_accessible_trip(db, requester_id, trip_id, required_role="viewer")
+    if accessible is None:
+        return False
+    _, my_role = accessible
+
+    member = await crud_trips.get_trip_member_by_id(db, trip_id, member_id)
+    if member is None:
+        return False
+
+    # 只有 owner 可移除別人；一般成員只能移除自己
+    if my_role != "owner" and member.member_user_id != requester_id:
+        return False
+
+    await crud_trips.remove_trip_member(db, member)
+    return True
+
+
+async def update_member_role(
+    db: AsyncSession, owner_id: UUID, trip_id: UUID, member_id: UUID, role: str
+) -> TripMemberRead | None:
+    result = await _get_accessible_trip(db, owner_id, trip_id, required_role="owner")
+    if result is None:
+        return None
+
+    member = await crud_trips.get_trip_member_by_id(db, trip_id, member_id)
+    if member is None:
+        return None
+
+    member = await crud_trips.update_trip_member_role(db, member, role)
+    reads = await _get_member_reads(db, [member])
+    return reads[0] if reads else None
+
+
+async def generate_invite_link(
+    db: AsyncSession, owner_id: UUID, trip_id: UUID, role: str
+) -> TripRead | None:
+    result = await _get_accessible_trip(db, owner_id, trip_id, required_role="owner")
+    if result is None:
+        return None
+    trip, _ = result
+
+    token = uuid4()
+    trip = await crud_trips.set_trip_invite_token(db, trip, token, role)
+    return await _build_trip_read(db, owner_id, trip, my_role="owner")
+
+
+async def revoke_invite_link(db: AsyncSession, owner_id: UUID, trip_id: UUID) -> bool:
+    result = await _get_accessible_trip(db, owner_id, trip_id, required_role="owner")
+    if result is None:
+        return False
+    trip, _ = result
+    await crud_trips.set_trip_invite_token(db, trip, None, "viewer")
+    return True
+
+
+async def join_by_invite_token(
+    db: AsyncSession, user_id: UUID, token: UUID
+) -> TripMemberRead | None:
+    trip = await crud_trips.get_trip_by_invite_token(db, token)
+    if trip is None:
+        return None
+
+    # 已是 owner → 直接回傳（冪等）
+    if trip.user_id == user_id:
+        return None
+
+    existing = await crud_trips.get_trip_member(db, trip.id, user_id)
+    if existing:
+        reads = await _get_member_reads(db, [existing])
+        return reads[0] if reads else None
+
+    member = await crud_trips.add_trip_member(db, trip.id, user_id, trip.invite_role, trip.user_id)
+    await db.commit()
+    reads = await _get_member_reads(db, [member])
+    return reads[0] if reads else None

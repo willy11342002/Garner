@@ -13,8 +13,12 @@ async def create(
     title: str,
     body: str | None = None,
     item_id: UUID | None = None,
+    trip_id: UUID | None = None,
 ) -> Notification:
-    notification = Notification(user_id=user_id, type=type, title=title, body=body, item_id=item_id)
+    notification = Notification(
+        user_id=user_id, type=type, title=title, body=body,
+        item_id=item_id, trip_id=trip_id,
+    )
     db.add(notification)
     await db.flush()
     return notification

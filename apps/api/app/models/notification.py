@@ -12,6 +12,7 @@ class NotificationType(str, enum.Enum):
     item_processed = "item_processed"
     item_failed = "item_failed"
     system = "system"
+    trip_invited = "trip_invited"
 
 
 class Notification(Base):
@@ -25,6 +26,7 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     item_id: Mapped[UUID | None] = mapped_column(ForeignKey("user_items.id"), nullable=True)
+    trip_id: Mapped[UUID | None] = mapped_column(ForeignKey("trips.id", ondelete="SET NULL"), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

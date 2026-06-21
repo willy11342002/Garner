@@ -51,7 +51,13 @@ class Trip(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
+    invite_token: Mapped[UUID | None] = mapped_column(nullable=True, unique=True)
+    invite_role: Mapped[str] = mapped_column(Text, nullable=False, default="viewer", server_default="viewer")
+
     items: Mapped[list["TripItem"]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan", lazy="selectin"
+    )
+    members: Mapped[list["TripMember"]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", lazy="selectin"
     )
 
@@ -166,3 +172,28 @@ class TripItemTag(Base):
 
     trip_item: Mapped["TripItem"] = relationship(back_populates="item_tags")
     trip_tag: Mapped["TripTag"] = relationship(back_populates="item_tags")
+
+
+class TripMember(Base):
+    """行程共用成員（非 owner）。role: 'editor' | 'viewer'"""
+
+    __tablename__ = "trip_members"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    trip_id: Mapped[UUID] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    member_user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(Text, nullable=False, default="viewer", server_default="viewer")
+    invited_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    trip: Mapped["Trip"] = relationship(back_populates="members")
+
+    __table_args__ = (
+        UniqueConstraint("trip_id", "member_user_id", name="uq_trip_members_trip_user"),
+    )

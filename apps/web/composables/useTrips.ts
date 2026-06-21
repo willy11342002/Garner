@@ -1,11 +1,15 @@
 import type {
   Trip,
   TripCreate,
+  TripInviteLinkUpdate,
   TripItem,
   TripItemCreate,
   TripItemReorderRequest,
   TripItemUpdate,
   TripListItem,
+  TripMember,
+  TripMemberCreate,
+  TripMemberUpdate,
   TripTag,
   TripTagCreate,
   TripTagUpdate,
@@ -53,6 +57,36 @@ export function useTrips() {
     await apiFetch(`/trips/${tripId}/items/reorder`, { method: 'PATCH', body: data })
   }
 
+  // ── Members ────────────────────────────────────────────────────────────────
+
+  async function listMembers(tripId: string): Promise<TripMember[]> {
+    return apiFetch<TripMember[]>(`/trips/${tripId}/members`)
+  }
+
+  async function inviteMember(tripId: string, data: TripMemberCreate): Promise<TripMember> {
+    return apiFetch<TripMember>(`/trips/${tripId}/members`, { method: 'POST', body: data })
+  }
+
+  async function updateMemberRole(tripId: string, memberId: string, data: TripMemberUpdate): Promise<TripMember> {
+    return apiFetch<TripMember>(`/trips/${tripId}/members/${memberId}`, { method: 'PATCH', body: data })
+  }
+
+  async function removeMember(tripId: string, memberId: string): Promise<void> {
+    await apiFetch(`/trips/${tripId}/members/${memberId}`, { method: 'DELETE' })
+  }
+
+  async function generateInviteLink(tripId: string, data: TripInviteLinkUpdate): Promise<Trip> {
+    return apiFetch<Trip>(`/trips/${tripId}/invite-link`, { method: 'POST', body: data })
+  }
+
+  async function revokeInviteLink(tripId: string): Promise<void> {
+    await apiFetch(`/trips/${tripId}/invite-link`, { method: 'DELETE' })
+  }
+
+  async function joinByToken(token: string): Promise<TripMember> {
+    return apiFetch<TripMember>(`/trips/join/${token}`, { method: 'POST' })
+  }
+
   // ── Tags ───────────────────────────────────────────────────────────────────
 
   async function listTags(): Promise<TripTag[]> {
@@ -81,6 +115,13 @@ export function useTrips() {
     updateItem,
     deleteItem,
     reorderItems,
+    listMembers,
+    inviteMember,
+    updateMemberRole,
+    removeMember,
+    generateInviteLink,
+    revokeInviteLink,
+    joinByToken,
     listTags,
     createTag,
     updateTag,

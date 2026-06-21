@@ -1,10 +1,11 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.trip import Trip, TripItem, TripItemSource, TripItemTag, TripTag
+from app.models.trip import Trip, TripItem, TripItemSource, TripItemTag, TripMember, TripTag
+from app.models.user import User
 from app.models.user_item import UserItem
 
 
@@ -37,21 +38,41 @@ async def create_trip(
 
 
 async def get_trip(db: AsyncSession, user_id: UUID, trip_id: UUID) -> Trip | None:
+    """取得行程：owner 或成員皆可。"""
     result = await db.execute(
         select(Trip)
-        .where(Trip.id == trip_id, Trip.user_id == user_id)
+        .where(
+            Trip.id == trip_id,
+            or_(
+                Trip.user_id == user_id,
+                exists().where(
+                    TripMember.trip_id == trip_id,
+                    TripMember.member_user_id == user_id,
+                ),
+            ),
+        )
         .options(
-            selectinload(Trip.items).selectinload(TripItem.item_tags).selectinload(TripItemTag.trip_tag)
+            selectinload(Trip.items).selectinload(TripItem.item_tags).selectinload(TripItemTag.trip_tag),
+            selectinload(Trip.members),
         )
     )
     return result.scalar_one_or_none()
 
 
 async def list_trips(db: AsyncSession, user_id: UUID) -> list[Trip]:
+    """列出使用者擁有或已加入的所有行程。"""
     result = await db.execute(
         select(Trip)
-        .where(Trip.user_id == user_id)
-        .options(selectinload(Trip.items))
+        .where(
+            or_(
+                Trip.user_id == user_id,
+                exists().where(
+                    TripMember.trip_id == Trip.id,
+                    TripMember.member_user_id == user_id,
+                ),
+            )
+        )
+        .options(selectinload(Trip.items), selectinload(Trip.members))
         .order_by(Trip.updated_at.desc())
     )
     return list(result.scalars().all())
@@ -213,6 +234,102 @@ async def delete_tag(db: AsyncSession, tag: TripTag) -> None:
 async def get_tag(db: AsyncSession, user_id: UUID, tag_id: UUID) -> TripTag | None:
     result = await db.execute(
         select(TripTag).where(TripTag.id == tag_id, TripTag.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+# ── TripMember ────────────────────────────────────────────────────────────────
+
+async def get_trip_member(
+    db: AsyncSession, trip_id: UUID, member_user_id: UUID
+) -> TripMember | None:
+    result = await db.execute(
+        select(TripMember).where(
+            TripMember.trip_id == trip_id,
+            TripMember.member_user_id == member_user_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_trip_member_by_id(
+    db: AsyncSession, trip_id: UUID, member_id: UUID
+) -> TripMember | None:
+    result = await db.execute(
+        select(TripMember).where(
+            TripMember.id == member_id,
+            TripMember.trip_id == trip_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_trip_members(db: AsyncSession, trip_id: UUID) -> list[TripMember]:
+    result = await db.execute(
+        select(TripMember)
+        .where(TripMember.trip_id == trip_id)
+        .order_by(TripMember.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def add_trip_member(
+    db: AsyncSession,
+    trip_id: UUID,
+    member_user_id: UUID,
+    role: str,
+    invited_by: UUID,
+) -> TripMember:
+    member = TripMember(
+        trip_id=trip_id,
+        member_user_id=member_user_id,
+        role=role,
+        invited_by=invited_by,
+    )
+    db.add(member)
+    await db.commit()
+    await db.refresh(member)
+    return member
+
+
+async def update_trip_member_role(
+    db: AsyncSession, member: TripMember, role: str
+) -> TripMember:
+    member.role = role
+    await db.commit()
+    await db.refresh(member)
+    return member
+
+
+async def remove_trip_member(db: AsyncSession, member: TripMember) -> None:
+    await db.delete(member)
+    await db.commit()
+
+
+async def get_trip_by_invite_token(db: AsyncSession, token: UUID) -> Trip | None:
+    result = await db.execute(
+        select(Trip)
+        .where(Trip.invite_token == token)
+        .options(selectinload(Trip.members))
+    )
+    return result.scalar_one_or_none()
+
+
+async def set_trip_invite_token(
+    db: AsyncSession, trip: Trip, token: UUID | None, role: str
+) -> Trip:
+    trip.invite_token = token
+    trip.invite_role = role
+    await db.commit()
+    await db.refresh(trip)
+    return trip
+
+
+# ── User lookup ───────────────────────────────────────────────────────────────
+
+async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
+    result = await db.execute(
+        select(User).where(User.email == email)
     )
     return result.scalar_one_or_none()
 

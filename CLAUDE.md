@@ -91,7 +91,7 @@ garner/
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
 - `report/` — ReportAiFab（報告頁的 AI 修改懸浮球）
-- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）；TripCardEditor 支援 touch-drag-to-close 關閉 modal（向上或向下快速拖曳自動關閉）
+- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）；TripCardEditor 支援 touch-drag-to-close 關閉 modal（向上或向下快速拖曳自動關閉）；TripShareModal（行程共用管理：成員列表、email 邀請、邀請連結產生/撤銷，owner 限定管理，viewer/editor 唯讀查看）
 - 根目錄 — BaseFab（通用懸浮球容器：可拖曳、側邊停靠、badge、icon、panel slot、支援多球同時共存 multi-FAB），TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）
 
 ### Web utils（`apps/web/utils/`）
