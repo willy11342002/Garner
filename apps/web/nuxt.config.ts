@@ -29,7 +29,41 @@ export default defineNuxtConfig({
     '~/assets/css/chat.css',
   ],
 
-  modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n'],
+  modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n', '@vite-pwa/nuxt'],
+
+  pwa: {
+    registerType: 'autoUpdate',
+    manifest: {
+      name: 'Garner',
+      short_name: 'Garner',
+      description: '被動建立的個人知識庫',
+      theme_color: '#1a1a1a',
+      background_color: '#1a1a1a',
+      display: 'standalone',
+      orientation: 'portrait',
+      scope: '/',
+      start_url: '/app',
+      icons: [
+        { src: '/icons/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icons/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/icons/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    },
+    workbox: {
+      navigateFallback: null,
+      globPatterns: ['**/*.{js,css,html,png,svg,ico,woff,woff2}'],
+      runtimeCaching: [
+        {
+          urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+          handler: 'CacheFirst',
+          options: { cacheName: 'google-fonts', expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+        },
+      ],
+    },
+    devOptions: {
+      enabled: false,
+    },
+  },
 
   routeRules: {
     '/app/**': { ssr: false },
