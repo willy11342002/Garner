@@ -58,6 +58,39 @@ export default defineNuxtConfig({
           handler: 'CacheFirst',
           options: { cacheName: 'google-fonts', expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 } },
         },
+        // Items list: GET /items/?page=...
+        {
+          urlPattern: /\/items\/(?:\?|$)/,
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'api-items-list',
+            networkTimeoutSeconds: 5,
+            expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            cacheableResponse: { statuses: [0, 200] },
+          },
+        },
+        // Item detail: GET /items/{id}
+        {
+          urlPattern: /\/items\/[\w-]+$/,
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'api-items-detail',
+            networkTimeoutSeconds: 5,
+            expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            cacheableResponse: { statuses: [0, 200] },
+          },
+        },
+        // Tags list: GET /tags/
+        {
+          urlPattern: /\/tags\/(?:\?|$)/,
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'api-tags',
+            networkTimeoutSeconds: 5,
+            expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            cacheableResponse: { statuses: [0, 200] },
+          },
+        },
       ],
     },
     devOptions: {

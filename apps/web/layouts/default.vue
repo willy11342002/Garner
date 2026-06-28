@@ -5,6 +5,7 @@
     <slot />
     <LayoutAppFooter v-if="showFooter" :show-pricing="!isLoggedIn" />
     <ToastList />
+    <OfflineBanner />
   </div>
 </template>
 
