@@ -9,12 +9,13 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_YT_ACTOR = "streamers/youtube-scraper"
+_YT_META_ACTOR = "streamers/youtube-scraper"          # metadata: title / duration / thumbnail
+_YT_DOWNLOAD_ACTOR = "streamers/youtube-video-downloader"  # the actual downloadable file
 _IG_ACTOR = "apify/instagram-scraper"
 _TT_ACTOR = "clockworks/tiktok-scraper"
 _FB_ACTOR = "apify/facebook-posts-scraper"
 _WEB_ACTOR = "apify/website-content-crawler"
-_DOWNLOAD_TIMEOUT = 60
+_DOWNLOAD_TIMEOUT = 120
 
 
 @dataclass
@@ -47,26 +48,66 @@ def _run_actor(actor_id: str, run_input: dict) -> list[dict]:
     return list(client.dataset(run.default_dataset_id).iterate_items())
 
 
+def yt_video_url(item: dict) -> str | None:
+    """Extract the downloadable video link from a youtube-video-downloader item.
+
+    With storeInKVStore the actor downloads the merged file and exposes it as
+    `downloadedFileUrl` (an Apify KV-store record link, valid ~3 days). Fall
+    back to the direct googlevideo streams if that's missing. Single source of
+    truth shared with the YouTube provider's fetch_content.
+    """
+    return (
+        item.get("downloadedFileUrl")
+        or item.get("videoOnlyUrl")
+        or item.get("download_url")
+        or item.get("videoUrl")
+        or item.get("streamUrl")
+    )
+
+
 async def fetch_youtube(url: str) -> ApifyMediaResult:
-    run_input = {"startUrls": [{"url": url}], "maxResults": 1}
-    try:
-        items = await asyncio.to_thread(_run_actor, _YT_ACTOR, run_input)
-    except Exception:
-        logger.exception("Apify YouTube scraper failed for url=%s", url)
+    """Fetch metadata and the downloadable file from two actors in parallel.
+
+    youtube-scraper gives title/duration/thumbnail; youtube-video-downloader
+    downloads the merged file to the KV store (`downloadedFileUrl`). The
+    downloader item carries no metadata, so we run both concurrently and merge —
+    their keys don't overlap. raw_data holds both so the provider's
+    fetch_content can pull the video link and mime from it.
+    """
+    meta_input = {"startUrls": [{"url": url}], "maxResults": 1}
+    dl_input = {
+        "videos": [{"url": url}],
+        "preferredFormat": "mp4",
+        "preferredQuality": "360p",
+        "storeInKVStore": True,
+    }
+
+    async def _run(actor_id: str, run_input: dict, label: str) -> list[dict]:
+        try:
+            return await asyncio.to_thread(_run_actor, actor_id, run_input)
+        except Exception:
+            logger.exception("Apify YouTube %s failed for url=%s", label, url)
+            return []
+
+    meta_items, dl_items = await asyncio.gather(
+        _run(_YT_META_ACTOR, meta_input, "metadata scraper"),
+        _run(_YT_DOWNLOAD_ACTOR, dl_input, "downloader"),
+    )
+
+    meta = meta_items[0] if meta_items else {}
+    dl = dl_items[0] if dl_items else {}
+    if not meta and not dl:
         return ApifyMediaResult(raw_data={})
 
-    if not items:
-        return ApifyMediaResult(raw_data={})
-
-    item = items[0]
-    video_url = item.get("videoUrl") or item.get("streamUrl")
+    item = {**meta, **dl}  # metadata + file fields in one raw_data
+    video_url = yt_video_url(item)
 
     return ApifyMediaResult(
         raw_data=item,
-        title=item.get("title"),
-        description=item.get("description") or item.get("text"),
-        duration_sec=_parse_duration(item.get("duration")),
-        thumbnail_url=item.get("thumbnailUrl"),
+        title=meta.get("title"),
+        description=meta.get("description") or meta.get("text"),
+        duration_sec=_parse_duration(meta.get("duration")),
+        thumbnail_url=meta.get("thumbnailUrl"),
         video_urls=[video_url] if video_url else [],
         image_urls=[],
     )

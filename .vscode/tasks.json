@@ -4,7 +4,7 @@
     {
       "label": "uv sync (API)",
       "type": "shell",
-      "command": "uv sync --active",
+      "command": "uv sync --active --extra dev",
       "options": {
         "cwd": "${workspaceFolder}/apps/api"
       },

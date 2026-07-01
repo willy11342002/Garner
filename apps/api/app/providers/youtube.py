@@ -57,8 +57,12 @@ class YouTubeProvider(ContentProvider):
 
         # Download video to memory (not stored to DB)
         video_bytes: bytes | None = None
-        mime_type = "video/mp4"
-        video_url = info.raw_data.get("videoUrl") or info.raw_data.get("streamUrl")
+        video_url = apify_service.yt_video_url(info.raw_data)
+        # The downloader stores a merged .webm in the KV store; tell Gemini the
+        # right container. fileKey carries the real extension; fall back to mp4
+        # for the direct googlevideo streams.
+        file_key = info.raw_data.get("fileKey") or video_url or ""
+        mime_type = "video/webm" if file_key.lower().endswith(".webm") else "video/mp4"
         if video_url:
             video_bytes = await apify_service.download_bytes(video_url)
 

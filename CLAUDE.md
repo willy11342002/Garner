@@ -58,7 +58,7 @@ garner/
 - `geocoding_service` — 地理編碼（地址 ↔ 座標）
 - `billing_service` — 訂閱 / 付費額度邏輯
 - `gumroad_service` — Gumroad 金流串接
-- `apify_service` — 外部內容抓取（Apify）：支援 YouTube、TikTok、Facebook
+- `apify_service` — 外部內容抓取（Apify）：支援 YouTube、TikTok、Facebook。YouTube 用雙 actor 並行（`asyncio.gather`）：`streamers/youtube-scraper` 抓 metadata（title/duration/thumbnail）、`streamers/youtube-video-downloader` 下載影片檔（`downloadedFileUrl`，存 KVS 約 3 天過期），兩邊 merge 進 `raw_data`；影片連結對應集中在 `yt_video_url()`（provider 共用）
 - `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發；`ai_edit_trip_stream` 用 SSE 對既有行程逐張新刪修卡片（搭配 ai_service.stream_tool_loop）
 
 ### API routers（`apps/api/app/routers/`）
