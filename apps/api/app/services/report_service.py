@@ -124,6 +124,7 @@ async def ai_edit_report_stream(
             return {"count": len(items_out), "items": items_out}
 
         if name == "update_report":
+            import asyncio
             new_title = args.get("title") or None
             new_body = args.get("body_md", "")
             await crud_reports.update(
@@ -132,6 +133,8 @@ async def ai_edit_report_stream(
                 body_md=new_body,
                 last_edited_by="ai",
             )
+            text = _embed_text_for_report(report)
+            asyncio.create_task(_embed_report_bg(report.id, user_id, text))
             read = await _to_read(db, user_id, report)
             return {"ok": True, "_report": read.model_dump(mode="json")}
 
@@ -142,6 +145,58 @@ async def ai_edit_report_stream(
 
 
 # ── chat tool 入口 ──────────────────────────────────────────────────────────
+
+
+def _embed_text_for_report(report: Report) -> str:
+    """組合 report 的 embedding 文本：title + summary（或 body 前 500 字）。"""
+    parts = [report.title]
+    if report.summary:
+        parts.append(report.summary)
+    elif report.body_md:
+        parts.append(report.body_md[:500])
+    return " ".join(parts)
+
+
+async def _embed_report_bg(report_id: UUID, user_id: UUID, text: str) -> None:
+    """背景更新 report embedding，使用獨立 session。"""
+    import asyncio
+    from app.core.database import AsyncSessionLocal
+    try:
+        embedding = await ai_service.embed(text)
+        async with AsyncSessionLocal() as db:
+            report = await crud_reports.get_one(db, user_id, report_id)
+            if report:
+                await crud_reports.update_embedding(db, report, embedding)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("report embed failed for %s", report_id)
+
+
+async def search_from_chat(
+    db: AsyncSession,
+    user_id: UUID,
+    query: str | None,
+    limit: int = 5,
+) -> list[dict]:
+    """chat 的 search_reports 工具用：有 query 時語意搜尋，否則列最近幾筆。"""
+    if query:
+        embedding = await ai_service.embed(query)
+        rows = await crud_reports.semantic_search(db, user_id, embedding, limit=limit)
+        if not rows:
+            rows = await crud_reports.list_by_user(db, user_id)
+            rows = rows[:limit]
+    else:
+        rows = await crud_reports.list_by_user(db, user_id)
+        rows = rows[:limit]
+    return [
+        {
+            "id": str(r.id),
+            "title": r.title,
+            "summary": r.summary,
+            "updated_at": r.updated_at.isoformat(),
+        }
+        for r in rows
+    ]
 
 
 async def create_from_chat(
@@ -157,6 +212,7 @@ async def create_from_chat(
 
     回傳精簡 dict 給前端卡片（不含完整 body 也行，但帶上方便預覽）。
     """
+    import asyncio
     report = await crud_reports.create(
         db,
         user_id,
@@ -166,6 +222,8 @@ async def create_from_chat(
         source_item_ids=source_item_ids,
         last_edited_by="ai",
     )
+    text = _embed_text_for_report(report)
+    asyncio.create_task(_embed_report_bg(report.id, user_id, text))
     return {
         "id": str(report.id),
         "title": report.title,
@@ -177,11 +235,14 @@ async def revise_from_chat(
     db: AsyncSession, user_id: UUID, report_id: UUID, instruction: str
 ) -> dict | None:
     """chat 的 revise_report 工具用：對既有報告做 AI 修改（保留人類編輯，在其上接續）。"""
+    import asyncio
     report = await crud_reports.get_one(db, user_id, report_id)
     if report is None:
         return None
     new_body = await ai_service.revise_text(report.body_md, instruction)
     await crud_reports.update(db, report, body_md=new_body, last_edited_by="ai")
+    text = _embed_text_for_report(report)
+    asyncio.create_task(_embed_report_bg(report.id, user_id, text))
     return {"id": str(report.id), "title": report.title}
 
 
@@ -220,12 +281,15 @@ async def update_by_user(
     body_md: str | None = None,
 ) -> ReportRead | None:
     """人類手動編輯。"""
+    import asyncio
     report = await crud_reports.get_one(db, user_id, report_id)
     if report is None:
         return None
     await crud_reports.update(
         db, report, title=title, body_md=body_md, last_edited_by="user"
     )
+    text = _embed_text_for_report(report)
+    asyncio.create_task(_embed_report_bg(report.id, user_id, text))
     return await _to_read(db, user_id, report)
 
 

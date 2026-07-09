@@ -59,6 +59,36 @@ async def get_trip(db: AsyncSession, user_id: UUID, trip_id: UUID) -> Trip | Non
     return result.scalar_one_or_none()
 
 
+async def update_trip_embedding(db: AsyncSession, trip: Trip, embedding: list[float]) -> None:
+    trip.embedding = embedding
+    await db.commit()
+
+
+async def semantic_search_trips(
+    db: AsyncSession,
+    user_id: UUID,
+    embedding: list[float],
+    limit: int = 5,
+) -> list[Trip]:
+    result = await db.execute(
+        select(Trip)
+        .where(
+            or_(
+                Trip.user_id == user_id,
+                exists().where(
+                    TripMember.trip_id == Trip.id,
+                    TripMember.member_user_id == user_id,
+                ),
+            ),
+            Trip.embedding.isnot(None),
+        )
+        .options(selectinload(Trip.items))
+        .order_by(Trip.embedding.cosine_distance(embedding))
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def list_trips(db: AsyncSession, user_id: UUID) -> list[Trip]:
     """列出使用者擁有或已加入的所有行程。"""
     result = await db.execute(

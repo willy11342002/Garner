@@ -300,6 +300,7 @@ async def create_trip_from_chat(
 
     if pending_geocode:
         asyncio.create_task(_geocode_items_bg(pending_geocode))
+    asyncio.create_task(_embed_trip_bg(trip.id, user_id))
 
     return {
         "id": str(trip.id),
@@ -411,6 +412,7 @@ async def add_card_from_chat(
 
     if geocode_query:
         asyncio.create_task(_geocode_items_bg([(item.id, geocode_query)]))
+    asyncio.create_task(_embed_trip_bg(trip_id, user_id))
     return {"ok": True, "id": str(item.id), "title": item.title}
 
 
@@ -423,6 +425,102 @@ def _parse_uuid_list(values: list[str] | None) -> list[UUID]:
         except (ValueError, TypeError):
             continue
     return out
+
+
+async def _embed_trip_bg(trip_id: UUID, user_id: UUID) -> None:
+    """背景更新 trip embedding，使用獨立 session。"""
+    from app.core.database import AsyncSessionLocal
+    from app.services import ai_service
+    try:
+        async with AsyncSessionLocal() as db:
+            trip = await crud_trips.get_trip(db, user_id, trip_id)
+            if trip is None:
+                return
+            parts = [trip.title]
+            if trip.summary:
+                parts.append(trip.summary)
+            card_titles = [it.title for it in (trip.items or []) if it.title]
+            if card_titles:
+                parts.append(" ".join(card_titles))
+            text = " ".join(parts)
+            embedding = await ai_service.embed(text)
+            await crud_trips.update_trip_embedding(db, trip, embedding)
+    except Exception:
+        logger.exception("trip embed failed for %s", trip_id)
+
+
+async def search_trips_from_chat(
+    db: AsyncSession,
+    user_id: UUID,
+    query: str | None,
+    limit: int = 5,
+) -> list[dict]:
+    """chat 的 search_trips 工具用：有 query 時語意搜尋，否則列最近幾筆。"""
+    from app.services import ai_service
+    if query:
+        embedding = await ai_service.embed(query)
+        rows = await crud_trips.semantic_search_trips(db, user_id, embedding, limit=limit)
+        if not rows:
+            rows = await crud_trips.list_trips(db, user_id)
+            rows = rows[:limit]
+    else:
+        rows = await crud_trips.list_trips(db, user_id)
+        rows = rows[:limit]
+    return [
+        {
+            "id": str(t.id),
+            "title": t.title,
+            "summary": t.summary,
+            "item_count": len(t.items or []),
+            "updated_at": t.updated_at.isoformat(),
+        }
+        for t in rows
+    ]
+
+
+async def revise_trip_from_chat(
+    db: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    instruction: str,
+) -> dict | None:
+    """chat 的 revise_trip 工具用：消費 ai_edit_trip_stream 的所有事件，回傳操作摘要 dict。"""
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if accessible is None:
+        return None
+    trip = accessible[0]
+    added, updated, deleted = [], [], []
+    async for ev in ai_edit_trip_stream(db, user_id, trip_id, instruction):
+        # ev 是 SSE 字串 "data: {...}\n\n"；解析 tool_result 事件摘要
+        if "tool_result" not in ev:
+            continue
+        import json as _json
+        for line in ev.splitlines():
+            if not line.startswith("data:"):
+                continue
+            try:
+                payload = _json.loads(line[5:].strip())
+                result = payload.get("result", {})
+                if "_deleted_id" in result:
+                    deleted.append(result["_deleted_id"])
+                elif "_item" in result:
+                    item = result["_item"]
+                    iid = item.get("id", "")
+                    ititle = item.get("title", "")
+                    if result.get("ok"):
+                        added.append({"id": iid, "title": ititle})
+                    else:
+                        updated.append({"id": iid, "title": ititle})
+            except Exception:
+                pass
+    asyncio.create_task(_embed_trip_bg(trip_id, user_id))
+    return {
+        "trip_id": str(trip_id),
+        "trip_title": trip.title,
+        "added": len(added),
+        "updated": len(updated),
+        "deleted": len(deleted),
+    }
 
 
 async def _geocode_items_bg(items: list[tuple[UUID, str]]) -> None:
@@ -1033,6 +1131,7 @@ async def ai_edit_trip_stream(
     accessible2 = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
     if accessible2 is not None:
         await crud_trips.update_trip(db, accessible2[0], last_edited_by="ai")
+    asyncio.create_task(_embed_trip_bg(trip_id, user_id))
 
 
 # ── Trip 成員管理 ──────────────────────────────────────────────────────────────

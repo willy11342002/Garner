@@ -375,6 +375,40 @@ async def stream_reply(
                 logger.exception("save_url failed: url=%s", url)
                 return {"ok": False, "error": "failed to save url"}
 
+        if name == "search_reports":
+            try:
+                return await report_service.search_from_chat(
+                    db, user_id,
+                    query=args.get("query") or None,
+                    limit=int(args.get("limit") or 5),
+                )
+            except Exception:
+                logger.exception("search_reports failed")
+                return []
+
+        if name == "search_trips":
+            try:
+                return await trip_service.search_trips_from_chat(
+                    db, user_id,
+                    query=args.get("query") or None,
+                    limit=int(args.get("limit") or 5),
+                )
+            except Exception:
+                logger.exception("search_trips failed")
+                return []
+
+        if name == "revise_trip":
+            tid = args.get("trip_id")
+            if not tid:
+                return None
+            try:
+                return await trip_service.revise_trip_from_chat(
+                    db, user_id, UUID(tid), args.get("instruction", "")
+                )
+            except Exception:
+                logger.exception("revise_trip failed: trip_id=%s", tid)
+                return None
+
         return {}
 
     # ── Agentic loop ─────────────────────────────────────────────────────────

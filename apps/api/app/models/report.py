@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,4 +39,6 @@ class Report(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+    # 語意搜尋用（search_reports chat tool）：title + summary 的 embedding，不進知識語料
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     # 註：報告為產出層、可重生，採直接硬刪除，不設 deleted_at 軟刪除欄位

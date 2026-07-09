@@ -1,6 +1,7 @@
 from datetime import date, datetime, time
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     Date,
@@ -24,7 +25,7 @@ class Trip(Base):
     """AI 產出層（collection 型）：旅遊行程容器。
 
     與 Report（document 型）並列為產出層：
-    - 不進語意搜尋語料（無 embedding、不寫 content_chunks）
+    - 不進知識語料（不寫 content_chunks），但有 embedding 供 search_trips chat tool 使用
     - 硬刪除（cascade 至 trip_items）
     - 可由 AI 或人編輯，永不自動回流成知識
     """
@@ -53,6 +54,8 @@ class Trip(Base):
 
     invite_token: Mapped[UUID | None] = mapped_column(nullable=True, unique=True)
     invite_role: Mapped[str] = mapped_column(Text, nullable=False, default="viewer", server_default="viewer")
+    # 語意搜尋用（search_trips chat tool）：title + summary + 卡片標題的 embedding，不進知識語料
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
 
     items: Mapped[list["TripItem"]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", lazy="selectin"

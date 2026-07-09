@@ -91,6 +91,7 @@ _AGENTIC_SYSTEM = """\
 - 新增每張卡片時，若卡片的地點與『已找到的知識庫內容』中某些知識的「地點」相符，務必用 add_trip_card 的 source_item_ids 帶上那些知識的「知識id」，讓卡片連回對應的知識；沒有相符的就留空
 - 用戶要其他「報告／指南／清單／彙整（非旅遊行程）」時：呼叫 create_report
 - 上述產出類請求：若已有可用的知識內容（使用者選定的知識節點，或 search 結果），直接用那些內容產出，不要反問主題；只有在完全沒有任何可用內容時才詢問
+- 用戶提到「之前的報告」「上次的行程」或要修改既有行程／報告時：先呼叫 search_reports 或 search_trips 找到 id，再呼叫 revise_report 或 revise_trip 修改；不要新建
 - 如果問題超出知識庫範圍（閒聊、一般常識、數學計算等），簡短說明你只能幫助探索知識庫
 - 用繁體中文回答，自然簡潔，不過度列舉
 - 只輸出你自己的回覆，不要模擬用戶的後續回應
@@ -212,6 +213,49 @@ _AGENTIC_TOOLS = [
                     "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
                 },
                 "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_reports",
+            "description": "語意搜尋用戶已建立的 AI 報告（指南、清單、彙整等產出）。用戶問到「我之前做的某個報告」或要修改報告時，先用此工具查出 report_id。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "查詢描述，例如「大阪旅遊指南」「飲食清單」；留空則列最近幾筆"},
+                    "limit": {"type": "integer", "description": "回傳筆數，預設 5"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_trips",
+            "description": "語意搜尋用戶已建立的旅遊行程。用戶問到「我之前規劃的某個行程」或要修改行程時，先用此工具查出 trip_id。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "查詢描述，例如「東京4天」「沖繩」；留空則列最近幾筆"},
+                    "limit": {"type": "integer", "description": "回傳筆數，預設 5"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "revise_trip",
+            "description": "依指示修改一份既有旅遊行程（新增、修改或刪除卡片）。只在用戶明確要修改已存在的行程時呼叫；trip_id 用 search_trips 查到的 id。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trip_id": {"type": "string", "description": "要修改的行程 id（search_trips 查到的 id）"},
+                    "instruction": {"type": "string", "description": "修改指示，例如「第一天改成先去淺草」「把餐廳換成燒肉」"},
+                },
+                "required": ["trip_id", "instruction"],
             },
         },
     },
@@ -469,6 +513,21 @@ async def agentic_chat_stream(
                     "source_type": result.get("source_type"),
                     "error": result.get("error"),
                 }
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            elif name == "search_reports":
+                tool_result_data = {"tool": name, "count": len(result), "reports": result}
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            elif name == "search_trips":
+                tool_result_data = {"tool": name, "count": len(result), "trips": result}
+                process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
+                yield _sse("tool_result", tool_result_data)
+
+            elif name == "revise_trip":
+                tool_result_data = {"tool": name, "ok": result is not None, **(result or {})}
                 process_steps.append({"toolCall": tool_payload, "toolResult": tool_result_data})
                 yield _sse("tool_result", tool_result_data)
 

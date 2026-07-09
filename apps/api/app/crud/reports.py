@@ -7,6 +7,27 @@ from app.models.report import Report
 from app.models.user_item import UserItem
 
 
+async def update_embedding(db: AsyncSession, report: Report, embedding: list[float]) -> None:
+    report.embedding = embedding
+    await db.commit()
+
+
+async def semantic_search(
+    db: AsyncSession,
+    user_id: UUID,
+    embedding: list[float],
+    limit: int = 5,
+) -> list[Report]:
+    from sqlalchemy import func as sa_func
+    result = await db.execute(
+        select(Report)
+        .where(Report.user_id == user_id, Report.embedding.isnot(None))
+        .order_by(Report.embedding.cosine_distance(embedding))
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def create(
     db: AsyncSession,
     user_id: UUID,
