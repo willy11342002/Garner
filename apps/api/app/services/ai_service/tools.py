@@ -2,7 +2,7 @@
 import json
 import logging
 
-from ._client import _gemini_generate_stream, _oi_tools_to_sdk, _to_gemini_contents, _sse, _make_config, _get_client, _llm
+from ._client import _gemini_generate_stream, _oi_tools_to_sdk, _to_gemini_contents, _sse, _make_config, _get_client, _llm, _chunk_parts
 
 logger = logging.getLogger("garner.chat")
 
@@ -36,7 +36,7 @@ async def stream_tool_loop(
         tool_calls_list: list[dict] = []
 
         async for chunk in _gemini_generate_stream(messages, tools=tools):
-            for part in (chunk.candidates[0].content.parts if chunk.candidates else []):
+            for part in _chunk_parts(chunk):
                 if part.text:
                     accumulated_text += part.text
                     yield _sse("delta", {"text": part.text})

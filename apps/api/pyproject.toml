@@ -25,6 +25,7 @@ dependencies = [
     "apify-client>=1.8.0",
     "python-multipart>=0.0.9",
     "Pillow>=11.0.0",
+    "langgraph>=0.2.60",
 ]
 
 [project.optional-dependencies]

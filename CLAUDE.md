@@ -49,7 +49,7 @@ garner/
 
 ### API services（`apps/api/app/services/`）
 - `item_service` — Item 建立與處理流程主入口
-- `ai_service/` — Gemini native API（LLM）+ OpenRouter embedding（text-embedding-3-small 1536d）；拆成子模組：`_client`（Gemini 呼叫基礎）、`chat`（agentic chat loop）、`embed`（embedding）、`ingest`（內容分析/標籤/摘要）、`report`（報告產生）、`chain`（關聯鏈分析）、`tools`（stream_tool_loop）
+- `ai_service/` — Gemini native API（LLM）+ OpenRouter embedding（text-embedding-3-small 1536d）；拆成子模組：`_client`（Gemini 呼叫基礎）、`chat`（舊版單一 agent 的 chat_stream/compress_memory/synthesize_*，`agentic_chat_stream` 已被 `graph/` 取代但保留不刪）、`embed`（embedding）、`ingest`（內容分析/標籤/摘要）、`report`（報告產生）、`chain`（關聯鏈分析）、`tools`（stream_tool_loop）、`graph/`（LangGraph 分層 chat：A 監督者 `supervisor.py` 派工給 `windows/knowledge.py`(B)／`windows/report.py`(C)／`windows/trip.py`(D) 三個窗口，見 `docs/agentic-chat-harness.md`）
 - `search_service` — 語意 / 關鍵字搜尋；支援按 `item_ids` 直接查詢（用於 save_url 後快速回傳新存入的知識）
 - `chat_service` — Agentic chat 對話處理
 - `stream_registry` — Chat SSE 串流管理：asyncio.Queue pub/sub，解耦 POST（產生）與 GET SSE（消費），支援斷線重連

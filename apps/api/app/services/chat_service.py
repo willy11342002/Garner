@@ -2,8 +2,14 @@
 chat_service：AI Chat 對話式 RAG 服務。
 
 流程：
-  用戶訊息 → agentic_chat_stream（原生 tool calling loop）→ 儲存訊息
+  用戶訊息 → LangGraph 分層 agentic graph（A 監督者派工給 B/C/D 窗口）→ 儲存訊息
   每 8 則訊息 → background task 壓縮 session context_summary
+
+架構見 app/services/ai_service/graph/：A（supervisor）持有對話歷史、負責路由；
+B（knowledge）/C（report）/D（trip）三個窗口各自是獨立多步驟 sub-agent，只看得到
+A 給的事件敘述，看不到對話歷史。三個窗口的 domain executor（實際 DB／embedding／
+建立 item 等）在這裡（session 層）綁定 db/user_id/background_tasks 後建立，透過
+RunnableConfig 注入 graph。
 """
 
 import asyncio
@@ -28,6 +34,16 @@ from app.services import ai_service
 from app.services import item_service
 from app.services import report_service
 from app.services import trip_service
+from app.services.ai_service.graph import build_graph
+
+# A 派工目標 ↔ 對外工具名稱（給歷史回放用，跟 graph/supervisor.py 的 _DISPATCH_TARGET 對應）
+_TARGET_TO_TOOL = {
+    "knowledge": "dispatch_knowledge_base",
+    "report": "dispatch_report_desk",
+    "trip": "dispatch_trip_desk",
+}
+
+_SUPERVISOR_MAX_ROUNDS = 8
 
 
 async def _get_search_cutoff(db: AsyncSession) -> float:
@@ -87,7 +103,7 @@ async def rag_retrieve(
 
 
 # ---------------------------------------------------------------------------
-# Tool 執行層
+# Tool 執行層（各窗口的 domain executor）
 # ---------------------------------------------------------------------------
 
 
@@ -153,8 +169,6 @@ async def _exec_search(
     return results
 
 
-
-
 def _ui_location_names(ui) -> list[str]:
     """取 UserItem 的地點名稱（依 order_index）；relationship 未載入時安全回 []。"""
     try:
@@ -175,6 +189,215 @@ def _to_chat_source(ui: UserItem, distance: float | None = None) -> ChatSource:
     )
 
 
+def _build_knowledge_executor(
+    db: AsyncSession, user_id: UUID, background_tasks: BackgroundTasks,
+    seen_ids: set[UUID], all_sources: list[dict], cutoff: float, user_content: str,
+    item_tags, item_locations,
+):
+    """B（知識庫窗口）的 domain executor：search + save_url。"""
+
+    async def executor(name: str, args: dict) -> dict:
+        if name == "search":
+            try:
+                hits = await _exec_search(db, user_id, args)
+            except Exception:
+                hits = []
+            new_hits = [(ui, dist) for ui, dist in hits if ui.id not in seen_ids]
+            for ui, dist in new_hits:
+                seen_ids.add(ui.id)
+
+            items_out = [_to_chat_source(ui, dist).model_dump(mode="json") for ui, dist in new_hits]
+            all_sources.extend(items_out)
+
+            item_ids = [ui.id for ui, _ in new_hits]
+            chunks_out: list[dict] = []
+            if item_ids:
+                query_embedding = await ai_service.embed(args.get("query") or user_content)
+                chunk_hits = await crud_chunks.semantic_search(
+                    db, user_id, query_embedding, limit=12, cutoff=cutoff, item_ids=item_ids
+                )
+                item_map = {ui.id: ui for ui, _ in new_hits}
+                chunks_out = [
+                    {
+                        "item_id": str(c.user_item_id),
+                        "title": item_map[c.user_item_id].title if c.user_item_id in item_map else "(無標題)",
+                        "text": c.text,
+                        "tags": item_tags(item_map[c.user_item_id]) if c.user_item_id in item_map else [],
+                        "locations": item_locations(item_map[c.user_item_id]) if c.user_item_id in item_map else [],
+                    }
+                    for c, _ in chunk_hits
+                ]
+            return {"items": items_out, "chunks": chunks_out}
+
+        if name == "save_url":
+            url = (args.get("url") or "").strip()
+            if not url:
+                return {"ok": False, "error": "url is required"}
+            try:
+                from app.quota_depends import _get_plan, _get_limit, _count_monthly_saves
+                plan_id, plan_name = await _get_plan(db, user_id)
+                limit = await _get_limit(db, plan_id, "saves_monthly")
+                if limit is not None:
+                    used = await _count_monthly_saves(db, user_id)
+                    if used >= limit:
+                        return {"ok": False, "error": "quota_exceeded", "used": used, "limit": limit}
+                result = await item_service.create_item(
+                    db, user_id, ItemCreate(url=url), background_tasks
+                )
+                return {
+                    "ok": True,
+                    "id": str(result.id),
+                    "title": result.title or url,
+                    "source_type": result.source_type,
+                    "status": result.status,
+                }
+            except Exception:
+                logger.exception("save_url failed: url=%s", url)
+                return {"ok": False, "error": "failed to save url"}
+
+        return {}
+
+    return executor
+
+
+def _build_report_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
+    """C（報告窗口）的 domain executor：create_report / revise_report / search_reports。"""
+    created_report: dict | None = None
+
+    async def executor(name: str, args: dict) -> dict:
+        nonlocal created_report
+
+        if name == "create_report":
+            if created_report is not None:
+                return {"draft": created_report, "ok": True}
+            try:
+                draft = await report_service.create_from_chat(
+                    db, user_id,
+                    title=args.get("title", "未命名報告"),
+                    body_md=args.get("content", ""),
+                    summary=args.get("summary"),
+                    source_item_ids=[str(i) for i in seen_ids],
+                )
+                created_report = draft
+                return {"draft": draft, "ok": True}
+            except Exception:
+                return {"draft": None, "ok": False}
+
+        if name == "revise_report":
+            rid = args.get("report_id")
+            try:
+                res = (
+                    await report_service.revise_from_chat(
+                        db, user_id, UUID(rid), args.get("instruction", "")
+                    )
+                    if rid
+                    else None
+                )
+                return {"ok": res is not None, "report_id": rid}
+            except Exception:
+                return {"ok": False, "report_id": rid}
+
+        if name == "search_reports":
+            try:
+                return await report_service.search_from_chat(
+                    db, user_id,
+                    query=args.get("query") or None,
+                    limit=int(args.get("limit") or 5),
+                )
+            except Exception:
+                logger.exception("search_reports failed")
+                return []
+
+        return {}
+
+    return executor
+
+
+def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
+    """D（旅遊窗口）的 domain executor：create_trip / add_trip_card / revise_trip / search_trips。"""
+    created_trip: dict | None = None
+
+    async def executor(name: str, args: dict) -> dict:
+        nonlocal created_trip
+
+        if name == "create_trip":
+            if created_trip is not None:
+                return {"draft": created_trip, "ok": True}
+            try:
+                # 建立「空」行程；卡片由後續 add_trip_card 逐張新增
+                draft = await trip_service.create_trip_from_chat(
+                    db, user_id,
+                    title=args.get("title", "未命名行程"),
+                    summary=args.get("summary"),
+                    start_date=args.get("start_date"),
+                    end_date=args.get("end_date"),
+                    source_item_ids=[str(i) for i in seen_ids],
+                )
+                created_trip = draft
+                return {"draft": draft, "ok": True}
+            except Exception:
+                logger.exception("create_trip_from_chat failed")
+                return {"draft": None, "ok": False}
+
+        if name == "add_trip_card":
+            # 卡片掛到本輪建立的行程（不信任模型給的 trip_id，避免誤寫他人行程）
+            if created_trip is None:
+                return {"ok": False}
+            # 只接受本次實際檢索／預載過的知識 id（防模型亂編 id 寫到別人的知識）
+            raw_src = args.get("source_item_ids") or []
+            valid_src: list[str] = []
+            for sid in raw_src if isinstance(raw_src, list) else []:
+                try:
+                    if UUID(str(sid)) in seen_ids:
+                        valid_src.append(str(sid))
+                except (ValueError, TypeError):
+                    continue
+            try:
+                res = await trip_service.add_card_from_chat(
+                    db, user_id, UUID(created_trip["id"]),
+                    day=args.get("day"),
+                    end_day=args.get("end_day"),
+                    title=args.get("title", "未命名"),
+                    place_name=args.get("place_name"),
+                    category=args.get("category"),
+                    emoji=args.get("emoji"),
+                    start_time=args.get("start_time"),
+                    note=args.get("note"),
+                    source_item_ids=valid_src or None,
+                )
+                return {"ok": bool(res), "title": (res or {}).get("title")}
+            except Exception:
+                logger.exception("add_card_from_chat failed")
+                return {"ok": False}
+
+        if name == "search_trips":
+            try:
+                return await trip_service.search_trips_from_chat(
+                    db, user_id,
+                    query=args.get("query") or None,
+                    limit=int(args.get("limit") or 5),
+                )
+            except Exception:
+                logger.exception("search_trips failed")
+                return []
+
+        if name == "revise_trip":
+            tid = args.get("trip_id")
+            if not tid:
+                return None
+            try:
+                return await trip_service.revise_trip_from_chat(
+                    db, user_id, UUID(tid), args.get("instruction", "")
+                )
+            except Exception:
+                logger.exception("revise_trip failed: trip_id=%s", tid)
+                return None
+
+        return {}
+
+    return executor
+
+
 # ---------------------------------------------------------------------------
 # Stream reply
 # ---------------------------------------------------------------------------
@@ -192,8 +415,8 @@ async def stream_reply(
     assistant_message_id: UUID | None = None,
 ):
     """
-    Agentic SSE stream using native LLM tool calling.
-    Emits: tool_call | tool_result | sources | delta | done
+    LangGraph 分層 agentic SSE stream：A 監督者派工給 B/C/D 窗口。
+    Emits: tool_call | tool_result | sources | report_draft | trip_draft | delta | done
     """
     logger.debug(
         "chat stream start: session=%s user=%s context_items=%d content=%r",
@@ -231,198 +454,13 @@ async def stream_reply(
         except Exception:
             return []
 
-    created_report: dict | None = None  # 防止同一輪 LLM 重複呼叫 create_report
-    created_trip: dict | None = None  # 防止同一輪 LLM 重複呼叫 create_trip
-
-    async def execute_tool(name: str, args: dict) -> dict:
-        if name == "search":
-            try:
-                hits = await _exec_search(db, user_id, args)
-            except Exception:
-                hits = []
-            new_hits = [(ui, dist) for ui, dist in hits if ui.id not in seen_ids]
-            for ui, dist in new_hits:
-                seen_ids.add(ui.id)
-
-            items_out = [_to_chat_source(ui, dist).model_dump(mode="json") for ui, dist in new_hits]
-
-            # Fetch chunk-level text for context injection
-            item_ids = [ui.id for ui, _ in new_hits]
-            chunks_out: list[dict] = []
-            if item_ids:
-                query_embedding = await ai_service.embed(args.get("query") or user_content)
-                chunk_hits = await crud_chunks.semantic_search(
-                    db, user_id, query_embedding, limit=12, cutoff=cutoff, item_ids=item_ids
-                )
-                item_map = {ui.id: ui for ui, _ in new_hits}
-                chunks_out = [
-                    {
-                        "item_id": str(c.user_item_id),
-                        "title": item_map[c.user_item_id].title if c.user_item_id in item_map else "(無標題)",
-                        "text": c.text,
-                        "tags": _item_tags(item_map[c.user_item_id]) if c.user_item_id in item_map else [],
-                        "locations": _item_locations(item_map[c.user_item_id]) if c.user_item_id in item_map else [],
-                    }
-                    for c, _ in chunk_hits
-                ]
-            return {"items": items_out, "chunks": chunks_out}
-
-        if name == "create_report":
-            nonlocal created_report
-            if created_report is not None:
-                return {"draft": created_report, "ok": True}
-            try:
-                draft = await report_service.create_from_chat(
-                    db, user_id,
-                    title=args.get("title", "未命名報告"),
-                    body_md=args.get("content", ""),
-                    summary=args.get("summary"),
-                    source_item_ids=[str(i) for i in seen_ids],
-                )
-                created_report = draft
-                return {"draft": draft, "ok": True}
-            except Exception:
-                return {"draft": None, "ok": False}
-
-        if name == "create_trip":
-            nonlocal created_trip
-            if created_trip is not None:
-                return {"draft": created_trip, "ok": True}
-            try:
-                # 建立「空」行程；卡片由後續 add_trip_card 逐張新增
-                draft = await trip_service.create_trip_from_chat(
-                    db, user_id,
-                    title=args.get("title", "未命名行程"),
-                    summary=args.get("summary"),
-                    start_date=args.get("start_date"),
-                    end_date=args.get("end_date"),
-                    source_item_ids=[str(i) for i in seen_ids],
-                )
-                created_trip = draft
-                return {"draft": draft, "ok": True}
-            except Exception:
-                logger.exception("create_trip_from_chat failed")
-                return {"draft": None, "ok": False}
-
-        if name == "add_trip_card":
-            # 卡片掛到本輪建立的行程（不信任模型給的 trip_id，避免誤寫他人行程）
-            if created_trip is None:
-                return {"ok": False}
-            # 只接受本 session 實際檢索／預載過的知識 id（防模型亂編 id 寫到別人的知識）
-            raw_src = args.get("source_item_ids") or []
-            valid_src: list[str] = []
-            for sid in raw_src if isinstance(raw_src, list) else []:
-                try:
-                    if UUID(str(sid)) in seen_ids:
-                        valid_src.append(str(sid))
-                except (ValueError, TypeError):
-                    continue
-            try:
-                res = await trip_service.add_card_from_chat(
-                    db, user_id, UUID(created_trip["id"]),
-                    day=args.get("day"),
-                    end_day=args.get("end_day"),
-                    title=args.get("title", "未命名"),
-                    place_name=args.get("place_name"),
-                    category=args.get("category"),
-                    emoji=args.get("emoji"),
-                    start_time=args.get("start_time"),
-                    note=args.get("note"),
-                    source_item_ids=valid_src or None,
-                )
-                return {"ok": bool(res), "title": (res or {}).get("title")}
-            except Exception:
-                logger.exception("add_card_from_chat failed")
-                return {"ok": False}
-
-        if name == "revise_report":
-            rid = args.get("report_id")
-            try:
-                res = (
-                    await report_service.revise_from_chat(
-                        db, user_id, UUID(rid), args.get("instruction", "")
-                    )
-                    if rid
-                    else None
-                )
-                return {"ok": res is not None, "report_id": rid}
-            except Exception:
-                return {"ok": False, "report_id": rid}
-
-        if name == "save_url":
-            url = (args.get("url") or "").strip()
-            if not url:
-                return {"ok": False, "error": "url is required"}
-            try:
-                from app.quota_depends import _get_plan, _get_limit, _count_monthly_saves
-                plan_id, plan_name = await _get_plan(db, user_id)
-                limit = await _get_limit(db, plan_id, "saves_monthly")
-                if limit is not None:
-                    used = await _count_monthly_saves(db, user_id)
-                    if used >= limit:
-                        return {"ok": False, "error": "quota_exceeded", "used": used, "limit": limit}
-                result = await item_service.create_item(
-                    db, user_id, ItemCreate(url=url), background_tasks
-                )
-                return {
-                    "ok": True,
-                    "id": str(result.id),
-                    "title": result.title or url,
-                    "source_type": result.source_type,
-                    "status": result.status,
-                }
-            except Exception:
-                logger.exception("save_url failed: url=%s", url)
-                return {"ok": False, "error": "failed to save url"}
-
-        if name == "search_reports":
-            try:
-                return await report_service.search_from_chat(
-                    db, user_id,
-                    query=args.get("query") or None,
-                    limit=int(args.get("limit") or 5),
-                )
-            except Exception:
-                logger.exception("search_reports failed")
-                return []
-
-        if name == "search_trips":
-            try:
-                return await trip_service.search_trips_from_chat(
-                    db, user_id,
-                    query=args.get("query") or None,
-                    limit=int(args.get("limit") or 5),
-                )
-            except Exception:
-                logger.exception("search_trips failed")
-                return []
-
-        if name == "revise_trip":
-            tid = args.get("trip_id")
-            if not tid:
-                return None
-            try:
-                return await trip_service.revise_trip_from_chat(
-                    db, user_id, UUID(tid), args.get("instruction", "")
-                )
-            except Exception:
-                logger.exception("revise_trip failed: trip_id=%s", tid)
-                return None
-
-        return {}
-
-    # ── Agentic loop ─────────────────────────────────────────────────────────
-    reply_text = ""
-    process_steps: list[dict] = []
-    cited_ids: list[str] = []
-
     if not skip_user_message:
         await crud_chat.add_message(
             db, session_id, MessageRole.user, user_content,
             cited_item_ids=context_item_ids if context_item_ids else None,
         )
 
-    # 把選定的知識節點當成初始脈絡餵給 LLM（否則 AI 看不到內容，會反問主題）
+    # 把選定的知識節點當成初始脈絡餵給 A（否則 AI 看不到內容，會反問主題）
     preloaded_sources = [_to_chat_source(ui).model_dump(mode="json") for ui, _ in preloaded_items]
     preloaded_chunks = [
         {
@@ -435,21 +473,104 @@ async def stream_reply(
         for ui, _ in preloaded_items
     ]
 
+    all_sources: list[dict] = list(preloaded_sources)
+
+    knowledge_executor = _build_knowledge_executor(
+        db, user_id, background_tasks, seen_ids, all_sources, cutoff, user_content,
+        _item_tags, _item_locations,
+    )
+    report_executor = _build_report_executor(db, user_id, seen_ids)
+    trip_executor = _build_trip_executor(db, user_id, seen_ids)
+
+    # A 的訊息歷史：先放跨輪對話歷史，若有 preload 知識節點，用一組「假裝已經問過
+    # B」的 tool_call/tool 訊息塞進去，讓 A 直接看到內容、不用再派工去問一次。
+    messages: list[dict] = list(history)
+    if preloaded_sources or preloaded_chunks:
+        preload_tc_id = "preload_0"
+        messages.append({
+            "role": "assistant", "content": None,
+            "tool_calls": [{
+                "id": preload_tc_id, "type": "function",
+                "function": {
+                    "name": "dispatch_knowledge_base",
+                    "arguments": json.dumps({"event": "（使用者已選定的知識庫內容）"}, ensure_ascii=False),
+                },
+            }],
+        })
+        messages.append({
+            "role": "tool", "tool_call_id": preload_tc_id,
+            "content": json.dumps(
+                {"items": preloaded_sources, "chunks": preloaded_chunks, "saved": []}, ensure_ascii=False,
+            ),
+        })
+    messages.append({"role": "user", "content": user_content})
+
+    initial_state = {
+        "messages": messages,
+        "context_summary": context_summary,
+        "round": 0,
+        "max_rounds": _SUPERVISOR_MAX_ROUNDS,
+        "dispatch_target": None,
+        "dispatch_tool_call_id": None,
+        "dispatch_event": None,
+        "dispatch_context": None,
+        "final_reply": "",
+        "finished": False,
+    }
+    config = {"configurable": {
+        "knowledge_executor": knowledge_executor,
+        "report_executor": report_executor,
+        "trip_executor": trip_executor,
+    }}
+
+    graph = build_graph()
+    reply_text = ""
+    process_steps: list[dict] = []
+    dispatches: list[dict] = []
+    pending_tool_call: dict | None = None
+    pending_dispatch: dict | None = None
+
     try:
-        async for event_str in ai_service.agentic_chat_stream(
-            user_content, history, context_summary, execute_tool,
-            preloaded_sources=preloaded_sources,
-            preloaded_chunks=preloaded_chunks,
+        async for mode, chunk in graph.astream(
+            initial_state, config=config, stream_mode=["custom", "updates"]
         ):
-            # Intercept __meta__ sentinel, don't forward to client
-            if "event: __meta__" in event_str:
-                import json as _j
-                data = _j.loads(event_str.split("data: ", 1)[1])
-                reply_text = data.get("reply", "")
-                process_steps = data.get("process_steps", [])
-                cited_ids = data.get("cited_ids", [])
+            if mode == "custom":
+                event = chunk["event"]
+                data = chunk["data"]
+                if event == "tool_call":
+                    pending_tool_call = data
+                elif event == "tool_result" and pending_tool_call is not None:
+                    process_steps.append({"toolCall": pending_tool_call, "toolResult": data})
+                    pending_tool_call = None
+                yield _sse(event, data)
                 continue
-            yield event_str
+
+            # mode == "updates": {node_name: partial_state_returned_by_that_node}
+            for node_name, partial in chunk.items():
+                if node_name == "supervisor":
+                    if partial.get("dispatch_target"):
+                        pending_dispatch = {
+                            "target": partial["dispatch_target"],
+                            "event": partial.get("dispatch_event"),
+                        }
+                    if partial.get("finished"):
+                        reply_text = partial.get("final_reply", "")
+                elif node_name in ("knowledge", "report", "trip") and pending_dispatch is not None:
+                    # 窗口的回傳結果就是它 append 進 messages 的最後一則 tool 訊息內容
+                    # （_after_window 不另外存一份，避免跟這裡兜出兩份不同步的資料）
+                    window_result = None
+                    win_msgs = partial.get("messages") or []
+                    if win_msgs and win_msgs[-1].get("role") == "tool":
+                        try:
+                            window_result = json.loads(win_msgs[-1].get("content") or "{}")
+                        except Exception:
+                            window_result = None
+                    dispatches.append({
+                        "target": pending_dispatch["target"],
+                        "event": pending_dispatch["event"],
+                        "result": window_result,
+                    })
+                    pending_dispatch = None
     except asyncio.CancelledError:
         # 使用者按停止 / 連線中斷 → generator 被取消，不持久化半截內容，乾淨拋出讓 Starlette 收尾
         logger.debug(
@@ -458,18 +579,24 @@ async def stream_reply(
         )
         raise
 
+    cited_ids = [str(i) for i in seen_ids]
+    yield _sse("sources", all_sources)
+    yield _sse("done", {})
+
+    process_log = {"thinking": "", "steps": process_steps, "dispatches": dispatches}
+
     if assistant_message_id:
         await crud_chat.update_message(
             db, assistant_message_id, reply_text,
             cited_item_ids=[UUID(i) for i in cited_ids] if cited_ids else None,
-            process_log={"thinking": "", "steps": process_steps},
+            process_log=process_log,
             status="complete",
         )
     else:
         await crud_chat.add_message(
             db, session_id, MessageRole.assistant, reply_text,
             [UUID(i) for i in cited_ids] if cited_ids else None,
-            process_log={"thinking": "", "steps": process_steps},
+            process_log=process_log,
         )
     await crud_chat.touch_session(db, session_id)
     logger.debug(
@@ -487,39 +614,38 @@ async def stream_reply(
 def _build_history(msgs) -> list[dict]:
     """把 session 訊息轉成 LLM 對話歷史。
 
-    對「最近一則有檢索軌跡的 assistant」重放它的 tool-calling 過程（tool 參數 + 取得的
-    item ids/titles），讓模型知道上一輪搜過什麼、拿到哪些 item，避免「重新生一份／微調」
-    時又把同樣的 query 重搜一次。其餘訊息只放純文字以控制 token。
+    對「每一則」有派工軌跡的 assistant 訊息都重放它的派工過程（dispatch_knowledge_base /
+    dispatch_report_desk / dispatch_trip_desk 的假 tool_call + 該窗口回傳的原始結果），
+    不是只留最近一則——A 要能「綜合整個對話歷史」判斷這次事件該引用哪些先前查到的知識
+    item_ids，需要每一輪查到的完整原始資料都還在（見 graph/supervisor.py 的
+    _build_knowledge_index）。其餘訊息只放純文字以控制 token。
     """
     # 只送已完成的訊息進歷史，排除 pending/streaming placeholder
     msgs = [m for m in msgs if getattr(m, "status", "complete") == "complete"]
-    last_trace_idx = -1
-    for i, m in enumerate(msgs):
-        if m.role.value == "assistant" and m.process_log and m.process_log.get("steps"):
-            last_trace_idx = i
 
     out: list[dict] = []
-    for i, m in enumerate(msgs):
-        if i == last_trace_idx:
+    for m in msgs:
+        dispatches = (m.process_log or {}).get("dispatches") if m.role.value == "assistant" else None
+        if dispatches:
             tool_calls: list[dict] = []
             tool_msgs: list[dict] = []
-            for j, step in enumerate(m.process_log.get("steps") or []):
-                tc = step.get("toolCall") or {}
-                name = tc.get("name")
-                if not name:
+            for j, d in enumerate(dispatches):
+                tool_name = _TARGET_TO_TOOL.get(d.get("target"))
+                if not tool_name:
                     continue
                 call_id = f"hist-{m.id}-{j}"
-                args = {k: v for k, v in tc.items() if k != "name"}
                 tool_calls.append({
                     "id": call_id,
                     "type": "function",
-                    "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps({"event": d.get("event") or ""}, ensure_ascii=False),
+                    },
                 })
-                # toolResult 內含 count + titles（每筆有 id/title）→ 模型即知取得了哪些 item
                 tool_msgs.append({
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "content": json.dumps(step.get("toolResult") or {}, ensure_ascii=False),
+                    "content": json.dumps(d.get("result") or {}, ensure_ascii=False),
                 })
             if tool_calls:
                 out.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
@@ -539,7 +665,7 @@ async def stream_reply_with_heartbeat(*args, heartbeat_interval: float = 15.0, *
     包一層 keepalive：串流靜默超過 heartbeat_interval 秒就送一個 SSE comment（`: ping`），
     避免前端 idle-timeout 把「慢但還活著」的 agentic 串流（工具呼叫/執行階段不發事件）誤判為斷線。
     前端 SSE parser 會略過 comment 行、收到任何 byte 就重置 idle timer，故前端不需改動。
-    中斷時照常把 CancelledError 傳進 stream_reply（觸發其不持久化 + 中止 OpenRouter 串流）。
+    中斷時照常把 CancelledError 傳進 stream_reply（觸發其不持久化 + 中止 Gemini 串流）。
     """
     gen = stream_reply(*args, **kwargs)
     queue: asyncio.Queue = asyncio.Queue()

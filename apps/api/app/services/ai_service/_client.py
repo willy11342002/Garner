@@ -196,6 +196,7 @@ async def _gemini_generate_stream(
     """Yield raw SDK chunks from a Gemini streaming call.
 
     Each chunk has .candidates[0].content.parts — text parts and/or functionCall parts.
+    Use _chunk_parts(chunk) to read them safely (parts can be None, not just absent).
     """
     client = _get_client()
     system_instr, contents = _to_gemini_contents(messages)
@@ -212,6 +213,22 @@ async def _gemini_generate_stream(
         if getattr(e, "status_code", None) in (401, 403):
             raise RuntimeError("Gemini service unavailable")
         raise
+
+
+def _chunk_parts(chunk) -> list:
+    """安全取出串流 chunk 的 parts。
+
+    Gemini 串流最後一個 chunk（finish_reason=STOP 等）常常 candidates[0].content.parts
+    直接是 None（不是空 list、也不是 candidates 本身為空），只檢查 `if chunk.candidates`
+    會漏掉這個情況，導致 `for part in None` 炸掉。這裡把 candidates/content/parts
+    每一層都當作可能是 None 來檢查。
+    """
+    if not chunk.candidates:
+        return []
+    content = chunk.candidates[0].content
+    if not content or not content.parts:
+        return []
+    return content.parts
 
 
 def _parse_json(raw: str) -> dict:

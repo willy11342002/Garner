@@ -7,6 +7,7 @@ from ._client import (
     _to_gemini_contents,
     _make_config,
     _sse,
+    _chunk_parts,
 )
 
 logger = logging.getLogger("garner.chat")
@@ -307,7 +308,7 @@ async def chat_stream(
     ]
 
     async for chunk in _gemini_generate_stream(messages):
-        for part in (chunk.candidates[0].content.parts if chunk.candidates else []):
+        for part in _chunk_parts(chunk):
             if part.text:
                 yield part.text
 
@@ -418,7 +419,7 @@ async def agentic_chat_stream(
         tool_calls_list: list[dict] = []
 
         async for chunk in _gemini_generate_stream(full_messages, tools=_AGENTIC_TOOLS):
-            for part in (chunk.candidates[0].content.parts if chunk.candidates else []):
+            for part in _chunk_parts(chunk):
                 if part.text:
                     accumulated_text += part.text
                     yield _sse("delta", {"text": part.text})
@@ -546,7 +547,7 @@ async def agentic_chat_stream(
         full_messages = [{"role": "system", "content": sys_content}] + messages
 
         async for chunk in _gemini_generate_stream(full_messages):
-            for part in (chunk.candidates[0].content.parts if chunk.candidates else []):
+            for part in _chunk_parts(chunk):
                 if part.text:
                     accumulated_text += part.text
                     yield _sse("delta", {"text": part.text})
