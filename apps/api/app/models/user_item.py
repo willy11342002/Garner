@@ -40,6 +40,7 @@ class UserItem(Base):
     is_public: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     last_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ── Snapshot / content fields ────────────────────────────────────────────
     url: Mapped[str] = mapped_column(Text, nullable=False)

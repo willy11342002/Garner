@@ -33,12 +33,20 @@ class ItemRead(BaseModel):
     saved_at: datetime
     deleted_at: datetime | None = None
     parsed_at: datetime | None = None
+    updated_at: datetime | None = None
     status: str | None = None
     source_type: str | None = None
     tags: list[TagRead] = []
+    fetch_status: str | None = None
+    fetch_error: str | None = None
+    assets_status: str | None = None
+    assets_error: str | None = None
     note_status: str | None = None
+    note_error: str | None = None
     embedding_status: str | None = None
+    embedding_error: str | None = None
     landmarks_status: str | None = None
+    landmarks_error: str | None = None
 
     model_config = {"from_attributes": True}
 

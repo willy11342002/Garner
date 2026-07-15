@@ -1,12 +1,31 @@
 <script setup lang="ts">
-import type { Tag } from '~/types/api'
+import type { Item, Tag } from '~/types/api'
+import { isFailed, needsRetry } from '~/utils/itemStatus'
 
 const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const { localize } = useI18nContent()
 const { open: openItemModal } = useItemModal()
 const { toggle: toggleChain, isInChain } = useChain()
+const { resumeItem } = useItems()
 const { t } = useI18n()
+
+const retryingIds = ref(new Set<string>())
+
+async function retryItem(item: Item) {
+  if (retryingIds.value.has(item.id)) return
+  retryingIds.value = new Set(retryingIds.value).add(item.id)
+  try {
+    await resumeItem(item.id)
+    await fetchItems(currentPage.value)
+  } catch {
+    // no-op — badge stays, user can retry again
+  } finally {
+    const next = new Set(retryingIds.value)
+    next.delete(item.id)
+    retryingIds.value = next
+  }
+}
 
 const selectedTagIds = ref(new Set<string>())
 
@@ -393,6 +412,14 @@ onMounted(async () => {
             :title="isInChain(item.id) ? '移出選取' : '加入 AI 對話'"
             @click.prevent.stop="toggleChain(item)"
           >{{ isInChain(item.id) ? '−' : '+' }}</button>
+          <div v-if="needsRetry(item)" class="card-retry-badge">
+            <span class="card-retry-badge__label">{{ isFailed(item) ? '處理失敗' : '處理中斷' }}</span>
+            <button
+              class="card-retry-badge__btn"
+              :disabled="retryingIds.has(item.id)"
+              @click.prevent.stop="retryItem(item)"
+            >{{ retryingIds.has(item.id) ? '重試中...' : '重試' }}</button>
+          </div>
         </div>
         <div class="card__body">
           <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
@@ -541,5 +568,34 @@ onMounted(async () => {
   background: color-mix(in oklab, var(--accent) 70%, var(--surface));
   border-color: var(--accent);
   color: var(--accent-fg);
+}
+.card-retry-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1;
+}
+.card-retry-badge__label {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.card-retry-badge__btn {
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1.5px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.card-retry-badge__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 </style>

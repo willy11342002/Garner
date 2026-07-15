@@ -59,8 +59,12 @@ export function useItems() {
     return apiFetch('/items/archived')
   }
 
+  function resumeItem(id: string): Promise<Item> {
+    return apiFetch(`/items/${id}/resume`, { method: 'POST' })
+  }
+
   return {
     listItems, listItemsPage, createItem, getItem, updateItem, deleteItem,
-    getItemTags, attachTag, detachTag, listArchivedItems,
+    getItemTags, attachTag, detachTag, listArchivedItems, resumeItem,
   }
 }

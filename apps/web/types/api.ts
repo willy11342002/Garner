@@ -17,12 +17,20 @@ export interface Item {
   saved_at: string
   deleted_at: string | null
   parsed_at: string | null
+  updated_at: string | null
   status: string | null
   source_type: string | null
   tags: Tag[]
+  fetch_status: string | null
+  fetch_error: string | null
+  assets_status: string | null
+  assets_error: string | null
   note_status: string | null
+  note_error: string | null
   embedding_status: string | null
+  embedding_error: string | null
   landmarks_status: string | null
+  landmarks_error: string | null
 }
 
 export interface ArticleUpdate {

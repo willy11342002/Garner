@@ -1,5 +1,12 @@
 import asyncio
+import sys
 from contextlib import asynccontextmanager
+
+# psycopg3 (used by the ingest graph's checkpointer, app/core/checkpointer.py)
+# can't run its async mode on Windows' default ProactorEventLoop — must switch
+# to SelectorEventLoop before uvicorn creates the loop. No-op on Linux/macOS.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import sentry_sdk
 from fastapi import FastAPI, Request
@@ -10,7 +17,6 @@ from app.core.config import settings
 from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, pat, quota, reports, search, tags, trips, trip_tags
 
 import logging
-import sys
 # DEBUG=true（本地開發）→ 全域 log 層級設為 DEBUG，看得到 AI chat 的逐步動作
 _log_level = logging.DEBUG if settings.debug else logging.INFO
 logging.basicConfig(
@@ -31,6 +37,7 @@ if settings.sentry_dsn:
 async def lifespan(app: FastAPI):
     from sqlalchemy import text
     from app.core.database import engine
+    from app.core.checkpointer import init_checkpointer, close_checkpointer
     from app.services.ai_service import load_model_configs
     from app.core.supabase import get_supabase
 
@@ -40,6 +47,8 @@ async def lifespan(app: FastAPI):
     # doesn't pay the TCP+SSL handshake cost (~300ms).
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
+
+    await init_checkpointer()
 
     try:
         supabase = await get_supabase()
@@ -69,6 +78,7 @@ async def lifespan(app: FastAPI):
 
     yield
     task.cancel()
+    await close_checkpointer()
 
 
 app = FastAPI(title="Garner API", version="0.1.0", lifespan=lifespan)

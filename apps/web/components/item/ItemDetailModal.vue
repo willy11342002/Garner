@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Item, CollectionShareItem, Tag } from '~/types/api'
+import { needsRetry } from '~/utils/itemStatus'
 
 type AnyItem = Item | CollectionShareItem
 
@@ -36,7 +37,7 @@ const readonly = computed(() => !props.itemId)
 const { t } = useI18n()
 const apiFetch = useApiFetch()
 const gmap = useGlobalMap()
-const { getItem, getItemTags, attachTag, detachTag, updateItem } = useItems()
+const { getItem, getItemTags, attachTag, detachTag, updateItem, resumeItem } = useItems()
 const { updateArticle } = useArticles()
 const { toggle: toggleChain, isInChain } = useChain()
 
@@ -566,6 +567,27 @@ const isAnalyzing = computed(() => {
   return !it.notes_md && it.note_status !== 'complete' && it.note_status !== 'error' && !it.parsed_at
 })
 
+// Stalled (no progress in 5+ min) or a stage exhausted its retries — either
+// way the ingest pipeline needs a manual nudge via POST /items/{id}/resume.
+const showRetry = computed(() => {
+  const it = item.value as Item | null
+  if (!it || readonly.value) return false
+  return needsRetry(it)
+})
+
+const retrying = ref(false)
+
+async function retryIngest() {
+  if (!props.itemId || retrying.value) return
+  retrying.value = true
+  try {
+    await resumeItem(props.itemId)
+    pollAnalysis()
+  } finally {
+    retrying.value = false
+  }
+}
+
 // ── Inline note editing ───────────────────────────────────────────────────────
 const isEditingNotes = ref(false)
 const editingNotesMd = ref('')
@@ -886,10 +908,13 @@ async function confirmArchive() {
                   :readonly="true"
                 />
                 <div
-                  v-else-if="!readonly && (item as Item).note_status === 'error'"
+                  v-else-if="showRetry"
                   class="notes-analyzing notes-analyzing--err"
                 >
-                  {{ t('itemModal.noteAnalyzeFailed') }}
+                  <span>{{ t('itemModal.noteAnalyzeFailed') }}</span>
+                  <button class="btn btn--accent" :disabled="retrying" @click="retryIngest">
+                    {{ retrying ? t('itemModal.processing') : t('itemModal.retry') }}
+                  </button>
                 </div>
                 <div
                   v-else-if="!readonly && !(item as Item).parsed_at"

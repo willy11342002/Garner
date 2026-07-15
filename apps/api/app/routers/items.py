@@ -55,16 +55,31 @@ async def create_item(
     response_mode = request.headers.get("X-Response-Mode", "sse")
 
     if response_mode == "async":
-        item = await item_service.create_item(db, user_id, data, background_tasks)
+        result = await item_service.prepare_item_create(db, user_id, data)
+        if result.needs_processing:
+            background_tasks.add_task(
+                item_service._run_ingest,
+                user_id,
+                result.user_item_id,
+                result.url,
+                result.max_video_sec,
+            )
+        # 203: item created but the synchronous quick-metadata fetch (title/
+        # thumbnail) failed or timed out — background pipeline still fixes it.
+        status_code = status.HTTP_201_CREATED if result.metadata_ok else status.HTTP_203_NON_AUTHORITATIVE_INFORMATION
         return JSONResponse(
-            content=json.loads(item.model_dump_json()),
-            status_code=status.HTTP_201_CREATED,
+            content=json.loads(result.item.model_dump_json()),
+            status_code=status_code,
         )
 
     # SSE mode (default): stream progress in the POST response itself
     create_result = await item_service.prepare_item_create(db, user_id, data)
     item = create_result.item
     item_id_str = str(item.id)
+    initial_status_code = (
+        status.HTTP_201_CREATED if create_result.metadata_ok
+        else status.HTTP_203_NON_AUTHORITATIVE_INFORMATION
+    )
 
     async def generator():
         # Always send the initial item first so the client has the ID immediately
@@ -76,7 +91,7 @@ async def create_item(
 
         q = events.register(item_id_str)
         asyncio.create_task(
-            item_service._run_process_item(
+            item_service._run_ingest(
                 user_id,
                 create_result.user_item_id,
                 create_result.url,
@@ -112,6 +127,7 @@ async def create_item(
 
     return StreamingResponse(
         generator(),
+        status_code=initial_status_code,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -136,6 +152,18 @@ async def update_item(item_id: UUID, data: ItemUpdate, current_user: CurrentUser
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(item_id: UUID, current_user: CurrentUser, db: DbSession, hard: bool = False):
     await item_service.delete_item(db, UUID(current_user["sub"]), item_id, hard=hard)
+
+
+@router.post("/{item_id}/resume", response_model=ItemRead, status_code=status.HTTP_202_ACCEPTED)
+async def resume_item(
+    item_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Manual retry for a stalled/failed item — resumes the ingest graph from
+    its last checkpoint. No quota consumed."""
+    return await item_service.resume_item(db, UUID(current_user["sub"]), item_id, background_tasks)
 
 
 @router.get("/{item_id}/stream")

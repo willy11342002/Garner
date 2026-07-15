@@ -40,6 +40,7 @@ class _ItemCreateResult:
     user_item_id: UUID | None = None
     url: str | None = None
     max_video_sec: int = field(default=1200)
+    metadata_ok: bool = True
 
 
 def _item_to_read(
@@ -60,15 +61,28 @@ def _item_to_read(
         saved_at=user_item.saved_at,
         deleted_at=user_item.deleted_at,
         parsed_at=user_item.parsed_at,
+        updated_at=user_item.updated_at,
         status=user_item.status,
         source_type=user_item.source_type,
         tags=resolved_tags,
+        fetch_status=user_item.fetch_status,
+        fetch_error=user_item.fetch_error,
+        assets_status=user_item.assets_status,
+        assets_error=user_item.assets_error,
+        note_status=user_item.note_status,
+        note_error=user_item.note_error,
+        embedding_status=user_item.embedding_status,
+        embedding_error=user_item.embedding_error,
+        landmarks_status=user_item.landmarks_status,
+        landmarks_error=user_item.landmarks_error,
     )
 
 
 async def _run_process_item(
     user_id: UUID, user_item_id: UUID, url: str, max_video_sec: int = 1200
 ) -> None:
+    """Old stage-based pipeline — still used by reanalyze flows only.
+    New item creation uses `_run_ingest` (LangGraph) instead, see below."""
     from app.core import events
     async with AsyncSessionLocal() as db:
         try:
@@ -79,6 +93,15 @@ async def _run_process_item(
                 user_id, user_item_id,
             )
             events.fail(str(user_item_id))
+
+
+async def _run_ingest(
+    user_id: UUID, user_item_id: UUID, url: str, max_video_sec: int = 1200
+) -> None:
+    """New item creation pipeline — LangGraph-based, supports retry/resume.
+    See app/workers/ingest_graph.py."""
+    from app.workers.ingest_graph import run_ingest
+    await run_ingest(user_id, user_item_id, url, max_video_sec)
 
 
 async def prepare_item_create(
@@ -127,12 +150,27 @@ async def prepare_item_create(
         )
 
     src_type = _detect_source_type(url)
+    item_id = uuid4()
+
+    from app.services import quick_meta
+    qm = await quick_meta.fetch(src_type, url, str(item_id))
+
+    raw_data = dict(qm.raw_data) if qm.raw_data else None
+    if src_type == "article" and qm.raw_content:
+        # No dedicated raw-content column — stash it in raw_data so the
+        # background fetch node can skip re-fetching the same Apify call.
+        raw_data = {**(raw_data or {}), "_quick_raw_content": qm.raw_content}
+
     from app.models.user_item import UserItem as UserItemModel
     user_item = UserItemModel(
+        id=item_id,
         user_id=user_id,
         url=url,
         source_type=src_type,
-        title=data.title,
+        title=qm.title or data.title,
+        thumbnail_url=qm.thumbnail_url,
+        duration_sec=qm.duration_sec,
+        raw_data=raw_data,
     )
     db.add(user_item)
     await db.commit()
@@ -144,6 +182,7 @@ async def prepare_item_create(
         user_item_id=user_item.id,
         url=url,
         max_video_sec=max_video_sec,
+        metadata_ok=qm.ok,
     )
 
 
@@ -156,7 +195,7 @@ async def create_item(
     result = await prepare_item_create(db, user_id, data)
     if result.needs_processing:
         background_tasks.add_task(
-            _run_process_item,
+            _run_ingest,
             user_id,
             result.user_item_id,
             result.url,
@@ -314,6 +353,25 @@ async def reanalyze_item(
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     background_tasks.add_task(_run_process_item, user_id, user_item.id, user_item.url)
+    return _item_to_read(user_item, user_id)
+
+
+async def resume_item(
+    db: AsyncSession,
+    user_id: UUID,
+    item_id: UUID,
+    background_tasks: BackgroundTasks,
+) -> ItemRead:
+    """Resume a stalled/failed ingest — re-invokes the LangGraph pipeline for
+    this item, which continues from its last completed node (or restarts if
+    it never got a checkpoint at all). No quota consumed: this repairs an
+    incomplete save, it isn't a new analysis."""
+    user_item = await crud_items.get_one(db, user_id, item_id)
+    if user_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    if user_item.parsed_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Item already processed")
+    background_tasks.add_task(_run_ingest, user_id, user_item.id, user_item.url)
     return _item_to_read(user_item, user_id)
 
 

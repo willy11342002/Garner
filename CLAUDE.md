@@ -60,6 +60,7 @@ garner/
 - `gumroad_service` — Gumroad 金流串接
 - `apify_service` — 外部內容抓取（Apify）：支援 YouTube、TikTok、Facebook。YouTube 用雙 actor 並行（`asyncio.gather`）：`streamers/youtube-scraper` 抓 metadata（title/duration/thumbnail）、`streamers/youtube-video-downloader` 下載影片檔（`downloadedFileUrl`，存 KVS 約 3 天過期），兩邊 merge 進 `raw_data`；影片連結對應集中在 `yt_video_url()`（provider 共用）
 - `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發；`ai_edit_trip_stream` 用 SSE 對既有行程逐張新刪修卡片（搭配 ai_service.stream_tool_loop）
+- `quick_meta` — `POST /items/` 建立當下同步跑的輕量 metadata 前置步驟（在背景 ingest pipeline 之前跑,讓 201/203 回應時 title/thumbnail 就正確）：YouTube/TikTok 用平台原生 oEmbed；IG/Facebook 沒有可用的官方 oEmbed（需 Meta App Review），改用 `facebookexternalhit` User-Agent 直接抓貼文頁面的 og:title/og:description/og:image（IG/FB 官方連結預覽爬蟲會放行、跳過登入牆);Article 直接重用現有單次 Apify 呼叫（本來就快，同時拿到 title + 全文）。逾時/失敗回退成 title=null + API 回 203，交給背景 pipeline 補正。
 
 ### API routers（`apps/api/app/routers/`）
 `items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）· `trips` · `trip_tags`
@@ -97,6 +98,7 @@ garner/
 ### Web utils（`apps/web/utils/`）
 - `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）
 - `text` — 文字處理工具
+- `itemStatus` — 判斷 item 的 ingest pipeline 是否「中斷」（`!parsed_at` 且 `updated_at` 超過 5 分鐘沒更新）或「失敗」（任一 stage `_status === 'error'`），供卡片/詳情頁顯示重試 badge
 
 ---
 
