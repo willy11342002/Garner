@@ -189,13 +189,6 @@ async function fetchItems(page = 1) {
   })
 }
 
-// Items to display on current page.
-// Pending-review items are excluded at the backend level (/items/ never returns them).
-// Still show note items even without parsed_at — they're created synchronously without AI processing.
-const displayItems = computed(() =>
-  itemStore.items.filter(i => !!i.parsed_at || i.source_type === 'note')
-)
-
 // Watchers: reset to page 1 on any filter change
 watch([timeFilter, filterLogic, sortOrder], () => fetchItems(1))
 watch(selectedTagIds, () => fetchItems(1))
@@ -382,7 +375,7 @@ onMounted(async () => {
     <!-- Card Grid -->
     <div class="card-grid">
       <a
-        v-for="item in displayItems"
+        v-for="item in itemStore.items"
         :key="item.id"
         class="card"
         :href="`/app/item/${item.id}`"
@@ -405,7 +398,7 @@ onMounted(async () => {
           <h3 class="card__title">{{ cardTitle(item.url, item.title) }}</h3>
         </div>
       </a>
-      <div v-if="displayItems.length === 0" class="card-grid__empty">
+      <div v-if="itemStore.items.length === 0" class="card-grid__empty">
         {{ t('home.no_results') }}
       </div>
     </div>
