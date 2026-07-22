@@ -83,6 +83,12 @@ pnpm dev
 - **前端**：Nuxt 3 / Vue 3 / Pinia
 - **後端**：FastAPI / Python 3.12
 - **資料庫**：Supabase PostgreSQL + pgvector
-- **AI**：OpenRouter（Claude + OpenAI Embedding）
+- **認證**：Supabase Auth（Google / GitHub SSO）
+- **AI**：Gemini native API（LLM）+ OpenRouter（OpenAI text-embedding-3-small，1536d）
+  - **RAG**：pgvector 語意檢索（embedding 相似度搜尋）+ 關鍵字搜尋，供 chat / search 引用知識庫內容
+  - **Agent 框架**：LangGraph（`langgraph` + `langgraph-checkpoint-postgres`）— chat 採分層 supervisor 架構：監督者派工給 knowledge / report / trip 三個窗口 agent
+- **Object Storage**：Cloudflare R2（縮圖快取）
+- **付費**：Gumroad
 - **Extension**：Plasmo（Manifest V3）
-- **部署**：Vercel / Railway / Supabase
+- **部署**：Vercel（前端）/ Fly.io（後端）/ Supabase
+- **監控**：Sentry + PostHog
