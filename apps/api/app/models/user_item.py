@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum, FetchedValue, ForeignKey, Integer, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,8 +57,13 @@ class UserItem(Base):
     # title_zh / notes_zh：CKIP 斷詞後、空白分隔的文字，供 search_tsv 衍生使用
     title_zh: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes_zh: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # search_tsv 由 DB 端 GENERATED ALWAYS AS 從 title_zh/notes_zh 自動衍生，唯讀
-    search_tsv: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+    # search_tsv 由 DB 端 GENERATED ALWAYS AS 從 title_zh/notes_zh 自動衍生，唯讀。
+    # server_default=FetchedValue() 讓 SQLAlchemy 在 INSERT 時省略此欄位（不能對
+    # generated column 顯式塞值，即使是 NULL，否則 Postgres 會丟
+    # GeneratedAlwaysError），並在需要時用 RETURNING/refresh 取回值。
+    search_tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR, nullable=True, server_default=FetchedValue()
+    )
 
     # ── AI fields ────────────────────────────────────────────────────────────
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
