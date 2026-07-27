@@ -390,6 +390,12 @@
   "confirm": {
     "verifying": "正在驗證登入..."
   },
+  "quickAdd": {
+    "adding": "正在新增...",
+    "missingUrl": "缺少或無效的網址參數",
+    "error": "新增失敗，請重試",
+    "back": "回首頁"
+  },
   "pricing": {
     "page_title": "Garner — 升級",
     "eyebrow": "UPGRADE YOUR GARNER",

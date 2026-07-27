@@ -390,6 +390,12 @@
   "confirm": {
     "verifying": "Verifying sign-in..."
   },
+  "quickAdd": {
+    "adding": "Adding...",
+    "missingUrl": "Missing or invalid URL parameter",
+    "error": "Failed to add, please try again",
+    "back": "Back to home"
+  },
   "pricing": {
     "page_title": "Garner — Upgrade",
     "eyebrow": "UPGRADE YOUR GARNER",
