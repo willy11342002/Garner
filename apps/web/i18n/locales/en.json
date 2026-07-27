@@ -340,20 +340,12 @@
       "error": "Authorisation failed. Please refresh and try again."
     },
     "ios": {
-      "desc": "Install the Garner Shortcut on your iPhone to save from any app with one tap.",
+      "desc": "Install the Garner Shortcut on your iPhone — share and save instantly, no Token setup needed.",
       "step1": "Download and install the Garner Shortcut",
-      "step2": "Tap below to get your personal Token",
-      "step3": "Paste the Token into the Shortcut settings",
+      "step2": "When sharing from any app, choose the \"Garner\" shortcut",
+      "step3": "Garner opens automatically and saves it",
       "download_btn": "Download Garner Shortcut",
-      "skip": "Already installed — get Token →",
-      "get_token": "Get Token",
-      "generating": "Generating…",
-      "token_label": "Copy and paste into Shortcut settings",
-      "copy": "Copy",
-      "copied": "Copied!",
-      "copy_failed": "Auto-copy failed — long-press the token to select and copy manually",
-      "token_hint": "Token is shown only once — copy it now",
-      "back": "← Back to download"
+      "hint": "Make sure you're signed in to Garner in Safari first — the shortcut needs it to save."
     },
     "android": {
       "desc": "On Android, copy the URL and paste it into Garner to save quickly.",

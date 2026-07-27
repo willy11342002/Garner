@@ -49,7 +49,7 @@
         </template>
       </template>
 
-      <!-- iOS: Shortcut Token -->
+      <!-- iOS: Shortcut -->
       <template v-else-if="device === 'ios'">
         <p class="connected__desc">{{ t('connected.ios.desc') }}</p>
         <div class="connected__steps">
@@ -67,50 +67,15 @@
           </div>
         </div>
 
-        <!-- 階段一：下載 -->
-        <template v-if="iosStep === 'download'">
-          <a
-            href="https://www.icloud.com/shortcuts/854b6616a6174901aeafb5870aba6749"
-            target="_blank"
-            rel="noopener"
-            class="connected__ios-btn"
-            @click="iosStep = 'token'"
-          >
-            {{ t('connected.ios.download_btn') }}
-          </a>
-          <button class="connected__skip-link" @click="iosStep = 'token'">
-            {{ t('connected.ios.skip') }}
-          </button>
-        </template>
-
-        <!-- 階段二：取得並複製 Token -->
-        <template v-else>
-          <template v-if="!iosToken">
-            <button class="connected__ios-btn" :disabled="iosLoading" @click="generateIosToken">
-              {{ iosLoading ? t('connected.ios.generating') : t('connected.ios.get_token') }}
-            </button>
-          </template>
-          <template v-else>
-            <p class="connected__ios-label">{{ t('connected.ios.token_label') }}</p>
-            <div class="connected__token-row" :class="{ expanded: iosCopyFailed }">
-              <span class="connected__token-display" :class="{ expanded: iosCopyFailed }">{{ iosToken }}</span>
-              <button class="connected__copy-btn" :class="{ copied: iosCopied }" :title="iosCopied ? t('connected.ios.copied') : t('connected.ios.copy')" @click="copyIosToken">
-                <svg v-if="!iosCopied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              </button>
-            </div>
-            <p v-if="iosCopyFailed" class="connected__copy-failed-hint">{{ t('connected.ios.copy_failed') }}</p>
-            <p class="connected__ios-hint">{{ t('connected.ios.token_hint') }}</p>
-          </template>
-          <button class="connected__skip-link" @click="iosStep = 'download'">
-            {{ t('connected.ios.back') }}
-          </button>
-        </template>
+        <a
+          href="https://www.icloud.com/shortcuts/16f9f18d2d34417eaa6c71361b28d6b3"
+          target="_blank"
+          rel="noopener"
+          class="connected__ios-btn"
+        >
+          {{ t('connected.ios.download_btn') }}
+        </a>
+        <p class="connected__hint-sm">{{ t('connected.ios.hint') }}</p>
       </template>
 
       <!-- Android / other mobile -->
@@ -156,21 +121,8 @@ const status = ref<Status>('loading')
 // null = 偵測中，true/false = 偵測結果
 const extInstalled = ref<boolean | null>(null)
 
-const iosStep = ref<'download' | 'token'>('download')
-const iosToken = ref<string | null>(null)
-const iosLoading = ref(false)
-const iosCopied = ref(false)
-const iosCopyFailed = ref(false)
-let sessionCache: { access_token: string } | null = null
-
 onMounted(async () => {
-  if (device !== 'desktop') {
-    try {
-      const { data: { session } } = await client.auth.getSession()
-      if (session) sessionCache = session
-    } catch {}
-    return
-  }
+  if (device !== 'desktop') return
 
   // PING / PONG 偵測 extension（timeout 1s fallback）
   extInstalled.value = await new Promise<boolean>(resolve => {
@@ -193,7 +145,6 @@ onMounted(async () => {
   try {
     const { data: { session } } = await client.auth.getSession()
     if (!session) { status.value = 'error'; return }
-    sessionCache = session
 
     const resp = await fetch(`${config.public.apiBase}/auth/pat`, {
       method: 'POST',
@@ -215,52 +166,6 @@ onMounted(async () => {
     status.value = 'error'
   }
 })
-
-async function generateIosToken() {
-  if (!sessionCache) return
-  iosLoading.value = true
-  try {
-    const resp = await fetch(`${config.public.apiBase}/auth/pat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionCache.access_token}`,
-      },
-      body: JSON.stringify({ name: 'iOS 捷徑' }),
-    })
-    if (!resp.ok) return
-    const { token } = await resp.json()
-    iosToken.value = token
-  } finally {
-    iosLoading.value = false
-  }
-}
-
-async function copyIosToken() {
-  if (!iosToken.value) return
-  let ok = false
-  try {
-    await navigator.clipboard.writeText(iosToken.value)
-    ok = true
-  } catch {
-    // iOS Safari fallback: select + execCommand
-    const el = document.createElement('input')
-    el.value = iosToken.value
-    el.style.cssText = 'position:fixed;opacity:0;top:0;left:0'
-    document.body.appendChild(el)
-    el.focus()
-    el.setSelectionRange(0, el.value.length)
-    ok = document.execCommand('copy')
-    document.body.removeChild(el)
-  }
-  if (ok) {
-    iosCopyFailed.value = false
-    iosCopied.value = true
-    setTimeout(() => { iosCopied.value = false }, 2000)
-  } else {
-    iosCopyFailed.value = true
-  }
-}
 </script>
 
 <style scoped>
@@ -427,17 +332,9 @@ async function copyIosToken() {
   margin-top: 1px;
 }
 
-/* iOS Token */
-.connected__ios-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-mid);
-  margin: 0 0 10px;
-}
-
+/* iOS */
 .connected__ios-btn {
+  display: block;
   width: 100%;
   padding: 10px 16px;
   background: var(--accent);
@@ -446,89 +343,12 @@ async function copyIosToken() {
   border-radius: 10px;
   font-size: 13px;
   font-weight: 600;
+  text-decoration: none;
+  text-align: center;
   cursor: pointer;
   transition: opacity 0.15s;
   margin-bottom: 16px;
 }
-.connected__ios-btn:disabled { opacity: 0.5; cursor: default; }
-
-.connected__token-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 6px;
-  transition: border-color 0.15s;
-}
-.connected__token-row:focus-within { border-color: var(--accent); }
-
-.connected__token-display {
-  flex: 1;
-  min-width: 0;
-  padding: 11px 14px;
-  font-size: 11px;
-  font-family: var(--font-mono, monospace);
-  color: var(--text-mid);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  user-select: all;
-}
-.connected__token-display.expanded {
-  white-space: normal;
-  word-break: break-all;
-  overflow: visible;
-}
-.connected__token-row.expanded { align-items: flex-start; }
-
-.connected__copy-btn {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--border);
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.connected__copy-btn:hover { background: var(--surface2); color: var(--text); }
-.connected__copy-btn.copied { color: var(--accent); }
-
-.connected__copy-failed-hint {
-  font-size: 11px;
-  color: var(--danger, #e85555);
-  margin: 0 0 6px;
-  line-height: 1.5;
-  text-align: left;
-  width: 100%;
-}
-
-.connected__ios-hint {
-  font-size: 11px;
-  color: var(--text-dim);
-  margin: 0 0 16px;
-  line-height: 1.5;
-}
-
-.connected__skip-link {
-  background: none;
-  border: none;
-  font-size: 12px;
-  color: var(--accent);
-  cursor: pointer;
-  padding: 0;
-  margin-top: 12px;
-  text-decoration: none;
-}
-.connected__skip-link:hover { text-decoration: underline; }
 
 /* Android */
 .connected__back-btn {
