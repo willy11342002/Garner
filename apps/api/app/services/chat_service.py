@@ -34,7 +34,6 @@ from app.services import ai_service
 from app.services import item_service
 from app.services import report_service
 from app.services import trip_service
-from app.services.ai_service.graph import build_graph
 
 # A 派工目標 ↔ 對外工具名稱（給歷史回放用，跟 graph/supervisor.py 的 _DISPATCH_TARGET 對應）
 _TARGET_TO_TOOL = {
@@ -522,6 +521,8 @@ async def stream_reply(
         "report_executor": report_executor,
         "trip_executor": trip_executor,
     }}
+
+    from app.services.ai_service.graph import build_graph
 
     graph = build_graph()
     reply_text = ""

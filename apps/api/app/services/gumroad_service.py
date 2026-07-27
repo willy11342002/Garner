@@ -8,6 +8,7 @@ Gumroad Resource Subscriptions 管理。
 - subscription_restarted
 - refunded
 """
+import asyncio
 import logging
 
 import httpx
@@ -70,11 +71,7 @@ async def register_webhooks(webhook_url: str) -> None:
             for s in existing
         }
 
-        for event in EVENTS:
-            if (event, webhook_url) in existing_set:
-                logger.info("Gumroad webhook already registered: %s → %s", event, webhook_url)
-                continue
-
+        async def _register(event: str) -> None:
             reg = await client.put(
                 f"{GUMROAD_API}/resource_subscriptions",
                 data={
@@ -89,3 +86,12 @@ async def register_webhooks(webhook_url: str) -> None:
                 logger.error(
                     "Failed to register Gumroad webhook %s: %s", event, reg.text
                 )
+
+        to_register = []
+        for event in EVENTS:
+            if (event, webhook_url) in existing_set:
+                logger.info("Gumroad webhook already registered: %s → %s", event, webhook_url)
+            else:
+                to_register.append(event)
+
+        await asyncio.gather(*(_register(event) for event in to_register))

@@ -50,11 +50,23 @@ async def lifespan(app: FastAPI):
 
     await init_checkpointer()
 
-    try:
-        supabase = await get_supabase()
-        await supabase.storage.create_bucket("avatars", options={"public": True})
-    except Exception:
-        pass  # bucket 已存在
+    async def _post_startup_registrations():
+        """不影響請求處理正確性的啟動註冊（bucket 建立、Gumroad webhook）。
+        丟到背景執行，避免拖慢冷啟動時 uvicorn 對外可服務的時間。"""
+        try:
+            supabase = await get_supabase()
+            await supabase.storage.create_bucket("avatars", options={"public": True})
+        except Exception:
+            pass  # bucket 已存在
+
+        if settings.gumroad_access_token and settings.gumroad_webhook_url:
+            from app.services.gumroad_service import register_webhooks
+            try:
+                await register_webhooks(settings.gumroad_webhook_url)
+            except Exception as e:
+                logging.getLogger(__name__).warning("Gumroad webhook registration failed: %s", e)
+
+    registration_task = asyncio.create_task(_post_startup_registrations())
 
     async def _daily_maintenance():
         from app.workers.maintenance import run_maintenance
@@ -82,17 +94,10 @@ async def lifespan(app: FastAPI):
 
     warmup_task = asyncio.create_task(_warm_search_models())
 
-    # 向 Gumroad 註冊 webhook（有設定 access token 才執行）
-    if settings.gumroad_access_token and settings.gumroad_webhook_url:
-        from app.services.gumroad_service import register_webhooks
-        try:
-            await register_webhooks(settings.gumroad_webhook_url)
-        except Exception as e:
-            logging.getLogger(__name__).warning("Gumroad webhook registration failed: %s", e)
-
     yield
     task.cancel()
     warmup_task.cancel()
+    registration_task.cancel()
     await close_checkpointer()
 
 
