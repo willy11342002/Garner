@@ -8,7 +8,9 @@ _ranker_lock = asyncio.Lock()
 def _load_ranker():
     from flashrank import Ranker
 
-    return Ranker(model_name="ms-marco-MultiBERT-L-12")
+    # cache_dir must match the Dockerfile's pre-download step exactly, or the
+    # baked-in model weights won't be found and this re-downloads at runtime.
+    return Ranker(model_name="ms-marco-MultiBERT-L-12", cache_dir="/app/.cache/flashrank")
 
 
 async def rerank(query: str, passages: list[dict]) -> list[dict]:
