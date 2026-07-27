@@ -29,7 +29,7 @@ dependencies = [
     "langgraph-checkpoint-postgres>=2.0.0",
     "psycopg[binary,pool]>=3.2.0",
     "flashrank>=0.2.0",
-    "ckip-transformers>=0.3.0",
+    "jieba>=0.42.1",
 ]
 
 [project.optional-dependencies]
