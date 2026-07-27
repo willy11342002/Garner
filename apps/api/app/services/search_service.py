@@ -1,9 +1,11 @@
+import asyncio
 from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.crud import items as crud_items
 from app.models.item_tag import ItemTag
 from app.models.tag import Tag
 from app.models.user_item import UserItem, UserItemStatus
@@ -80,7 +82,6 @@ async def _merge_semantic(
     cutoff: float,
 ) -> dict[UUID, tuple[UserItem, float]]:
     """並搜 chunk + 整篇，回傳 {item_id: (UserItem, best_distance)}。"""
-    import asyncio
     from app.crud import chunks as crud_chunks
 
     distance_col = UserItem.embedding.cosine_distance(query_embedding).label("distance")
@@ -122,18 +123,51 @@ async def _merge_semantic(
     return merged
 
 
+_RRF_K = 60
+_CANDIDATE_LIMIT = 30  # 向量、BM25 各取 _CANDIDATE_LIMIT，RRF 融合後維持同樣大小的候選池
+
+
+def _rrf_fuse(*ranked_id_lists: list[UUID]) -> dict[UUID, float]:
+    """Reciprocal Rank Fusion：每個排名清單裡 rank 從 1 起算，分數為 1/(k+rank) 加總。"""
+    scores: dict[UUID, float] = {}
+    for ranked_ids in ranked_id_lists:
+        for rank, item_id in enumerate(ranked_ids, start=1):
+            scores[item_id] = scores.get(item_id, 0.0) + 1.0 / (_RRF_K + rank)
+    return scores
+
+
 async def semantic_search(
     db: AsyncSession, user_id: UUID, query: str, page: int = 1
 ) -> PaginatedResult[ItemRead]:
-    query_embedding = await ai_service.embed(query)
+    """Hybrid 檢索：向量語意 + BM25-like 全文檢索用 RRF 融合候選集，再用 cross-encoder 精排。"""
+    query_embedding, segmented_query = await asyncio.gather(
+        ai_service.embed(query), ai_service.segment(query),
+    )
     cutoff = await _get_cutoff(db)
+
+    vector_merged, bm25_hits = await asyncio.gather(
+        _merge_semantic(db, user_id, query_embedding, _CANDIDATE_LIMIT, cutoff),
+        crud_items.bm25_search(db, user_id, segmented_query, limit=_CANDIDATE_LIMIT),
+    )
+
+    vector_ranked_ids = [ui.id for ui, _ in sorted(vector_merged.values(), key=lambda t: t[1])]
+    bm25_ranked_ids = [ui.id for ui, _ in bm25_hits]
+    fused_scores = _rrf_fuse(vector_ranked_ids, bm25_ranked_ids)
+
+    all_items = {ui.id: ui for ui, _ in vector_merged.values()}
+    all_items.update({ui.id: ui for ui, _ in bm25_hits})
+    fused_order = sorted(fused_scores.items(), key=lambda kv: -kv[1])[:_CANDIDATE_LIMIT]
+    candidates = [all_items[iid] for iid, _ in fused_order]
+
+    passages = [
+        {"id": str(ui.id), "text": f"{ui.title or ''}\n{ui.notes_md or ''}"[:2000]}
+        for ui in candidates
+    ]
+    reranked = await ai_service.rerank(query, passages) if passages else []
+    order = [UUID(r["id"]) for r in reranked] if reranked else [ui.id for ui in candidates]
+
     offset = (page - 1) * _SEMANTIC_PAGE_SIZE
-    fetch_limit = _SEMANTIC_PAGE_SIZE * 3
-
-    merged = await _merge_semantic(db, user_id, query_embedding, fetch_limit, cutoff)
-
-    sorted_items = sorted(merged.values(), key=lambda t: t[1])
-    page_slice = sorted_items[offset: offset + _SEMANTIC_PAGE_SIZE + 1]
-    has_next = len(page_slice) > _SEMANTIC_PAGE_SIZE
-    items = [_to_item_read(ui) for ui, _ in page_slice[:_SEMANTIC_PAGE_SIZE]]
+    page_ids = order[offset: offset + _SEMANTIC_PAGE_SIZE + 1]
+    has_next = len(page_ids) > _SEMANTIC_PAGE_SIZE
+    items = [_to_item_read(all_items[iid]) for iid in page_ids[:_SEMANTIC_PAGE_SIZE]]
     return PaginatedResult(items=items, page=page, page_size=_SEMANTIC_PAGE_SIZE, has_next=has_next)

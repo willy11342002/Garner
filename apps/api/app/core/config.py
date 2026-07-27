@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     gumroad_redirect_uri: str = "https://garner-brain.up.railway.app/auth/gumroad/callback"
     google_maps_api_key: str = ""
     google_ai_api_key: str = ""  # Google AI Studio key — used for File API + direct Gemini calls
+    admin_secret: str = ""  # X-Admin-Secret header value required by /admin/* endpoints
 
 
 settings = Settings()

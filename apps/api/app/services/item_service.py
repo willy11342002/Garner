@@ -251,11 +251,14 @@ async def get_item(db: AsyncSession, user_id: UUID, item_id: UUID) -> ItemRead:
 async def update_item(
     db: AsyncSession, user_id: UUID, item_id: UUID, data: ItemUpdate
 ) -> ItemRead:
+    from app.services import ai_service
+
     user_item = await crud_items.get_one(db, user_id, item_id)
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     if data.title is not None:
         user_item.title = data.title
+        user_item.title_zh = await ai_service.segment(data.title)
     if data.status is not None:
         user_item.status = data.status
     await db.commit()
@@ -310,8 +313,10 @@ async def update_article(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     if data.title is not None:
         user_item.title = data.title
+        user_item.title_zh = await ai_service.segment(data.title)
     if data.notes_md is not None:
         user_item.notes_md = data.notes_md
+        user_item.notes_zh = await ai_service.segment(data.notes_md)
         extract = user_item.extract or {}
         # For fetched items the search index is built from the original
         # raw_content (chunks) + the AI embed_text, NOT from the human-facing

@@ -245,6 +245,33 @@ async def semantic_search(
     return [(row.UserItem, row.distance) for row in result.all()]
 
 
+async def bm25_search(
+    db: AsyncSession,
+    user_id: UUID,
+    segmented_query: str,
+    limit: int = 30,
+) -> list[tuple[UserItem, float]]:
+    """全文檢索（search_tsv 由 title_zh/notes_zh 衍生），回傳依 ts_rank_cd 降冪排序的
+    (UserItem, rank) 清單。segmented_query 需先經 ai_service.segment() 斷詞。"""
+    if not segmented_query:
+        return []
+
+    tsq = func.plainto_tsquery("simple", segmented_query)
+    rank_col = func.ts_rank_cd(UserItem.search_tsv, tsq, 1).label("rank")
+    result = await db.execute(
+        select(UserItem, rank_col)
+        .where(
+            UserItem.user_id == user_id,
+            *_NON_DELETED,
+            UserItem.status != UserItemStatus.archived,
+            UserItem.search_tsv.op("@@")(tsq),
+        )
+        .order_by(rank_col.desc())
+        .limit(limit)
+    )
+    return [(row.UserItem, row.rank) for row in result.all()]
+
+
 async def get_forgotten(db: AsyncSession, user_id: UUID, limit: int = 3) -> list[UserItem]:
     """回傳 90 天以上未開啟、且有 embedding 的 items（供 Surprise 洞察使用）。"""
     threshold = datetime.now(timezone.utc) - timedelta(days=90)

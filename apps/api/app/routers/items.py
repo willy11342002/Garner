@@ -242,21 +242,6 @@ async def attach_tag(
     return tag
 
 
-@router.post("/{item_id}/translate/{locale}", response_model=ItemRead)
-async def translate_item_notes(
-    item_id: UUID,
-    locale: str,
-    current_user: CurrentUser,
-    db: DbSession,
-):
-    """Generate notes in the requested locale if not yet available. Currently supports: en."""
-    SUPPORTED = {"en"}
-    if locale not in SUPPORTED:
-        from fastapi import HTTPException as _HTTPException
-        raise _HTTPException(status_code=400, detail=f"Unsupported locale '{locale}'. Supported: {sorted(SUPPORTED)}")
-    return await item_service.translate_item_notes(db, UUID(current_user["sub"]), item_id, locale)
-
-
 @router.delete("/{item_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def detach_tag(item_id: UUID, tag_id: UUID, current_user: CurrentUser, db: DbSession):
     await crud_tags.detach_tag(db, item_id, tag_id)

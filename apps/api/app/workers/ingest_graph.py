@@ -212,6 +212,9 @@ async def _note_core(state: IngestState) -> dict:
 
         user_item.title = title
         user_item.notes_md = summary_md
+        user_item.title_zh, user_item.notes_zh = await asyncio.gather(
+            ai_service.segment(title), ai_service.segment(summary_md),
+        )
         user_item.parsed_at = datetime.now(timezone.utc)
         user_item.extract = {
             "raw_content": raw_content,

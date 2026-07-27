@@ -68,6 +68,20 @@ async def lifespan(app: FastAPI):
 
     task = asyncio.create_task(_daily_maintenance())
 
+    async def _warm_search_models():
+        """背景預熱 CKIP 斷詞 + FlashRank rerank 模型，避免第一次搜尋請求卡住載入。"""
+        from app.services.ai_service.segment import _load_driver
+        from app.services.ai_service.rerank import _load_ranker
+        import app.services.ai_service.segment as _segment_mod
+        import app.services.ai_service.rerank as _rerank_mod
+        try:
+            _segment_mod._ws_driver = await asyncio.to_thread(_load_driver)
+            _rerank_mod._ranker = await asyncio.to_thread(_load_ranker)
+        except Exception as e:
+            logging.getLogger(__name__).warning("search model warmup failed: %s", e)
+
+    warmup_task = asyncio.create_task(_warm_search_models())
+
     # 向 Gumroad 註冊 webhook（有設定 access token 才執行）
     if settings.gumroad_access_token and settings.gumroad_webhook_url:
         from app.services.gumroad_service import register_webhooks
@@ -78,6 +92,7 @@ async def lifespan(app: FastAPI):
 
     yield
     task.cancel()
+    warmup_task.cancel()
     await close_checkpointer()
 
 

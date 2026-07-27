@@ -28,6 +28,8 @@ from .ingest import (
     understand,
 )
 from .report import generate_report_body, revise_text
+from .rerank import rerank
+from .segment import segment
 from .tools import stream_tool_loop
 
 __all__ = [
@@ -59,6 +61,10 @@ __all__ = [
     # report
     "generate_report_body",
     "revise_text",
+    # rerank
+    "rerank",
+    # segment
+    "segment",
     # tools
     "stream_tool_loop",
 ]

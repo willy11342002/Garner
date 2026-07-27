@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from app.dependencies import get_current_user, get_db
 from app.main import app
+from app.quota_depends import check_chat_quota, check_save_quota
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,8 @@ async def override_get_db():
 async def client():
     app.dependency_overrides[get_current_user] = fake_current_user
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[check_save_quota] = lambda: None
+    app.dependency_overrides[check_chat_quota] = lambda: None
 
     with ExitStack() as stack:
         stack.enter_context(patch("app.services.ai_service.load_model_configs", new=AsyncMock()))

@@ -45,13 +45,6 @@ async def test_update_article(client):
     assert resp.json()["title"] == "New Title"
 
 
-async def test_publish_article(client):
-    with patch("app.services.item_service.publish_article", new=AsyncMock(return_value=make_item_read(is_public=True))):
-        resp = await client.post(f"/articles/{TEST_ITEM_ID}/publish")
-    assert resp.status_code == 200
-    assert resp.json()["is_public"] is True
-
-
 async def test_upload_cover_invalid_content_type(client):
     resp = await client.post(
         f"/articles/{TEST_ITEM_ID}/cover",

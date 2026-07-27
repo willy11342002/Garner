@@ -49,8 +49,8 @@ garner/
 
 ### API services（`apps/api/app/services/`）
 - `item_service` — Item 建立與處理流程主入口
-- `ai_service/` — Gemini native API（LLM）+ OpenRouter embedding（text-embedding-3-small 1536d）；拆成子模組：`_client`（Gemini 呼叫基礎）、`chat`（舊版單一 agent 的 chat_stream/compress_memory/synthesize_*，`agentic_chat_stream` 已被 `graph/` 取代但保留不刪）、`embed`（embedding）、`ingest`（內容分析/標籤/摘要）、`report`（報告產生）、`chain`（關聯鏈分析）、`tools`（stream_tool_loop）、`graph/`（LangGraph 分層 chat：A 監督者 `supervisor.py` 派工給 `windows/knowledge.py`(B)／`windows/report.py`(C)／`windows/trip.py`(D) 三個窗口，見 `docs/agentic-chat-harness.md`）
-- `search_service` — 語意 / 關鍵字搜尋；支援按 `item_ids` 直接查詢（用於 save_url 後快速回傳新存入的知識）
+- `ai_service/` — **⚠️ AI provider 是混用的，不要假設全部都是 Gemini**：LLM（chat 對話、摘要、標籤等文字生成）已全面改用 **Gemini native API**（`google-genai` SDK），但 **embedding 至今仍是 OpenRouter**（`text-embedding-3-small`，1536d，走 OpenAI-compatible SDK），兩者是不同 provider、不同 SDK、不同 API key。拆成子模組：`_client`（Gemini 呼叫基礎，內部有 `_llm()`/`_emb()` 兩個各自的 model getter，對應上述兩個 provider）、`chat`（舊版單一 agent 的 chat_stream/compress_memory/synthesize_*，`agentic_chat_stream` 已被 `graph/` 取代但保留不刪）、`embed`（embedding，走 OpenRouter）、`ingest`（內容分析/標籤/摘要，走 Gemini）、`report`（報告產生）、`chain`（關聯鏈分析）、`tools`（stream_tool_loop）、`segment`（CKIP ALBERT-tiny 中文斷詞，自架非雲端 API，供 BM25 全文檢索用）、`rerank`（FlashRank 自架 cross-encoder 重排，多語模型，非雲端 API）、`graph/`（LangGraph 分層 chat：A 監督者 `supervisor.py` 派工給 `windows/knowledge.py`(B)／`windows/report.py`(C)／`windows/trip.py`(D) 三個窗口，見 `docs/agentic-chat-harness.md`）
+- `search_service` — Hybrid 語意搜尋（`/search/semantic`）：向量（pgvector cosine）+ BM25-like 全文檢索（PostgreSQL `tsvector`/`ts_rank_cd`，中文先經 `ai_service.segment` 斷詞）各取候選 → RRF 融合 → `ai_service.rerank` cross-encoder 精排 → 分頁回傳；純關鍵字搜尋（`/search/` ILIKE）維持獨立、未套用 hybrid 邏輯
 - `chat_service` — Agentic chat 對話處理
 - `stream_registry` — Chat SSE 串流管理：asyncio.Queue pub/sub，解耦 POST（產生）與 GET SSE（消費），支援斷線重連
 - `report_service` — AI 產出層（報告）：生成 / revise / regenerate，與知識分離、不進語料
