@@ -42,8 +42,10 @@ _LAZY_ATTRS = {
     "revise_text": ".report",
     # rerank
     "rerank": ".rerank",
+    "preload_rerank": ".rerank",
     # segment
     "segment": ".segment",
+    "preload_segment": ".segment",
     # tools
     "stream_tool_loop": ".tools",
 }

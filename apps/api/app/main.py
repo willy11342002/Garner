@@ -81,14 +81,18 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(_daily_maintenance())
 
     async def _warm_search_models():
-        """背景預熱 CKIP 斷詞 + FlashRank rerank 模型，避免第一次搜尋請求卡住載入。"""
-        from app.services.ai_service.segment import _load_driver
-        from app.services.ai_service.rerank import _load_ranker
-        import app.services.ai_service.segment as _segment_mod
-        import app.services.ai_service.rerank as _rerank_mod
+        """背景預熱 jieba 斷詞 + FlashRank rerank 模型，避免第一次搜尋請求卡住載入。
+
+        必須透過 app.services.ai_service 的 lazy __getattr__ 存取（preload_segment /
+        preload_rerank），不能直接 `import app.services.ai_service.segment` 這類 dotted
+        import —— Python import 機制會把子模組本身綁到 ai_service.segment 這個屬性上，
+        蓋掉 __getattr__ 原本應該解析出的函式，之後任何地方呼叫 ai_service.segment(...)
+        都會變成呼叫 module 本身，噴 'module' object is not callable。
+        """
+        from app.services import ai_service
         try:
-            _segment_mod._ws_driver = await asyncio.to_thread(_load_driver)
-            _rerank_mod._ranker = await asyncio.to_thread(_load_ranker)
+            await ai_service.preload_segment()
+            await ai_service.preload_rerank()
         except Exception as e:
             logging.getLogger(__name__).warning("search model warmup failed: %s", e)
 

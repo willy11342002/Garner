@@ -24,14 +24,19 @@ def _cut(driver, text: str) -> list[str]:
     return list(driver.cut(text))
 
 
-async def segment(text: str) -> str:
-    """回傳空白分隔的斷詞結果，供 to_tsvector('simple', ...) 使用。"""
+async def preload_segment() -> None:
+    """供啟動時背景預熱用，避免第一次真正呼叫 segment() 時卡在載入 driver。"""
     global _ws_driver
-    if not text:
-        return ""
     if _ws_driver is None:
         async with _driver_lock:
             if _ws_driver is None:
                 _ws_driver = await asyncio.to_thread(_load_driver)
+
+
+async def segment(text: str) -> str:
+    """回傳空白分隔的斷詞結果，供 to_tsvector('simple', ...) 使用。"""
+    if not text:
+        return ""
+    await preload_segment()
     tokens = await asyncio.to_thread(_cut, _ws_driver, text)
     return " ".join(tokens)
