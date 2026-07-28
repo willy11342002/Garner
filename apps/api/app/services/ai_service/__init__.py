@@ -59,6 +59,18 @@ def __getattr__(name: str):
     except KeyError:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
     module = importlib.import_module(module_name, __name__)
-    value = getattr(module, name)
-    globals()[name] = value  # cache on the module so repeat access skips __getattr__
-    return value
+    # Importing a submodule (e.g. ".segment") makes Python's import system
+    # bind it onto this package under its own short name — globals()["segment"]
+    # = <module> — as an unavoidable side effect, regardless of which symbol
+    # we actually asked for. When a submodule's filename collides with one of
+    # its own exported public symbols (segment.py exports segment(), rerank.py
+    # exports rerank()), that side effect silently overwrites the callable
+    # with the raw module, and __getattr__ never runs again for that name
+    # since the attribute now exists. Fixing only globals()[name] isn't
+    # enough — e.g. resolving "preload_segment" first still clobbers
+    # "segment" via the same import. Restore every symbol backed by this
+    # submodule, not just the one requested, so the collision can't survive.
+    for sym, mod_name in _LAZY_ATTRS.items():
+        if mod_name == module_name:
+            globals()[sym] = getattr(module, sym)
+    return globals()[name]
