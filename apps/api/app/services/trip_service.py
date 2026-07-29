@@ -977,10 +977,13 @@ async def ai_edit_trip_stream(
     行程不存在時 yield error 事件。
     """
     from app.services import ai_service
+    # _sse 是 _client 的私有 symbol，不在 ai_service.__init__ 的 _LAZY_ATTRS 裡，
+    # 不能走 ai_service._sse（package __getattr__ 會拋 AttributeError）。
+    from app.services.ai_service._client import _sse
 
     accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
     if accessible is None:
-        yield ai_service._sse("error", {"message": "trip not found"})
+        yield _sse("error", {"message": "trip not found"})
         return
     trip, _ = accessible
 
