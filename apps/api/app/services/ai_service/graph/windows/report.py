@@ -4,6 +4,8 @@
 """
 from typing import Awaitable, Callable
 
+from google.genai import types
+
 from ..emit import emit
 from ._loop import run_window_loop
 
@@ -22,51 +24,42 @@ _SYSTEM = """\
 """
 
 _TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "create_report",
-            "description": "根據提供的知識內容，產出一份 AI 報告（規劃／指南／清單／彙整）。只在事件明確要求產出內容時呼叫。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "報告標題（繁體中文，簡潔有力）"},
-                    "content": {"type": "string", "description": "完整內容，使用 markdown 格式"},
-                    "summary": {"type": "string", "description": "50 字以內的內容摘要"},
-                },
-                "required": ["title", "content"],
+    types.FunctionDeclaration(
+        name="create_report",
+        description="根據提供的知識內容，產出一份 AI 報告（規劃／指南／清單／彙整）。只在事件明確要求產出內容時呼叫。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "報告標題（繁體中文，簡潔有力）"},
+                "content": {"type": "string", "description": "完整內容，使用 markdown 格式"},
+                "summary": {"type": "string", "description": "50 字以內的內容摘要"},
+            },
+            "required": ["title", "content"],
+        },
+    ),
+    types.FunctionDeclaration(
+        name="revise_report",
+        description="修改一份既有的 AI 報告。report_id 用 search_reports 查到的 id。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "report_id": {"type": "string", "description": "要修改的報告 id"},
+                "instruction": {"type": "string", "description": "修改指示，例如「改短一點」「語氣正式些」"},
+            },
+            "required": ["report_id", "instruction"],
+        },
+    ),
+    types.FunctionDeclaration(
+        name="search_reports",
+        description="語意搜尋用戶已建立的 AI 報告。事件提到「之前做的某個報告」或要修改報告時，先用此工具查出 report_id。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "查詢描述，例如「大阪旅遊指南」；留空則列最近幾筆"},
+                "limit": {"type": "integer", "description": "回傳筆數，預設 5"},
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "revise_report",
-            "description": "修改一份既有的 AI 報告。report_id 用 search_reports 查到的 id。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "report_id": {"type": "string", "description": "要修改的報告 id"},
-                    "instruction": {"type": "string", "description": "修改指示，例如「改短一點」「語氣正式些」"},
-                },
-                "required": ["report_id", "instruction"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_reports",
-            "description": "語意搜尋用戶已建立的 AI 報告。事件提到「之前做的某個報告」或要修改報告時，先用此工具查出 report_id。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "查詢描述，例如「大阪旅遊指南」；留空則列最近幾筆"},
-                    "limit": {"type": "integer", "description": "回傳筆數，預設 5"},
-                },
-            },
-        },
-    },
+    ),
 ]
 
 

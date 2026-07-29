@@ -4,6 +4,8 @@
 """
 from typing import Awaitable, Callable
 
+from google.genai import types
+
 from ..emit import emit
 from ._loop import run_window_loop
 
@@ -26,78 +28,66 @@ _SYSTEM = """\
 """
 
 _TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "create_trip",
-            "description": "建立一份『空的』旅遊行程，只設定標題與日期。先呼叫這個，再用 add_trip_card 逐張填卡片。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "行程標題（繁體中文，例如「大阪4天3夜自由行」）"},
-                    "summary": {"type": "string", "description": "50 字以內的行程摘要"},
-                    "start_date": {"type": "string", "description": "出發日期 YYYY-MM-DD。只要事件有提到出發時間就務必推算並帶上，卡片才能正確排到每一天。"},
-                    "end_date": {"type": "string", "description": "回程日期 YYYY-MM-DD（依天數推算）"},
-                },
-                "required": ["title"],
+    types.FunctionDeclaration(
+        name="create_trip",
+        description="建立一份『空的』旅遊行程，只設定標題與日期。先呼叫這個，再用 add_trip_card 逐張填卡片。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "行程標題（繁體中文，例如「大阪4天3夜自由行」）"},
+                "summary": {"type": "string", "description": "50 字以內的行程摘要"},
+                "start_date": {"type": "string", "description": "出發日期 YYYY-MM-DD。只要事件有提到出發時間就務必推算並帶上，卡片才能正確排到每一天。"},
+                "end_date": {"type": "string", "description": "回程日期 YYYY-MM-DD（依天數推算）"},
             },
+            "required": ["title"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "add_trip_card",
-            "description": "對先前 create_trip 建立的行程新增『一張』卡片（單一景點／餐廳／交通／住宿）。需要幾個點就呼叫幾次。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "day": {"type": "integer", "description": "第幾天，從 1 開始"},
-                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填。"},
-                    "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動名稱，簡短（≤20 字）"},
-                    "place_name": {"type": "string", "description": "純地點名稱（含城市），用於地圖定位。只放地名，不要放網址。"},
-                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
-                    "emoji": {"type": "string", "description": "代表性 emoji，可選"},
-                    "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
-                    "note": {"type": "string", "description": "這張卡片的細節說明，用 markdown 格式撰寫。整段敘述放這裡，不要放進 title。"},
-                    "source_item_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "這張卡片對應的知識 id 陣列，依地點對應。沒有相符的知識就留空。",
-                    },
-                },
-                "required": ["day", "title"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_trips",
-            "description": "語意搜尋用戶已建立的旅遊行程。事件提到「之前規劃的某個行程」或要修改行程時，先用此工具查出 trip_id。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "查詢描述，例如「東京4天」；留空則列最近幾筆"},
-                    "limit": {"type": "integer", "description": "回傳筆數，預設 5"},
+    ),
+    types.FunctionDeclaration(
+        name="add_trip_card",
+        description="對先前 create_trip 建立的行程新增『一張』卡片（單一景點／餐廳／交通／住宿）。需要幾個點就呼叫幾次。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "day": {"type": "integer", "description": "第幾天，從 1 開始"},
+                "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填。"},
+                "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動名稱，簡短（≤20 字）"},
+                "place_name": {"type": "string", "description": "純地點名稱（含城市），用於地圖定位。只放地名，不要放網址。"},
+                "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
+                "emoji": {"type": "string", "description": "代表性 emoji，可選"},
+                "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
+                "note": {"type": "string", "description": "這張卡片的細節說明，用 markdown 格式撰寫。整段敘述放這裡，不要放進 title。"},
+                "source_item_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "這張卡片對應的知識 id 陣列，依地點對應。沒有相符的知識就留空。",
                 },
             },
+            "required": ["day", "title"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "revise_trip",
-            "description": "依指示修改一份既有旅遊行程（新增、修改或刪除卡片）。trip_id 用 search_trips 查到的 id。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "trip_id": {"type": "string", "description": "要修改的行程 id"},
-                    "instruction": {"type": "string", "description": "修改指示，例如「第一天改成先去淺草」"},
-                },
-                "required": ["trip_id", "instruction"],
+    ),
+    types.FunctionDeclaration(
+        name="search_trips",
+        description="語意搜尋用戶已建立的旅遊行程。事件提到「之前規劃的某個行程」或要修改行程時，先用此工具查出 trip_id。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "查詢描述，例如「東京4天」；留空則列最近幾筆"},
+                "limit": {"type": "integer", "description": "回傳筆數，預設 5"},
             },
         },
-    },
+    ),
+    types.FunctionDeclaration(
+        name="revise_trip",
+        description="依指示修改一份既有旅遊行程（新增、修改或刪除卡片）。trip_id 用 search_trips 查到的 id。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "trip_id": {"type": "string", "description": "要修改的行程 id"},
+                "instruction": {"type": "string", "description": "修改指示，例如「第一天改成先去淺草」"},
+            },
+            "required": ["trip_id", "instruction"],
+        },
+    ),
 ]
 
 

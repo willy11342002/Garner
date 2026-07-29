@@ -5,6 +5,7 @@
 """
 from uuid import UUID
 
+from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import reports as crud_reports
@@ -53,36 +54,30 @@ _REPORT_EDIT_SYSTEM = """\
 """
 
 _REPORT_EDIT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search",
-            "description": "搜尋用戶的個人知識庫，找相關文章、筆記、研究資料。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "查詢字串"},
-                    "limit": {"type": "integer", "description": "回傳筆數（預設 5）", "default": 5},
-                },
-                "required": ["query"],
+    types.FunctionDeclaration(
+        name="search",
+        description="搜尋用戶的個人知識庫，找相關文章、筆記、研究資料。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "查詢字串"},
+                "limit": {"type": "integer", "description": "回傳筆數（預設 5）", "default": 5},
             },
+            "required": ["query"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_report",
-            "description": "更新報告的標題（可選）和完整 Markdown 內文。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "新標題，不更改時省略"},
-                    "body_md": {"type": "string", "description": "完整的 Markdown 內文（含所有修改）"},
-                },
-                "required": ["body_md"],
+    ),
+    types.FunctionDeclaration(
+        name="update_report",
+        description="更新報告的標題（可選）和完整 Markdown 內文。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "新標題，不更改時省略"},
+                "body_md": {"type": "string", "description": "完整的 Markdown 內文（含所有修改）"},
             },
+            "required": ["body_md"],
         },
-    },
+    ),
 ]
 
 

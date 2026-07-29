@@ -19,7 +19,10 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import BackgroundTasks
+from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.ai_service._client import model_turn, tool_results, user_turn
 
 logger = logging.getLogger("garner.chat")
 
@@ -482,27 +485,17 @@ async def stream_reply(
     trip_executor = _build_trip_executor(db, user_id, seen_ids)
 
     # A 的訊息歷史：先放跨輪對話歷史，若有 preload 知識節點，用一組「假裝已經問過
-    # B」的 tool_call/tool 訊息塞進去，讓 A 直接看到內容、不用再派工去問一次。
-    messages: list[dict] = list(history)
+    # B」的 function call / response 塞進去，讓 A 直接看到內容、不用再派工去問一次。
+    messages: list[types.Content] = list(history)
     if preloaded_sources or preloaded_chunks:
-        preload_tc_id = "preload_0"
-        messages.append({
-            "role": "assistant", "content": None,
-            "tool_calls": [{
-                "id": preload_tc_id, "type": "function",
-                "function": {
-                    "name": "dispatch_knowledge_base",
-                    "arguments": json.dumps({"event": "（使用者已選定的知識庫內容）"}, ensure_ascii=False),
-                },
-            }],
-        })
-        messages.append({
-            "role": "tool", "tool_call_id": preload_tc_id,
-            "content": json.dumps(
-                {"items": preloaded_sources, "chunks": preloaded_chunks, "saved": []}, ensure_ascii=False,
-            ),
-        })
-    messages.append({"role": "user", "content": user_content})
+        preload_tool = _TARGET_TO_TOOL["knowledge"]
+        messages.append(model_turn(
+            calls=[(preload_tool, {"event": "（使用者已選定的知識庫內容）"})],
+        ))
+        messages.append(tool_results(
+            (preload_tool, {"items": preloaded_sources, "chunks": preloaded_chunks, "saved": []}),
+        ))
+    messages.append(user_turn(user_content))
 
     initial_state = {
         "messages": messages,
@@ -510,9 +503,10 @@ async def stream_reply(
         "round": 0,
         "max_rounds": _SUPERVISOR_MAX_ROUNDS,
         "dispatch_target": None,
-        "dispatch_tool_call_id": None,
+        "dispatch_tool_name": None,
         "dispatch_event": None,
         "dispatch_context": None,
+        "window_result": None,
         "final_reply": "",
         "finished": False,
     }
@@ -557,19 +551,10 @@ async def stream_reply(
                     if partial.get("finished"):
                         reply_text = partial.get("final_reply", "")
                 elif node_name in ("knowledge", "report", "trip") and pending_dispatch is not None:
-                    # 窗口的回傳結果就是它 append 進 messages 的最後一則 tool 訊息內容
-                    # （_after_window 不另外存一份，避免跟這裡兜出兩份不同步的資料）
-                    window_result = None
-                    win_msgs = partial.get("messages") or []
-                    if win_msgs and win_msgs[-1].get("role") == "tool":
-                        try:
-                            window_result = json.loads(win_msgs[-1].get("content") or "{}")
-                        except Exception:
-                            window_result = None
                     dispatches.append({
                         "target": pending_dispatch["target"],
                         "event": pending_dispatch["event"],
-                        "result": window_result,
+                        "result": partial.get("window_result"),
                     })
                     pending_dispatch = None
     except asyncio.CancelledError:
@@ -612,104 +597,46 @@ async def stream_reply(
             background_tasks.add_task(_compress_context, session_id, context_summary, to_compress)
 
 
-def _build_history(msgs) -> list[dict]:
+def _build_history(msgs) -> list[types.Content]:
     """把 session 訊息轉成 LLM 對話歷史。
 
     對「每一則」有派工軌跡的 assistant 訊息都重放它的派工過程（dispatch_knowledge_base /
-    dispatch_report_desk / dispatch_trip_desk 的假 tool_call + 該窗口回傳的原始結果），
+    dispatch_report_desk / dispatch_trip_desk 的 function call + 該窗口回傳的原始結果），
     不是只留最近一則——A 要能「綜合整個對話歷史」判斷這次事件該引用哪些先前查到的知識
     item_ids，需要每一輪查到的完整原始資料都還在（見 graph/supervisor.py 的
     _build_knowledge_index）。其餘訊息只放純文字以控制 token。
+
+    DB 裡 process_log["dispatches"] 的形狀（{target, event, result}）是自家 schema，
+    不隨底層訊息格式改變，所以舊資料照樣重放得出來。
     """
     # 只送已完成的訊息進歷史，排除 pending/streaming placeholder
     msgs = [m for m in msgs if getattr(m, "status", "complete") == "complete"]
 
-    out: list[dict] = []
+    out: list[types.Content] = []
     for m in msgs:
         dispatches = (m.process_log or {}).get("dispatches") if m.role.value == "assistant" else None
-        if dispatches:
-            tool_calls: list[dict] = []
-            tool_msgs: list[dict] = []
-            for j, d in enumerate(dispatches):
-                tool_name = _TARGET_TO_TOOL.get(d.get("target"))
-                if not tool_name:
-                    continue
-                call_id = f"hist-{m.id}-{j}"
-                tool_calls.append({
-                    "id": call_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": json.dumps({"event": d.get("event") or ""}, ensure_ascii=False),
-                    },
-                })
-                tool_msgs.append({
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": json.dumps(d.get("result") or {}, ensure_ascii=False),
-                })
-            if tool_calls:
-                out.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
-                out.extend(tool_msgs)
-            out.append({"role": "assistant", "content": m.content})
+        replayed = [
+            (tool_name, d)
+            for d in (dispatches or [])
+            if (tool_name := _TARGET_TO_TOOL.get(d.get("target")))
+        ]
+        if replayed:
+            out.append(model_turn(calls=[
+                (tool_name, {"event": d.get("event") or ""}) for tool_name, d in replayed
+            ]))
+            out.append(tool_results(*[
+                (tool_name, d.get("result") or {}) for tool_name, d in replayed
+            ]))
+            out.append(model_turn(text=m.content))
+        elif m.role.value == "assistant":
+            out.append(model_turn(text=m.content))
         else:
-            out.append({"role": m.role.value, "content": m.content})
+            out.append(user_turn(m.content))
     return out
 
 
 def _sse(event: str, data) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-async def stream_reply_with_heartbeat(*args, heartbeat_interval: float = 15.0, **kwargs):
-    """
-    包一層 keepalive：串流靜默超過 heartbeat_interval 秒就送一個 SSE comment（`: ping`），
-    避免前端 idle-timeout 把「慢但還活著」的 agentic 串流（工具呼叫/執行階段不發事件）誤判為斷線。
-    前端 SSE parser 會略過 comment 行、收到任何 byte 就重置 idle timer，故前端不需改動。
-    中斷時照常把 CancelledError 傳進 stream_reply（觸發其不持久化 + 中止 Gemini 串流）。
-    """
-    gen = stream_reply(*args, **kwargs)
-    queue: asyncio.Queue = asyncio.Queue()
-    _END = object()
-
-    async def _pump():
-        try:
-            async for ev in gen:
-                await queue.put(ev)
-        except asyncio.CancelledError:
-            raise
-        except BaseException as e:  # 把例外搬到主流程重新拋出，保留 traceback
-            await queue.put(e)
-        else:
-            await queue.put(_END)
-
-    pump_task = asyncio.create_task(_pump())
-    get_task: asyncio.Task | None = None
-    try:
-        while True:
-            if get_task is None:
-                get_task = asyncio.create_task(queue.get())
-            # 逾時不取消 get_task（跨輪保留），避免 wait_for 取消造成漏事件的競態
-            done, _ = await asyncio.wait({get_task}, timeout=heartbeat_interval)
-            if not done:
-                yield ": ping\n\n"  # SSE comment：純 keepalive，前端略過
-                continue
-            item = get_task.result()
-            get_task = None
-            if item is _END:
-                break
-            if isinstance(item, BaseException):
-                raise item
-            yield item
-    finally:
-        if get_task is not None:
-            get_task.cancel()
-        if not pump_task.done():
-            pump_task.cancel()
-        try:
-            await pump_task
-        except BaseException:
-            pass
 
 
 async def run_reply_background(
@@ -766,7 +693,7 @@ async def run_reply_background(
 async def _compress_context(
     session_id: UUID,
     current_summary: str | None,
-    old_messages: list[dict],
+    old_messages: list[types.Content],
 ) -> None:
     from app.core.database import AsyncSessionLocal
     try:

@@ -9,7 +9,15 @@ from google.genai import types
 from app.core.config import settings
 from app.core.tracing import traced
 
-from ._client import _gemini_call, _get_client, _llm_call, _parse_json, _video_llm
+from ._client import (
+    _get_client,
+    _llm_call,
+    _parse_json,
+    _video_llm,
+    generate,
+    image_part,
+    user_turn,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -301,8 +309,6 @@ async def describe_video(video_bytes: bytes, mime_type: str = "video/mp4") -> st
 
 async def describe_images(images: list[bytes]) -> str:
     """Run vision AI on a list of image bytes, return combined text description."""
-    import base64
-
     _IMAGE_MAGIC = (
         b"\xff\xd8\xff",        # JPEG
         b"\x89PNG\r\n\x1a\n",  # PNG
@@ -325,7 +331,7 @@ async def describe_images(images: list[bytes]) -> str:
         img.convert("RGB").save(buf, format="JPEG", quality=85)
         return buf.getvalue()
 
-    content: list[dict] = []
+    parts: list[types.Part] = []
     total = 0
     for img_bytes in images[:10]:
         if len(img_bytes) > MAX_PER_IMAGE:
@@ -336,22 +342,17 @@ async def describe_images(images: list[bytes]) -> str:
                 logger.warning("describe_images: resize failed, skipping image", exc_info=True)
                 continue
         if total + len(img_bytes) > MAX_TOTAL:
-            logger.warning("describe_images: reached total size cap, stopping at %d images", len(content))
+            logger.warning("describe_images: reached total size cap, stopping at %d images", len(parts))
             break
-        b64 = base64.b64encode(img_bytes).decode()
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-        })
+        # bytes 直接交給 SDK；不再自己 base64 編成 data: URL 讓下游再拆回來
+        parts.append(image_part(img_bytes))
         total += len(img_bytes)
 
-    if not content:
+    if not parts:
         return ""
 
-    content.append({"type": "text", "text": _VISION_PROMPT})
-
     try:
-        return await _gemini_call([{"role": "user", "content": content}], timeout=120)
+        return await generate([user_turn(*parts, _VISION_PROMPT)])
     except Exception:
         logger.exception("describe_images: Gemini call failed")
         return ""

@@ -3,13 +3,13 @@
 斷言的都是「對外可觀察的行為」——派工路由、窗口內迴圈、emit 出去的 SSE 事件、
 收工條件——而不是內部訊息格式，所以原生化重寫後這些測試應該原封不動繼續通過。
 """
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.services.ai_service import _client
+from app.services.ai_service._client import model_turn, tool_results, user_turn
 from app.services.ai_service.graph import supervisor as sup
 
 
@@ -55,9 +55,10 @@ def _state(messages, *, max_rounds=8):
         "round": 0,
         "max_rounds": max_rounds,
         "dispatch_target": None,
-        "dispatch_tool_call_id": None,
+        "dispatch_tool_name": None,
         "dispatch_event": None,
         "dispatch_context": None,
+        "window_result": None,
         "final_reply": "",
         "finished": False,
     }
@@ -77,7 +78,7 @@ async def _run_graph(script, *, state=None, executors=None):
     events, updates = [], []
     with patch.object(_client, "_get_client", return_value=fake):
         async for mode, chunk in build_graph().astream(
-            state or _state([{"role": "user", "content": "台北有什麼好吃的"}]),
+            state or _state([user_turn("台北有什麼好吃的")]),
             config=cfg,
             stream_mode=["custom", "updates"],
         ):
@@ -136,7 +137,7 @@ async def test_max_rounds_forces_final_answer_without_tools():
     """達到輪數上限時，這一輪不得再帶工具給模型，必須逼出純文字答案。"""
     _, updates, fake = await _run_graph(
         [[_part(text="就這樣")]],
-        state=_state([{"role": "user", "content": "x"}], max_rounds=0),
+        state=_state([user_turn("x")], max_rounds=0),
     )
 
     assert fake.calls[0]["config"] is None or not getattr(fake.calls[0]["config"], "tools", None)
@@ -184,8 +185,7 @@ async def test_window_reporting_missing_info_returns_needs_input_to_supervisor()
     ])
 
     trip_update = next(u["trip"] for u in updates if "trip" in u)
-    window_result = json.loads(trip_update["messages"][-1]["content"])
-    assert window_result == {"status": "needs_input", "missing": "沒有出發日期"}
+    assert trip_update["window_result"] == {"status": "needs_input", "missing": "沒有出發日期"}
 
 
 async def test_window_can_call_the_same_tool_across_multiple_rounds():
@@ -209,14 +209,9 @@ async def test_window_can_call_the_same_tool_across_multiple_rounds():
 
 def _history_with_knowledge(items, chunks):
     return [
-        {"role": "user", "content": "查一下"},
-        {
-            "role": "assistant", "content": None,
-            "tool_calls": [{"id": "tc1", "type": "function",
-                            "function": {"name": "dispatch_knowledge_base", "arguments": "{}"}}],
-        },
-        {"role": "tool", "tool_call_id": "tc1",
-         "content": json.dumps({"items": items, "chunks": chunks}, ensure_ascii=False)},
+        user_turn("查一下"),
+        model_turn(calls=[("dispatch_knowledge_base", {})]),
+        tool_results(("dispatch_knowledge_base", {"items": items, "chunks": chunks})),
     ]
 
 
@@ -242,9 +237,6 @@ def test_knowledge_index_spans_the_whole_history_and_newer_wins():
         _history_with_knowledge(items=[{"id": "a", "title": "舊標題"}], chunks=[])
         + _history_with_knowledge(items=[{"id": "a", "title": "新標題"}], chunks=[])
     )
-    # 第二組的 tool_call_id 撞名，改掉才符合真實情況
-    messages[4]["tool_calls"][0]["id"] = "tc2"
-    messages[5]["tool_call_id"] = "tc2"
 
     items_by_id, _ = sup._build_knowledge_index(messages)
 
@@ -254,13 +246,8 @@ def test_knowledge_index_spans_the_whole_history_and_newer_wins():
 def test_knowledge_index_ignores_results_from_non_knowledge_windows():
     """report/trip 窗口的回傳不是知識，不能被當成可引用的 item。"""
     messages = [
-        {
-            "role": "assistant", "content": None,
-            "tool_calls": [{"id": "tc1", "type": "function",
-                            "function": {"name": "dispatch_report_desk", "arguments": "{}"}}],
-        },
-        {"role": "tool", "tool_call_id": "tc1",
-         "content": json.dumps({"items": [{"id": "should-not-appear"}]})},
+        model_turn(calls=[("dispatch_report_desk", {})]),
+        tool_results(("dispatch_report_desk", {"items": [{"id": "should-not-appear"}]})),
     ]
 
     items_by_id, chunks = sup._build_knowledge_index(messages)

@@ -2,6 +2,7 @@ import asyncio
 import logging
 from uuid import UUID, uuid4
 
+from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import trips as crud_trips
@@ -742,100 +743,85 @@ _TRIP_EDIT_SYSTEM = """\
 """
 
 _TRIP_EDIT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search",
-            "description": "搜尋用戶的個人知識庫，找存過的景點、美食、住宿、交通等資訊。用戶說「補上我存過的...」或需要查知識庫時呼叫。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "語意搜尋描述句，例如「大阪必吃美食」「京都景點」"},
-                    "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 12"},
-                },
-                "required": ["query"],
+    types.FunctionDeclaration(
+        name="search",
+        description="搜尋用戶的個人知識庫，找存過的景點、美食、住宿、交通等資訊。用戶說「補上我存過的...」或需要查知識庫時呼叫。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "語意搜尋描述句，例如「大阪必吃美食」「京都景點」"},
+                "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 12"},
             },
+            "required": ["query"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "add_card",
-            "description": "在這份行程新增一張卡片（單一景點／餐廳／交通／住宿）。需要幾個點就呼叫幾次。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "day": {"type": "integer", "description": "第幾天，從 1 開始（行程有起始日才會排到該天）"},
-                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填；住宿／租車／多日票等才填，例如住前 3 天 day=1、end_day=3"},
-                    "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動，簡短（≤20 字）"},
-                    "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址"},
-                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
-                    "emoji": {"type": "string", "description": "代表性 emoji，可選"},
-                    "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
-                    "note": {"type": "string", "description": "卡片細節（玩法、交通、提醒等），markdown 格式，可選"},
-                    "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址），可選"},
-                    "source_item_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "從 search 結果中，與這張卡片地點相符的知識 id 陣列。可選，沒有相符就省略。",
-                    },
+    ),
+    types.FunctionDeclaration(
+        name="add_card",
+        description="在這份行程新增一張卡片（單一景點／餐廳／交通／住宿）。需要幾個點就呼叫幾次。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "day": {"type": "integer", "description": "第幾天，從 1 開始（行程有起始日才會排到該天）"},
+                "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填；住宿／租車／多日票等才填，例如住前 3 天 day=1、end_day=3"},
+                "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動，簡短（≤20 字）"},
+                "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址"},
+                "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
+                "emoji": {"type": "string", "description": "代表性 emoji，可選"},
+                "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
+                "note": {"type": "string", "description": "卡片細節（玩法、交通、提醒等），markdown 格式，可選"},
+                "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址），可選"},
+                "source_item_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "從 search 結果中，與這張卡片地點相符的知識 id 陣列。可選，沒有相符就省略。",
                 },
-                "required": ["title"],
             },
+            "required": ["title"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_card",
-            "description": "修改一張既有卡片。card_no 用「目前卡片」清單的編號。只填要變更的欄位，未填的保持不變。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "card_no": {"type": "integer", "description": "要修改的卡片編號（見「目前卡片」清單）"},
-                    "day": {"type": "integer", "description": "改成第幾天，從 1 開始（行程有起始日才生效）"},
-                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天）；傳 0 可改回單日"},
-                    "title": {"type": "string", "maxLength": 30, "description": "新的卡片名稱（簡短）"},
-                    "place_name": {"type": "string", "description": "新的純地點名稱（含城市），用於地圖定位，不要放網址"},
-                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "新的分類"},
-                    "emoji": {"type": "string", "description": "新的 emoji"},
-                    "start_time": {"type": "string", "description": "新的建議時間 HH:MM"},
-                    "note": {"type": "string", "description": "新的卡片細節（markdown）"},
-                    "booked": {"type": "boolean", "description": "是否已預定票券"},
-                    "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址）；傳空字串可清除"},
-                },
-                "required": ["card_no"],
+    ),
+    types.FunctionDeclaration(
+        name="update_card",
+        description="修改一張既有卡片。card_no 用「目前卡片」清單的編號。只填要變更的欄位，未填的保持不變。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "card_no": {"type": "integer", "description": "要修改的卡片編號（見「目前卡片」清單）"},
+                "day": {"type": "integer", "description": "改成第幾天，從 1 開始（行程有起始日才生效）"},
+                "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天）；傳 0 可改回單日"},
+                "title": {"type": "string", "maxLength": 30, "description": "新的卡片名稱（簡短）"},
+                "place_name": {"type": "string", "description": "新的純地點名稱（含城市），用於地圖定位，不要放網址"},
+                "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "新的分類"},
+                "emoji": {"type": "string", "description": "新的 emoji"},
+                "start_time": {"type": "string", "description": "新的建議時間 HH:MM"},
+                "note": {"type": "string", "description": "新的卡片細節（markdown）"},
+                "booked": {"type": "boolean", "description": "是否已預定票券"},
+                "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址）；傳空字串可清除"},
             },
+            "required": ["card_no"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_card",
-            "description": "刪除一張既有卡片。card_no 用「目前卡片」清單的編號。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "card_no": {"type": "integer", "description": "要刪除的卡片編號（見「目前卡片」清單）"},
-                },
-                "required": ["card_no"],
+    ),
+    types.FunctionDeclaration(
+        name="delete_card",
+        description="刪除一張既有卡片。card_no 用「目前卡片」清單的編號。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "card_no": {"type": "integer", "description": "要刪除的卡片編號（見「目前卡片」清單）"},
             },
+            "required": ["card_no"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_url",
-            "description": "將一個網址（YouTube 影片、網頁文章）存入用戶的知識庫，系統會自動抓取內容、產生摘要與標籤。只在用戶明確提供網址並要求存入時呼叫。會消耗一次存入額度。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
-                },
-                "required": ["url"],
+    ),
+    types.FunctionDeclaration(
+        name="save_url",
+        description="將一個網址（YouTube 影片、網頁文章）存入用戶的知識庫，系統會自動抓取內容、產生摘要與標籤。只在用戶明確提供網址並要求存入時呼叫。會消耗一次存入額度。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
             },
+            "required": ["url"],
         },
-    },
+    ),
 ]
 
 

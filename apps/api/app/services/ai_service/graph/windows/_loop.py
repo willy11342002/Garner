@@ -12,29 +12,28 @@ import json
 import logging
 from typing import Awaitable, Callable
 
-from ..._client import _chunk_parts, _gemini_generate_stream
+from google.genai import types
+
+from ..._client import _chunk_parts, generate_stream, model_turn, tool_results, user_turn
 
 logger = logging.getLogger("garner.chat")
 
 Dispatch = Callable[[str, dict], Awaitable[dict]]
 
-MISSING_INFO_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "report_missing_info",
-        "description": (
-            "當這個事件缺少必要資訊、無法繼續執行時呼叫，說明缺什麼；"
-            "呼叫後這個窗口立刻結束，把缺什麼回報給上層決定下一步（問用戶／轉發查詢／自行推斷）。"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "missing": {"type": "string", "description": "缺什麼資訊的簡短說明"},
-            },
-            "required": ["missing"],
+MISSING_INFO_TOOL = types.FunctionDeclaration(
+    name="report_missing_info",
+    description=(
+        "當這個事件缺少必要資訊、無法繼續執行時呼叫，說明缺什麼；"
+        "呼叫後這個窗口立刻結束，把缺什麼回報給上層決定下一步（問用戶／轉發查詢／自行推斷）。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "missing": {"type": "string", "description": "缺什麼資訊的簡短說明"},
         },
+        "required": ["missing"],
     },
-}
+)
 
 
 def _fmt_context(context: dict | None) -> str:
@@ -47,7 +46,7 @@ async def run_window_loop(
     *,
     window_name: str,
     system_prompt: str,
-    tools: list[dict],
+    tools: list[types.FunctionDeclaration],
     dispatch: Dispatch,
     event: str,
     context: dict | None,
@@ -61,46 +60,33 @@ async def run_window_loop(
     """
     full_tools = tools + [MISSING_INFO_TOOL]
     system = system_prompt + _fmt_context(context)
-    messages: list[dict] = [{"role": "user", "content": event}]
+    messages: list[types.Content] = [user_turn(event)]
 
     for _round in range(max_rounds):
-        full_messages = [{"role": "system", "content": system}] + messages
-        tool_calls_list: list[dict] = []
+        calls: list[tuple[str, dict]] = []
         text = ""
 
-        async for chunk in _gemini_generate_stream(full_messages, tools=full_tools):
+        async for chunk in generate_stream(messages, system=system, tools=full_tools):
             for part in _chunk_parts(chunk):
                 if part.text:
                     text += part.text
                 elif part.function_call:
                     fc = part.function_call
-                    tool_calls_list.append({"name": fc.name, "args": dict(fc.args or {})})
+                    calls.append((fc.name, dict(fc.args or {})))
 
-        if not tool_calls_list:
+        if not calls:
             logger.debug("window %s finished (round %d, no more tool calls)", window_name, _round + 1)
             return None
 
-        assistant_msg: dict = {"role": "assistant", "content": text or None, "tool_calls": []}
-        for i, tc in enumerate(tool_calls_list):
-            assistant_msg["tool_calls"].append({
-                "id": f"{window_name}_{_round}_{i}",
-                "type": "function",
-                "function": {"name": tc["name"], "arguments": json.dumps(tc["args"], ensure_ascii=False)},
-            })
-        messages.append(assistant_msg)
+        messages.append(model_turn(text or None, calls=calls))
 
-        for i, tc in enumerate(tool_calls_list):
-            name, args = tc["name"], tc["args"]
-            tc_id = f"{window_name}_{_round}_{i}"
-
+        results: list[tuple[str, dict]] = []
+        for name, args in calls:
             if name == "report_missing_info":
                 return args.get("missing") or "缺少必要資訊"
+            results.append((name, await dispatch(name, args)))
 
-            result = await dispatch(name, args)
-            messages.append({
-                "role": "tool", "tool_call_id": tc_id,
-                "content": json.dumps(result, ensure_ascii=False, default=str),
-            })
+        messages.append(tool_results(*results))
 
     logger.debug("window %s hit max_rounds=%d without finishing", window_name, max_rounds)
     return None
