@@ -1,13 +1,10 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import StreamingResponse
 
 from app.crud import trips as crud_trips
 from app.dependencies import CurrentUser, DbSession
-from app.quota_depends import ChatQuota
 from app.schemas.trip import (
-    TripAIEditRequest,
     TripCreate,
     TripInviteLinkUpdate,
     TripItemCreate,
@@ -66,30 +63,9 @@ async def delete_trip(trip_id: UUID, current_user: CurrentUser, db: DbSession):
         raise HTTPException(status_code=404, detail="Trip not found")
 
 
-@router.post("/{trip_id}/ai-edit")
-async def ai_edit_trip(
-    trip_id: UUID,
-    data: TripAIEditRequest,
-    current_user: CurrentUser,
-    db: DbSession,
-    _quota: ChatQuota,
-):
-    """AI 修改既有行程（SSE 串流，逐動作回傳卡片變更）。"""
-    if not data.instruction.strip():
-        raise HTTPException(status_code=422, detail="instruction cannot be empty")
-
-    from app.services import ai_service
-
-    history = [t.model_dump() for t in data.history] if data.history else None
-    agen = trip_service.ai_edit_trip_stream(
-        db, UUID(current_user["sub"]), trip_id, data.instruction.strip(), history=history
-    )
-    return StreamingResponse(
-        ai_service.with_heartbeat(agen),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
+# AI 修改行程沒有專屬端口 —— 行程頁的 AI 懸浮球直接打 chat 的
+# POST /chat/sessions/{id}/messages（帶 scope={"kind":"trip","id":...}），
+# 跟首頁 chat 走完全同一條路。
 
 # ── Trip Items ────────────────────────────────────────────────────────────────
 

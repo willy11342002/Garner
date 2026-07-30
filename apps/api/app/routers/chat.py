@@ -134,6 +134,7 @@ async def send_message(
     asyncio.create_task(
         chat_service.run_reply_background(
             asst_msg.id, session_id, user_id, content, body.item_ids or [],
+            scope=body.scope.model_dump(mode="json") if body.scope else None,
         )
     )
 

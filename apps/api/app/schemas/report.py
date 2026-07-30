@@ -52,11 +52,4 @@ class ReportReviseRequest(BaseModel):
     instruction: str
 
 
-class ReportAIEditTurn(BaseModel):
-    role: str
-    content: str
-
-
-class ReportAIEditRequest(BaseModel):
-    instruction: str
-    history: list[ReportAIEditTurn] | None = None
+# AI 修改報告走 chat 的 SendMessageRequest（帶 scope），這裡不再有專屬 schema。

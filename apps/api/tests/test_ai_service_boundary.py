@@ -98,24 +98,21 @@ def test_lazy_attrs_all_actually_exist():
     assert not missing, "_LAZY_ATTRS 有解析不出來的 symbol：\n" + "\n".join(missing)
 
 
-async def test_ai_edit_trip_stream_yields_error_when_trip_not_found():
-    """行程不存在時要 yield 一個 SSE error 事件，而不是拋例外。
+async def test_inaccessible_trip_scope_degrades_instead_of_raising():
+    """無權限的行程 scope 要安靜地變成 None，不能拋例外。
 
-    這是 _sse bug 原本會炸掉的那條路徑。
+    這條原本測的是 ai_edit_trip_stream 的錯誤路徑（_sse bug 就藏在那裡）。那個專屬
+    端口已經刪除、懸浮球改走 chat，等價的位置變成 chat_service.resolve_scope。
     """
-    from app.services import trip_service
+    from app.services import chat_service, trip_service
 
     with patch.object(
         trip_service, "_get_accessible_trip", new=AsyncMock(return_value=None)
     ):
-        events = [
-            ev
-            async for ev in trip_service.ai_edit_trip_stream(
-                db=AsyncMock(),
-                user_id=UUID("00000000-0000-0000-0000-000000000001"),
-                trip_id=UUID("00000000-0000-0000-0000-0000000000ff"),
-                instruction="把第一天改短一點",
-            )
-        ]
+        resolved = await chat_service.resolve_scope(
+            AsyncMock(),
+            UUID("00000000-0000-0000-0000-000000000001"),
+            {"kind": "trip", "id": "00000000-0000-0000-0000-0000000000ff"},
+        )
 
-    assert events == ['event: error\ndata: {"message": "trip not found"}\n\n']
+    assert resolved is None

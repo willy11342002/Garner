@@ -756,10 +756,10 @@ async def reorder_items(
 
 # ── AI 修改既有行程 ──────────────────────────────────────────────────────────────
 #
-# 懸浮球跟 chat 走同一顆引擎（chat_service.run_scoped_agent_stream → A 監督者 →
-# B/C/D 窗口），所以這裡不再自己宣告工具或 prompt —— 工具集是 graph/windows/trip.py
-# 的那一份，唯一的差別是帶上「使用者正在編輯這份行程」的 scope。
-# 下面幾個 helper 是卡片實際寫入的實作，由 D 窗口的 executor 呼叫。
+# 行程頁的 AI 懸浮球沒有專屬端口也沒有專屬引擎 —— 它就是打 chat 的
+# POST /chat/sessions/{id}/messages，body 多帶 scope={"kind":"trip","id":...}。
+# 這裡只剩兩種東西：build_trip_scope（組當前狀態給 chat_service.resolve_scope 用）、
+# 以及卡片實際寫入的 helper（由 D 窗口的 executor 呼叫）。
 
 
 def _parse_time_str(v):
@@ -884,43 +884,15 @@ async def _item_read_json(
     return {"ok": ok, "title": item.title, "_item": read.model_dump(mode="json")}
 
 
-async def ai_edit_trip_stream(
-    db: AsyncSession,
-    user_id: UUID,
-    trip_id: UUID,
-    instruction: str,
-    history: list[dict] | None = None,
-):
-    """行程頁 AI 懸浮球：帶 scope 跑完整分層 agent（SSE 串流）。
+async def mark_ai_edited(db: AsyncSession, user_id: UUID, trip_id: UUID) -> None:
+    """agent 動過這份行程之後的收尾：標記 last_edited_by 並重算 embedding。
 
-    每執行一個工具就 emit 一個 tool_result 事件，前端據此即時更新畫面：
-      add_card / update_card → 帶完整卡片（_item）
-      delete_card           → 帶 _deleted_id
-    history 為先前的對話（[{role, content}]），讓多輪追問有記憶。
-    行程不存在或無編輯權限時 yield error 事件。
+    由 chat_service 在 scope 是 trip 的那一輪跑完後呼叫一次（不是每張卡片各跑一次）。
     """
-    from app.services import chat_service
-    from app.services.ai_service._client import _sse
-
-    built = await build_trip_scope(db, user_id, trip_id)
-    if built is None:
-        yield _sse("error", {"message": "trip not found"})
-        return
-    scope, card_map, start_date = built
-
-    async for ev in chat_service.run_scoped_agent_stream(
-        db, user_id, instruction, scope,
-        scope_trip=chat_service.TripScope(
-            trip_id=trip_id, card_map=card_map, start_date=start_date
-        ),
-        history=history,
-    ):
-        yield ev
-
-    # 標記為 AI 最後編輯（靜默，不另發事件）
     accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
-    if accessible is not None:
-        await crud_trips.update_trip(db, accessible[0], last_edited_by="ai")
+    if accessible is None:
+        return
+    await crud_trips.update_trip(db, accessible[0], last_edited_by="ai")
     asyncio.create_task(_embed_trip_bg(trip_id, user_id))
 
 

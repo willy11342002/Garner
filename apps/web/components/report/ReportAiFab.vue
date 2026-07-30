@@ -107,6 +107,10 @@ const emit = defineEmits<{ (e: 'revised', report: Report): void }>()
 
 const config = useRuntimeConfig()
 const session = useSupabaseSession()
+const apiFetch = useApiFetch()
+
+// 這顆球的對話是一個真正的 chat session（後端持久化、有 context 壓縮）。
+const sessionId = ref<string | null>(null)
 
 const EXAMPLES = [
   '讓語氣更輕鬆易讀',
@@ -124,6 +128,12 @@ const streamingText = ref('')
 interface Step { toolCall: Record<string, any>; toolResult: Record<string, any> | null }
 interface Msg { id: string; role: 'user' | 'assistant'; text: string; actions: string[]; steps: Step[] }
 const messages = ref<Msg[]>([])
+
+// 換報告就開新的一條對話，避免把別份報告的脈絡帶過來
+watch(() => props.reportId, () => {
+  sessionId.value = null
+  messages.value = []
+})
 
 const openProcess = ref(new Set<string>())
 function toggleProcess(id: string) {
@@ -143,20 +153,22 @@ function scrollLog() {
   nextTick(() => { if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight })
 }
 
+// 這顆懸浮球沒有專屬 API —— 它就是打 chat 的端口、body 多帶一個 scope，
+// 跟首頁 chat 走完全同一條路（兩段式：POST 拿 message_id → GET 訂閱 SSE）。
+// 對話歷史由後端 session 保存，所以不再自己組 history 送上去。
+async function ensureSession(): Promise<string> {
+  if (sessionId.value) return sessionId.value
+  const s = await apiFetch<{ id: string }>('/chat/sessions', { method: 'POST', body: {} })
+  sessionId.value = s.id
+  return s.id
+}
+
 async function send(preset?: string) {
   const content = (preset ?? draft.value).trim()
   if (!content || sending.value) return
   draft.value = ''
   sending.value = true
   streamingText.value = ''
-
-  const history = messages.value
-    .map((m) => {
-      const text = m.text || (m.actions.length ? m.actions.join('；') : '')
-      return text ? { role: m.role, content: text } : null
-    })
-    .filter((t): t is { role: 'user' | 'assistant'; content: string } => t !== null)
-    .slice(-12)
 
   messages.value.push({ id: crypto.randomUUID(), role: 'user', text: content, actions: [], steps: [] })
   const assistant: Msg = { id: crypto.randomUUID(), role: 'assistant', text: '', actions: [], steps: [] }
@@ -165,17 +177,27 @@ async function send(preset?: string) {
 
   const apiBase = config.public.apiBase as string
   const token = session.value?.access_token
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
 
   try {
-    const resp = await fetch(`${apiBase}/reports/${props.reportId}/ai-edit`, {
+    const sid = await ensureSession()
+
+    const postResp = await fetch(`${apiBase}/chat/sessions/${sid}/messages`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ instruction: content, history }),
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({
+        content,
+        scope: { kind: 'report', id: props.reportId },
+      }),
     })
-    if (!resp.ok || !resp.body) throw new Error('request failed')
+    if (!postResp.ok) throw new Error('request failed')
+    const { message_id: messageId } = await postResp.json() as { message_id: string }
+
+    const resp = await fetch(
+      `${apiBase}/chat/sessions/${sid}/messages/${messageId}/stream`,
+      { headers: authHeaders },
+    )
+    if (!resp.ok || !resp.body) throw new Error('stream failed')
 
     const reader = resp.body.getReader()
     const decoder = new TextDecoder()

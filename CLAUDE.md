@@ -51,7 +51,7 @@ garner/
 - `item_service` — Item 建立與處理流程主入口
 - `ai_service/` — **⚠️ AI provider 是混用的，不要假設全部都是 Gemini**：LLM（chat 對話、摘要、標籤等文字生成）已全面改用 **Gemini native API**（`google-genai` SDK），但 **embedding 至今仍是 OpenRouter**（`text-embedding-3-small`，1536d，走 OpenAI-compatible SDK），兩者是不同 provider、不同 SDK、不同 API key。拆成子模組：`_client`（Gemini 呼叫基礎。對話內容一律用原生 `types.Content`/`types.Part`，**不要再手刻 OpenAI 格式的 dict**；統一用 `user_turn()`/`model_turn()`/`tool_results()`/`image_part()` 這幾個 builder 組，再交給 `generate()`/`generate_stream()`。內部有 `_llm()`/`_emb()` 兩個各自的 model getter，對應上述兩個 provider）、`chat`（只剩 `compress_memory`：session 記憶壓縮。舊的單一 agent 版 chat_stream/synthesize_*/agentic_chat_stream 已被 `graph/` 取代並刪除）、`embed`（embedding，走 OpenRouter）、`ingest`（內容分析/標籤/摘要，走 Gemini）、`report`（報告產生）、`chain`（關聯鏈分析）、`segment`（CKIP ALBERT-tiny 中文斷詞，自架非雲端 API，供 BM25 全文檢索用）、`rerank`（FlashRank 自架 cross-encoder 重排，多語模型，非雲端 API）、`graph/`（LangGraph 分層 agent：A 監督者 `supervisor.py` 派工給 `windows/knowledge.py`(B)／`windows/report.py`(C)／`windows/trip.py`(D) 三個窗口，見 `docs/agentic-chat-harness.md`。**chat 與行程／報告頁的 AI 懸浮球都走這一套**，差別只在懸浮球會帶 `GraphState["scope"]`＝使用者當前正在編輯的項目；工具只有一份定義，寫入目標一律由 executor 用程式碼決定，工具簽章裡沒有 trip_id／report_id，模型無法指定要寫哪一份）
 - `search_service` — Hybrid 語意搜尋（`/search/semantic`）：向量（pgvector cosine）+ BM25-like 全文檢索（PostgreSQL `tsvector`/`ts_rank_cd`，中文先經 `ai_service.segment` 斷詞）各取候選 → RRF 融合 → `ai_service.rerank` cross-encoder 精排 → 分頁回傳；純關鍵字搜尋（`/search/` ILIKE）維持獨立、未套用 hybrid 邏輯
-- `chat_service` — Agentic chat 對話處理。**分層 agent 的唯一引擎**：`run_agent()` 是 chat 與行程／報告頁 AI 懸浮球共用的核心（跑 A 監督者 + B/C/D 窗口），`stream_reply()` 是 chat 入口（載 session → run_agent → 持久化），`run_scoped_agent_stream()` 是懸浮球入口（帶 `scope`=使用者當前正在編輯的項目，同步 SSE、不持久化對話）。三個窗口的 domain executor 也在這裡綁 db/user_id 後注入
+- `chat_service` — Agentic chat 對話處理。**分層 agent 的唯一引擎，也是唯一入口**：`stream_reply()` → `run_agent()`（跑 A 監督者 + B/C/D 窗口）。行程／報告頁的 AI 懸浮球**沒有專屬端口或專屬引擎** —— 它打的就是 `POST /chat/sessions/{id}/messages`，body 多帶 `scope={kind,id}`，`resolve_scope()` 在後端查權限與當前狀態（不信任前端送來的任何狀態）。三個窗口的 domain executor 也在這裡綁 db/user_id 後注入
 - `stream_registry` — Chat SSE 串流管理：asyncio.Queue pub/sub，解耦 POST（產生）與 GET SSE（消費），支援斷線重連
 - `report_service` — AI 產出層（報告）：生成 / revise / regenerate，與知識分離、不進語料
 - `place_service` — 地點實體處理
@@ -59,7 +59,7 @@ garner/
 - `billing_service` — 訂閱 / 付費額度邏輯
 - `gumroad_service` — Gumroad 金流串接
 - `apify_service` — 外部內容抓取（Apify）：支援 YouTube、TikTok、Facebook。YouTube 用雙 actor 並行（`asyncio.gather`）：`streamers/youtube-scraper` 抓 metadata（title/duration/thumbnail）、`streamers/youtube-video-downloader` 下載影片檔（`downloadedFileUrl`，存 KVS 約 3 天過期），兩邊 merge 進 `raw_data`；影片連結對應集中在 `yt_video_url()`（provider 共用）
-- `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發；`ai_edit_trip_stream` 是行程頁 AI 懸浮球入口，已改成薄薄一層（`build_trip_scope` 組當前狀態 → `chat_service.run_scoped_agent_stream`），工具集共用 `graph/windows/trip.py` 那一份，不再自己宣告
+- `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發。**沒有 AI 專屬端口** —— 行程頁懸浮球走 chat，這裡只提供 `build_trip_scope`（組當前狀態＋card_no 對照給 `chat_service.resolve_scope`）與卡片寫入 helper（由 D 窗口的 executor 呼叫）
 - `quick_meta` — `POST /items/` 建立當下同步跑的輕量 metadata 前置步驟（在背景 ingest pipeline 之前跑,讓 201/203 回應時 title/thumbnail 就正確）：YouTube/TikTok 用平台原生 oEmbed；IG/Facebook 沒有可用的官方 oEmbed（需 Meta App Review），改用 `facebookexternalhit` User-Agent 直接抓貼文頁面的 og:title/og:description/og:image（IG/FB 官方連結預覽爬蟲會放行、跳過登入牆);Article 直接重用現有單次 Apify 呼叫（本來就快，同時拿到 title + 全文）。逾時/失敗回退成 title=null + API 回 203，交給背景 pipeline 補正。
 
 ### API routers（`apps/api/app/routers/`）
@@ -91,8 +91,8 @@ garner/
 - `layout/` — AppNav, GuestNav, AppFooter
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
-- `report/` — ReportAiFab（報告頁的 AI 修改懸浮球）
-- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新，多輪追問帶 history）；TripCardEditor 支援 touch-drag-to-close 關閉 modal（向上或向下快速拖曳自動關閉）；TripShareModal（行程共用管理：成員列表、email 邀請、邀請連結產生/撤銷，owner 限定管理，viewer/editor 唯讀查看）
+- `report/` — ReportAiFab（報告頁的 AI 修改懸浮球，跟 TripAiFab 一樣呼叫 chat 的端口、帶 `scope={kind:'report',id}`）
+- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新。**呼叫 chat 的端口**，不是專屬 API —— `POST /chat/sessions` 開一條 session、`POST /chat/sessions/{id}/messages` 帶 `scope={kind:'trip',id}`、`GET .../stream` 訂閱，跟首頁 chat 完全一樣；多輪追問靠後端 session 歷史，不自己帶 history）；TripCardEditor 支援 touch-drag-to-close 關閉 modal（向上或向下快速拖曳自動關閉）；TripShareModal（行程共用管理：成員列表、email 邀請、邀請連結產生/撤銷，owner 限定管理，viewer/editor 唯讀查看）
 - 根目錄 — BaseFab（通用懸浮球容器：可拖曳、側邊停靠、badge、icon、panel slot、支援多球同時共存 multi-FAB），TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）, OfflineBanner（PWA 離線提示條，偵測 navigator.onLine 事件，掛在 default layout）
 
 ### Web utils（`apps/web/utils/`）

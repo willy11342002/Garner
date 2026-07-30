@@ -584,45 +584,49 @@ def _item_locations(ui) -> list[str]:
         return []
 
 
-async def run_scoped_agent_stream(
-    db: AsyncSession,
-    user_id: UUID,
-    instruction: str,
-    scope: dict,
-    *,
-    scope_trip: TripScope | None = None,
-    scope_report_id: UUID | None = None,
-    history: list[dict] | None = None,
-):
-    """行程／報告頁 AI 懸浮球的入口：帶「當前正在編輯的項目」跑完整分層 agent。
+@dataclass
+class ResolvedScope:
+    """把前端送來的 {kind, id} 換成 agent 真正需要的東西。
 
-    跟 chat 的差別：沒有 session、不持久化對話（history 由前端帶來的純文字組成），
-    而且是同步 SSE（一個 POST 直接回串流，不經 stream_registry）。
+    前端只給 kind + id；當前狀態（卡片清單／報告全文）和權限檢查都在這裡由後端自己查，
+    不信任前端送來的任何狀態。無權限或項目不存在 → resolve_scope 回 None。
     """
-    messages: list[types.Content] = []
-    for turn in history or []:
-        role, content = turn.get("role"), turn.get("content")
-        if not content:
-            continue
-        if role == "user":
-            messages.append(user_turn(content))
-        elif role == "assistant":
-            messages.append(model_turn(text=content))
-    messages.append(user_turn(instruction))
+    scope: dict                      # 進 GraphState，最後成為 prompt 文字
+    trip: TripScope | None = None    # card_no → item_id 對照，只給 executor
+    report_id: UUID | None = None
 
-    run = AgentRun()
-    async for sse in run_agent(
-        db, user_id, messages, run,
-        scope=scope,
-        scope_trip=scope_trip,
-        scope_report_id=scope_report_id,
-        query_hint=instruction,
-    ):
-        yield sse
 
-    if run.sources:
-        yield _sse("sources", run.sources)
-    yield _sse("done", {})
+async def resolve_scope(
+    db: AsyncSession, user_id: UUID, raw: dict | None
+) -> ResolvedScope | None:
+    """解析 SendMessageRequest.scope。raw 為 None 代表首頁 chat（無 scope）。"""
+    if not raw:
+        return None
+    kind, raw_id = raw.get("kind"), raw.get("id")
+    if not raw_id:
+        return None
+    try:
+        entity_id = UUID(str(raw_id))
+    except (ValueError, TypeError):
+        return None
+
+    if kind == "trip":
+        built = await trip_service.build_trip_scope(db, user_id, entity_id)
+        if built is None:
+            return None
+        scope, card_map, start_date = built
+        return ResolvedScope(
+            scope=scope,
+            trip=TripScope(trip_id=entity_id, card_map=card_map, start_date=start_date),
+        )
+
+    if kind == "report":
+        scope = await report_service.build_report_scope(db, user_id, entity_id)
+        if scope is None:
+            return None
+        return ResolvedScope(scope=scope, report_id=entity_id)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -640,9 +644,14 @@ async def stream_reply(
     *,
     skip_user_message: bool = False,
     assistant_message_id: UUID | None = None,
+    scope: dict | None = None,
 ):
     """
     Chat 的 SSE stream：載入 session → 跑 run_agent → 持久化。
+
+    scope 是行程／報告頁 AI 懸浮球帶的「使用者當前正在編輯的項目」（{kind, id}）；
+    首頁 chat 沒有這個。兩者除此之外走完全同一條路 —— 懸浮球沒有專屬端口。
+
     Emits: tool_call | tool_result | sources | report_draft | trip_draft | delta | done
     """
     logger.debug(
@@ -700,12 +709,20 @@ async def stream_reply(
         ))
     messages.append(user_turn(user_content))
 
+    # 懸浮球帶的 scope：權限檢查與當前狀態都在這裡由後端查，前端只給 {kind, id}
+    resolved = await resolve_scope(db, user_id, scope)
+    if scope and resolved is None:
+        logger.debug("chat stream: scope %r not accessible, running without it", scope)
+
     try:
         async for sse in run_agent(
             db, user_id, messages, run,
             background_tasks=background_tasks,
             context_summary=context_summary,
             query_hint=user_content,
+            scope=resolved.scope if resolved else None,
+            scope_trip=resolved.trip if resolved else None,
+            scope_report_id=resolved.report_id if resolved else None,
         ):
             yield sse
     except asyncio.CancelledError:
@@ -741,6 +758,10 @@ async def stream_reply(
         "chat stream persisted: session=%s reply_len=%d cited=%d",
         session_id, len(reply_text), len(cited_ids),
     )
+
+    # agent 動過的行程要標記 last_edited_by 並重算 embedding（整輪跑完只做一次）
+    if resolved and resolved.trip is not None:
+        await trip_service.mark_ai_edited(db, user_id, resolved.trip.trip_id)
 
     msg_count = await crud_chat.count_messages(db, session_id)
     if msg_count % 8 == 0:
@@ -797,6 +818,7 @@ async def run_reply_background(
     user_id: UUID,
     user_content: str,
     context_item_ids: list[UUID],
+    scope: dict | None = None,
 ) -> None:
     """
     背景執行 agentic stream，與 SSE 連線解耦。
@@ -824,6 +846,7 @@ async def run_reply_background(
                 context_item_ids=context_item_ids,
                 skip_user_message=True,
                 assistant_message_id=assistant_message_id,
+                scope=scope,
             ):
                 entry.publish(event_str)
         # Close the SSE connection before running background tasks so the

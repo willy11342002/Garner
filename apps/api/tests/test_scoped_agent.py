@@ -1,7 +1,10 @@
-"""行程／報告頁 AI 懸浮球走完整分層 agent 的測試。
+"""行程／報告頁 AI 懸浮球的測試。
 
-懸浮球跟 chat 現在共用同一顆引擎（chat_service.run_agent → A 監督者 → B/C/D 窗口），
-差別只在多帶一個 scope（使用者正在編輯的項目）。這裡守的是統一之後最容易壞掉的幾件事：
+懸浮球**沒有專屬端口**：它打的就是 chat 的 POST /chat/sessions/{id}/messages，
+body 多帶一個 scope（使用者正在編輯的項目），然後 GET 訂閱同一套 SSE。
+後端從 router 到 graph 到持久化都是 chat 那一條路。
+
+這裡守的是統一之後最容易壞掉的幾件事：
 
 1. scope 進得去 A 的 prompt、也轉發得到對應窗口，但**不會**轉發到別類窗口
 2. 目標實體完全由程式碼決定 —— 工具簽章沒有 trip_id/report_id，模型無法指定要寫哪一份
@@ -272,42 +275,58 @@ async def test_delete_card_tool_result_carries_deleted_id():
 
 # ── 懸浮球入口 ─────────────────────────────────────────────────────────────────
 
-async def test_trip_fab_yields_error_when_trip_is_not_accessible():
+async def test_resolve_scope_builds_trip_scope_and_card_map():
+    """前端只送 {kind, id}；當前狀態與 card_map 都是後端自己查出來的。"""
     from app.services import trip_service
 
-    with patch.object(trip_service, "build_trip_scope", new=AsyncMock(return_value=None)):
-        events = [
-            ev async for ev in trip_service.ai_edit_trip_stream(
-                AsyncMock(), UUID(int=1), TRIP_ID, "改一下"
-            )
-        ]
+    built = (TRIP_SCOPE, {1: CARD_ID}, None)
+    with patch.object(trip_service, "build_trip_scope", new=AsyncMock(return_value=built)):
+        resolved = await chat_service.resolve_scope(
+            AsyncMock(), UUID(int=1), {"kind": "trip", "id": str(TRIP_ID)}
+        )
 
-    assert events == ['event: error\ndata: {"message": "trip not found"}\n\n']
+    assert resolved.scope == TRIP_SCOPE
+    assert resolved.trip.trip_id == TRIP_ID
+    assert resolved.trip.card_map == {1: CARD_ID}
+    assert resolved.report_id is None
 
 
-async def test_report_fab_yields_error_when_report_is_not_found():
+async def test_resolve_scope_builds_report_scope():
     from app.services import report_service
 
-    with patch.object(report_service, "build_report_scope", new=AsyncMock(return_value=None)):
-        events = [
-            ev async for ev in report_service.ai_edit_report_stream(
-                AsyncMock(), UUID(int=1), REPORT_ID, "改一下"
-            )
-        ]
+    with patch.object(report_service, "build_report_scope", new=AsyncMock(return_value=REPORT_SCOPE)):
+        resolved = await chat_service.resolve_scope(
+            AsyncMock(), UUID(int=1), {"kind": "report", "id": str(REPORT_ID)}
+        )
 
-    assert events == ['event: error\ndata: {"message": "Report not found"}\n\n']
+    assert resolved.scope == REPORT_SCOPE
+    assert resolved.report_id == REPORT_ID
+    assert resolved.trip is None
 
 
-async def test_trip_fab_end_to_end_emits_the_events_the_frontend_expects():
-    """從懸浮球入口一路跑到 SSE 輸出，斷言前端實際會收到的事件序列。
+@pytest.mark.parametrize("raw, why", [
+    (None, "首頁 chat 沒有 scope"),
+    ({}, "空 dict"),
+    ({"kind": "trip"}, "缺 id"),
+    ({"kind": "trip", "id": "not-a-uuid"}, "id 不是 UUID"),
+    ({"kind": "什麼鬼", "id": str(TRIP_ID)}, "不認得的 kind"),
+])
+async def test_resolve_scope_returns_none_for_unusable_input(raw, why):
+    resolved = await chat_service.resolve_scope(AsyncMock(), UUID(int=1), raw)
 
-    這條蓋住整條新路徑：ai_edit_trip_stream → build_trip_scope → run_scoped_agent_stream
-    → A 派工 → D 窗口 → executor → emit → SSE。
+    assert resolved is None, why
+
+
+async def test_scoped_chat_end_to_end_emits_the_events_the_frontend_expects():
+    """懸浮球現在就是「帶 scope 的 chat」——走 chat 自己的 stream_reply，沒有專屬端口。
+
+    這條蓋住整條路徑：stream_reply(scope=...) → resolve_scope → A 派工 → D 窗口
+    → executor → emit → SSE。
     """
     import json
+    from app.crud import chat as crud_chat
     from app.services import trip_service
 
-    scope_fixture = (TRIP_SCOPE, {1: CARD_ID}, None)
     trip_executor = AsyncMock(return_value={
         "ok": True, "title": "黑門市場", "_item": {"id": str(CARD_ID), "title": "黑門市場"},
     })
@@ -317,17 +336,25 @@ async def test_trip_fab_end_to_end_emits_the_events_the_frontend_expects():
         [],
         [_part(text="已經加上黑門市場了。")],
     ])
+    session = SimpleNamespace(messages=[], context_summary=None)
 
     with patch.object(_client, "_get_client", return_value=fake), \
-         patch.object(trip_service, "build_trip_scope", new=AsyncMock(return_value=scope_fixture)), \
-         patch.object(trip_service, "_get_accessible_trip", new=AsyncMock(return_value=None)), \
+         patch.object(trip_service, "build_trip_scope",
+                      new=AsyncMock(return_value=(TRIP_SCOPE, {1: CARD_ID}, None))), \
+         patch.object(trip_service, "mark_ai_edited", new=AsyncMock()) as marked, \
          patch.object(chat_service, "_get_search_cutoff", new=AsyncMock(return_value=0.45)), \
          patch.object(chat_service, "_build_trip_executor", return_value=trip_executor), \
          patch.object(chat_service, "_build_knowledge_executor", return_value=AsyncMock(return_value={})), \
-         patch.object(chat_service, "_build_report_executor", return_value=AsyncMock(return_value={})):
+         patch.object(chat_service, "_build_report_executor", return_value=AsyncMock(return_value={})), \
+         patch.object(crud_chat, "get_session_with_messages", new=AsyncMock(return_value=session)), \
+         patch.object(crud_chat, "add_message", new=AsyncMock()), \
+         patch.object(crud_chat, "touch_session", new=AsyncMock()), \
+         patch.object(crud_chat, "count_messages", new=AsyncMock(return_value=2)):
         events = [
-            ev async for ev in trip_service.ai_edit_trip_stream(
-                AsyncMock(), UUID(int=1), TRIP_ID, "在第一天加上黑門市場"
+            ev async for ev in chat_service.stream_reply(
+                AsyncMock(), UUID(int=7), UUID(int=1), "在第一天加上黑門市場",
+                _FakeBackgroundTasks(),
+                scope={"kind": "trip", "id": str(TRIP_ID)},
             )
         ]
 
@@ -335,12 +362,13 @@ async def test_trip_fab_end_to_end_emits_the_events_the_frontend_expects():
         (ev.split("\n")[0].removeprefix("event: "), json.loads(ev.split("data: ", 1)[1]))
         for ev in events
     ]
-    assert [name for name, _ in parsed] == ["tool_call", "tool_result", "delta", "done"]
+    assert [name for name, _ in parsed] == [
+        "tool_call", "tool_result", "delta", "sources", "done",
+    ]
 
-    _, call = parsed[0]
-    assert call == {"name": "add_card", "day": 1, "title": "黑門市場"}
+    assert parsed[0][1] == {"name": "add_card", "day": 1, "title": "黑門市場"}
 
-    _, result = parsed[1]
+    result = parsed[1][1]
     assert result["name"] == "add_card" and result["ok"] is True
     assert result["_item"]["title"] == "黑門市場"   # 前端據此即時插入卡片
 
@@ -348,23 +376,44 @@ async def test_trip_fab_end_to_end_emits_the_events_the_frontend_expects():
 
     # 目標行程由程式碼指定，模型只給了 day/title
     assert trip_executor.await_args.args == ("add_card", {"day": 1, "title": "黑門市場"})
+    # 整輪跑完標記一次 AI 編輯（不是每張卡片各一次）
+    marked.assert_awaited_once()
 
 
-async def test_fab_history_becomes_multi_turn_context():
-    """懸浮球的多輪追問靠前端帶回來的純文字 history。"""
+class _FakeBackgroundTasks:
+    def __init__(self):
+        self.tasks = []
+
+    def add_task(self, func, *args, **kwargs):
+        self.tasks.append((func, args, kwargs))
+
+
+async def test_scoped_chat_multi_turn_comes_from_the_session_not_the_request():
+    """懸浮球的多輪追問靠 chat session 的 DB 歷史，不再由前端帶 history 欄位。"""
+    from app.crud import chat as crud_chat
+    from app.models.chat import MessageRole
+
+    def _msg(role, content):
+        return SimpleNamespace(
+            id=UUID(int=9), role=MessageRole(role), content=content,
+            status="complete", process_log=None,
+        )
+
+    session = SimpleNamespace(
+        messages=[_msg("user", "把第一天改短"), _msg("assistant", "已經改好了")],
+        context_summary=None,
+    )
     fake = ScriptedGemini([[_part(text="好")]])
+
     with patch.object(_client, "_get_client", return_value=fake), \
-         patch.object(chat_service, "_get_search_cutoff", new=AsyncMock(return_value=0.45)):
-        [ev async for ev in chat_service.run_scoped_agent_stream(
-            AsyncMock(), UUID(int=1), "那再短一點", TRIP_SCOPE,
-            history=[
-                {"role": "user", "content": "把第一天改短"},
-                {"role": "assistant", "content": "已經改好了"},
-            ],
+         patch.object(chat_service, "_get_search_cutoff", new=AsyncMock(return_value=0.45)), \
+         patch.object(crud_chat, "get_session_with_messages", new=AsyncMock(return_value=session)), \
+         patch.object(crud_chat, "add_message", new=AsyncMock()), \
+         patch.object(crud_chat, "touch_session", new=AsyncMock()), \
+         patch.object(crud_chat, "count_messages", new=AsyncMock(return_value=4)):
+        [ev async for ev in chat_service.stream_reply(
+            AsyncMock(), UUID(int=7), UUID(int=1), "那再短一點", _FakeBackgroundTasks(),
         )]
 
-    texts = [
-        "".join(p.text or "" for p in c.parts)
-        for c in fake.calls[0]["contents"]
-    ]
+    texts = ["".join(p.text or "" for p in c.parts) for c in fake.calls[0]["contents"]]
     assert texts == ["把第一天改短", "已經改好了", "那再短一點"]

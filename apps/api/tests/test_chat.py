@@ -1,4 +1,7 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from tests.conftest import TEST_FOLDER_ID, TEST_SESSION_ID, make_folder_read, make_session_read
 
@@ -161,3 +164,60 @@ async def test_send_message_session_not_found(client):
             json={"content": "Hello"},
         )
     assert resp.status_code == 404
+
+
+# ── scope（行程／報告頁 AI 懸浮球）─────────────────────────────────────────────
+#
+# 懸浮球沒有專屬端口，它打的就是這支 endpoint、body 多帶一個 scope。
+
+
+async def _send(client, body):
+    """送一則訊息，攔下背景 task 不讓它真的去跑 agent；回傳 (response, 攔到的 kwargs)。"""
+    captured: dict = {}
+
+    async def _fake_background(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    with patch("app.crud.chat.get_session_with_messages", new=AsyncMock(return_value=MagicMock())), \
+         patch("app.crud.chat.add_message", new=AsyncMock()), \
+         patch("app.crud.chat.update_session", new=AsyncMock()), \
+         patch("app.crud.chat.create_assistant_placeholder",
+               new=AsyncMock(return_value=MagicMock(id=TEST_SESSION_ID))), \
+         patch("app.services.chat_service.run_reply_background", new=_fake_background):
+        resp = await client.post(f"/chat/sessions/{TEST_SESSION_ID}/messages", json=body)
+        await asyncio.sleep(0)  # 讓 create_task 排進去的假 task 跑一輪
+    return resp, captured
+
+
+@pytest.mark.parametrize("kind", ["trip", "report"])
+async def test_send_message_forwards_scope_to_the_agent(client, kind):
+    entity_id = "00000000-0000-0000-0000-0000000000ff"
+    resp, captured = await _send(
+        client, {"content": "把第一天改短", "scope": {"kind": kind, "id": entity_id}}
+    )
+
+    assert resp.status_code == 201
+    assert captured["kwargs"]["scope"] == {"kind": kind, "id": entity_id}
+
+
+async def test_send_message_without_scope_passes_none(client):
+    """首頁 chat 沒有 scope。"""
+    resp, captured = await _send(client, {"content": "台北有什麼好吃的"})
+
+    assert resp.status_code == 201
+    assert captured["kwargs"]["scope"] is None
+
+
+@pytest.mark.parametrize("scope", [
+    {"kind": "不認得的類型", "id": "00000000-0000-0000-0000-0000000000ff"},
+    {"kind": "trip", "id": "not-a-uuid"},
+    {"kind": "trip"},
+])
+async def test_send_message_rejects_malformed_scope(client, scope):
+    with patch("app.crud.chat.get_session_with_messages", new=AsyncMock(return_value=MagicMock())):
+        resp = await client.post(
+            f"/chat/sessions/{TEST_SESSION_ID}/messages",
+            json={"content": "改一下", "scope": scope},
+        )
+    assert resp.status_code == 422

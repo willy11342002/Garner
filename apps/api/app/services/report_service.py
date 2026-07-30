@@ -39,37 +39,6 @@ async def _to_read(db: AsyncSession, user_id: UUID, report: Report) -> ReportRea
     )
 
 
-# ── Report AI FAB (SSE streaming) ──────────────────────────────────────────
-#
-# 懸浮球跟 chat 走同一顆引擎（chat_service.run_scoped_agent_stream → A 監督者 →
-# B/C/D 窗口），所以這裡不再自己宣告工具或 prompt —— 工具集是 graph/windows/report.py
-# 的那一份，唯一的差別是帶上「使用者正在編輯這份報告」的 scope。
-
-
-async def ai_edit_report_stream(
-    db: AsyncSession,
-    user_id: UUID,
-    report_id: UUID,
-    instruction: str,
-    history: list[dict] | None = None,
-):
-    """報告頁 AI 懸浮球：帶 scope 跑完整分層 agent（SSE 串流）。"""
-    from app.services import chat_service
-    from app.services.ai_service._client import _sse
-
-    scope = await build_report_scope(db, user_id, report_id)
-    if scope is None:
-        yield _sse("error", {"message": "Report not found"})
-        return
-
-    async for ev in chat_service.run_scoped_agent_stream(
-        db, user_id, instruction, scope,
-        scope_report_id=report_id,
-        history=history,
-    ):
-        yield ev
-
-
 # ── chat tool 入口 ──────────────────────────────────────────────────────────
 
 
