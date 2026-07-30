@@ -126,22 +126,39 @@ async def create_from_chat(
     }
 
 
-async def build_report_scope(
+async def get_report_for_chat(
     db: AsyncSession, user_id: UUID, report_id: UUID
 ) -> dict | None:
-    """組出「使用者正在編輯這份報告」要交給 graph 的 scope。
+    """C 窗口的 get_report：讀一份報告的全文。
 
-    brief 帶報告全文（截 16000 字），C 窗口的 update_report 是整篇覆寫，
-    必須看得到現況才能在既有內文上接續修改而不是砍掉重寫。
-    無權限或報告不存在時回 None。
+    update_report 是整篇覆寫，模型必須先看到現況才能在既有內文上接續修改而不是砍掉重寫。
+    任何一份自己的報告都讀得到，不限於使用者當前開著的那份。
     """
     report = await crud_reports.get_one(db, user_id, report_id)
     if report is None:
         return None
     return {
+        "id": str(report.id),
+        "title": report.title,
+        "body_md": (report.body_md or "")[:16000],
+    }
+
+
+async def build_report_scope(
+    db: AsyncSession, user_id: UUID, report_id: UUID
+) -> dict | None:
+    """使用者當前開著的報告，組成給 A 的一句提示。
+
+    **這不是權限機制** —— 它只讓「幫我把這份改短」有所指。實際能改哪一份完全由工具的
+    report_id 決定，權限由資料層擋（crud_reports.get_one 帶 user_id）。
+    """
+    detail = await get_report_for_chat(db, user_id, report_id)
+    if detail is None:
+        return None
+    return {
         "kind": "report",
         "id": str(report_id),
-        "brief": f"報告標題：{report.title}\n\n目前內文：\n{(report.body_md or '')[:16000]}",
+        "brief": f"報告「{detail['title']}」（report_id={detail['id']}）",
     }
 
 

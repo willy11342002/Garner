@@ -106,14 +106,6 @@ async def rag_retrieve(
 
 
 @dataclass
-class TripScope:
-    """使用者正在編輯的行程。card_map 刻意不進 GraphState —— 它是 uuid，只給 executor 用。"""
-    trip_id: UUID
-    card_map: dict[int, UUID]
-    start_date: object = None
-
-
-@dataclass
 class AgentRun:
     """一次 agent 執行的累積結果。
 
@@ -289,16 +281,18 @@ def _build_knowledge_executor(
     return executor
 
 
-def _build_report_executor(
-    db: AsyncSession,
-    user_id: UUID,
-    seen_ids: set[UUID],
-    scope_report_id: UUID | None = None,
-):
-    """C（報告窗口）的 domain executor：create_report / update_report / search_reports。
+def _uuid_arg(args: dict, key: str) -> UUID | None:
+    try:
+        return UUID(str(args.get(key)))
+    except (ValueError, TypeError, AttributeError):
+        return None
 
-    update_report 的目標報告只能是 scope_report_id（使用者正在看的那一頁，id 來自已授權的
-    URL 路徑）。工具簽章裡沒有 report_id，模型無法指定要覆寫哪一份。
+
+def _build_report_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
+    """C（報告窗口）的 domain executor：search_reports / get_report / create_report / update_report。
+
+    模型可以指定任何一份報告的 report_id —— 權限由資料層擋
+    （crud_reports.get_one 帶 user_id，別人的報告查不到）。
     """
     created_report: dict | None = None
 
@@ -322,15 +316,25 @@ def _build_report_executor(
                 logger.exception("create_from_chat failed")
                 return {"draft": None, "ok": False}
 
+        if name == "get_report":
+            report_id = _uuid_arg(args, "report_id")
+            if report_id is None:
+                return {"ok": False, "error": "invalid report_id"}
+            detail = await report_service.get_report_for_chat(db, user_id, report_id)
+            if detail is None:
+                return {"ok": False, "error": "report not found"}
+            return {"ok": True, **detail}
+
         if name == "update_report":
-            if scope_report_id is None:
-                return {"ok": False, "error": "只能改寫使用者目前正在編輯的報告"}
+            report_id = _uuid_arg(args, "report_id")
+            if report_id is None:
+                return {"ok": False, "error": "invalid report_id"}
             body = args.get("body_md") or ""
             if not body.strip():
                 return {"ok": False, "error": "body_md 不能為空"}
             try:
                 return await report_service.update_report_from_chat(
-                    db, user_id, scope_report_id, args.get("title"), body
+                    db, user_id, report_id, args.get("title"), body
                 )
             except Exception:
                 logger.exception("update_report_from_chat failed")
@@ -352,35 +356,14 @@ def _build_report_executor(
     return executor
 
 
-def _build_trip_executor(
-    db: AsyncSession,
-    user_id: UUID,
-    seen_ids: set[UUID],
-    scope_trip: TripScope | None = None,
-):
-    """D（旅遊窗口）的 domain executor：create_trip / add_card / update_card / delete_card / search_trips。
+def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
+    """D（旅遊窗口）的 domain executor：search_trips / get_trip / create_trip / add_card / update_card / delete_card。
 
-    **目標行程完全由程式碼決定**：本輪自己 create_trip 建的，或 scope_trip（使用者正在
-    看的那一頁，id 來自已授權的 URL 路徑）。工具簽章裡沒有 trip_id，模型無法指定要寫哪一份。
-    卡片同理用 card_no 經 card_map 換成 item_id。
+    模型可以指定任何一份行程的 trip_id 與 card_id —— 權限由資料層擋
+    （每個寫入函式都自己跑 _get_accessible_trip(required_role="editor")，
+    別人的行程查不到）。
     """
     created_trip: dict | None = None
-
-    def _target_trip_id() -> UUID | None:
-        if created_trip is not None:
-            return UUID(created_trip["id"])
-        return scope_trip.trip_id if scope_trip else None
-
-    def _resolve_card(args: dict) -> UUID | str:
-        """card_no → item_id。回字串代表錯誤訊息。"""
-        if scope_trip is None:
-            return "只能修改使用者目前正在編輯的行程裡的卡片"
-        try:
-            no = int(args.get("card_no"))
-        except (TypeError, ValueError):
-            return "invalid card_no"
-        item_id = scope_trip.card_map.get(no)
-        return item_id if item_id is not None else "card_no not found"
 
     async def executor(name: str, args: dict) -> dict:
         nonlocal created_trip
@@ -404,10 +387,19 @@ def _build_trip_executor(
                 logger.exception("create_trip_from_chat failed")
                 return {"draft": None, "ok": False}
 
-        if name == "add_card":
-            trip_id = _target_trip_id()
+        if name == "get_trip":
+            trip_id = _uuid_arg(args, "trip_id")
             if trip_id is None:
-                return {"ok": False, "error": "沒有目標行程，請先 create_trip"}
+                return {"ok": False, "error": "invalid trip_id"}
+            detail = await trip_service.get_trip_detail_for_chat(db, user_id, trip_id)
+            if detail is None:
+                return {"ok": False, "error": "trip not found"}
+            return {"ok": True, **detail}
+
+        if name == "add_card":
+            trip_id = _uuid_arg(args, "trip_id")
+            if trip_id is None:
+                return {"ok": False, "error": "invalid trip_id"}
             # 只接受本次實際檢索／預載過的知識 id（防模型亂編 id 寫到別人的知識）
             raw_src = args.get("source_item_ids") or []
             valid_src: list[str] = []
@@ -442,24 +434,24 @@ def _build_trip_executor(
                 return {"ok": False}
 
         if name == "update_card":
-            resolved = _resolve_card(args)
-            if isinstance(resolved, str):
-                return {"ok": False, "error": resolved}
+            trip_id, card_id = _uuid_arg(args, "trip_id"), _uuid_arg(args, "card_id")
+            if trip_id is None or card_id is None:
+                return {"ok": False, "error": "invalid trip_id or card_id"}
             try:
                 return await trip_service.update_card_from_chat(
-                    db, user_id, scope_trip.trip_id, scope_trip.start_date, resolved, args
+                    db, user_id, trip_id, card_id, args
                 )
             except Exception:
                 logger.exception("update_card_from_chat failed")
                 return {"ok": False}
 
         if name == "delete_card":
-            resolved = _resolve_card(args)
-            if isinstance(resolved, str):
-                return {"ok": False, "error": resolved}
+            trip_id, card_id = _uuid_arg(args, "trip_id"), _uuid_arg(args, "card_id")
+            if trip_id is None or card_id is None:
+                return {"ok": False, "error": "invalid trip_id or card_id"}
             try:
                 return await trip_service.delete_card_from_chat(
-                    db, user_id, scope_trip.trip_id, resolved
+                    db, user_id, trip_id, card_id
                 )
             except Exception:
                 logger.exception("delete_card_from_chat failed")
@@ -495,8 +487,6 @@ async def run_agent(
     background_tasks: BackgroundTasks | None = None,
     context_summary: str | None = None,
     scope: dict | None = None,
-    scope_trip: TripScope | None = None,
-    scope_report_id: UUID | None = None,
     query_hint: str = "",
 ):
     """跑一次分層 agent（A 監督者派工給 B/C/D 窗口），yield SSE 字串。
@@ -514,8 +504,8 @@ async def run_agent(
     )
     config = {"configurable": {
         "knowledge_executor": knowledge_executor,
-        "report_executor": _build_report_executor(db, user_id, run.seen_ids, scope_report_id),
-        "trip_executor": _build_trip_executor(db, user_id, run.seen_ids, scope_trip),
+        "report_executor": _build_report_executor(db, user_id, run.seen_ids),
+        "trip_executor": _build_trip_executor(db, user_id, run.seen_ids),
     }}
 
     initial_state = {
@@ -584,48 +574,47 @@ def _item_locations(ui) -> list[str]:
         return []
 
 
-@dataclass
-class ResolvedScope:
-    """把前端送來的 {kind, id} 換成 agent 真正需要的東西。
+_CARD_TOOLS = {"add_card", "update_card", "delete_card"}
 
-    前端只給 kind + id；當前狀態（卡片清單／報告全文）和權限檢查都在這裡由後端自己查，
-    不信任前端送來的任何狀態。無權限或項目不存在 → resolve_scope 回 None。
+
+def _edited_trip_ids(run: AgentRun) -> list[UUID]:
+    """這一輪 agent 實際改動過的行程。
+
+    模型現在能操作任何一份行程（也可能一輪動好幾份），所以收尾要標記哪些行程被 AI 編輯過
+    得從實際跑過的工具回推，不能再假設「就是使用者開著的那一份」。
     """
-    scope: dict                      # 進 GraphState，最後成為 prompt 文字
-    trip: TripScope | None = None    # card_no → item_id 對照，只給 executor
-    report_id: UUID | None = None
+    ids: list[UUID] = []
+    for step in run.process_steps:
+        call, result = step.get("toolCall") or {}, step.get("toolResult") or {}
+        if call.get("name") not in _CARD_TOOLS or not result.get("ok"):
+            continue
+        trip_id = _uuid_arg(call, "trip_id")
+        if trip_id is not None and trip_id not in ids:
+            ids.append(trip_id)
+    return ids
 
 
 async def resolve_scope(
     db: AsyncSession, user_id: UUID, raw: dict | None
-) -> ResolvedScope | None:
-    """解析 SendMessageRequest.scope。raw 為 None 代表首頁 chat（無 scope）。"""
+) -> dict | None:
+    """把前端送來的 {kind, id} 換成給 A 的一句提示。
+
+    **這不影響 agent 能做什麼** —— 三個窗口的工具都收 id、能操作任何一份自己的資料，
+    不管使用者是從首頁 chat 還是從某一頁的懸浮球進來。scope 只是讓「把這個行程改短」
+    這種指稱有對象。權限一律由資料層擋。
+
+    raw 為 None（首頁 chat）、格式不對、或該項目不屬於這個 user → 回 None，agent 照跑。
+    """
     if not raw:
         return None
-    kind, raw_id = raw.get("kind"), raw.get("id")
-    if not raw_id:
-        return None
-    try:
-        entity_id = UUID(str(raw_id))
-    except (ValueError, TypeError):
+    entity_id = _uuid_arg(raw, "id")
+    if entity_id is None:
         return None
 
-    if kind == "trip":
-        built = await trip_service.build_trip_scope(db, user_id, entity_id)
-        if built is None:
-            return None
-        scope, card_map, start_date = built
-        return ResolvedScope(
-            scope=scope,
-            trip=TripScope(trip_id=entity_id, card_map=card_map, start_date=start_date),
-        )
-
-    if kind == "report":
-        scope = await report_service.build_report_scope(db, user_id, entity_id)
-        if scope is None:
-            return None
-        return ResolvedScope(scope=scope, report_id=entity_id)
-
+    if raw.get("kind") == "trip":
+        return await trip_service.build_trip_scope(db, user_id, entity_id)
+    if raw.get("kind") == "report":
+        return await report_service.build_report_scope(db, user_id, entity_id)
     return None
 
 
@@ -709,9 +698,10 @@ async def stream_reply(
         ))
     messages.append(user_turn(user_content))
 
-    # 懸浮球帶的 scope：權限檢查與當前狀態都在這裡由後端查，前端只給 {kind, id}
-    resolved = await resolve_scope(db, user_id, scope)
-    if scope and resolved is None:
+    # 懸浮球帶的 scope：只是給 A 的提示，不影響能做什麼。前端只給 {kind, id}，
+    # 當前狀態與權限一律後端自己查。
+    resolved_scope = await resolve_scope(db, user_id, scope)
+    if scope and resolved_scope is None:
         logger.debug("chat stream: scope %r not accessible, running without it", scope)
 
     try:
@@ -720,9 +710,7 @@ async def stream_reply(
             background_tasks=background_tasks,
             context_summary=context_summary,
             query_hint=user_content,
-            scope=resolved.scope if resolved else None,
-            scope_trip=resolved.trip if resolved else None,
-            scope_report_id=resolved.report_id if resolved else None,
+            scope=resolved_scope,
         ):
             yield sse
     except asyncio.CancelledError:
@@ -760,8 +748,8 @@ async def stream_reply(
     )
 
     # agent 動過的行程要標記 last_edited_by 並重算 embedding（整輪跑完只做一次）
-    if resolved and resolved.trip is not None:
-        await trip_service.mark_ai_edited(db, user_id, resolved.trip.trip_id)
+    for trip_id in _edited_trip_ids(run):
+        await trip_service.mark_ai_edited(db, user_id, trip_id)
 
     msg_count = await crud_chat.count_messages(db, session_id)
     if msg_count % 8 == 0:

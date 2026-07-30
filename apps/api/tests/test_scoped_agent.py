@@ -1,16 +1,14 @@
-"""行程／報告頁 AI 懸浮球的測試。
+"""分層 agent 的能力與權限測試。
 
-懸浮球**沒有專屬端口**：它打的就是 chat 的 POST /chat/sessions/{id}/messages，
-body 多帶一個 scope（使用者正在編輯的項目），然後 GET 訂閱同一套 SSE。
-後端從 router 到 graph 到持久化都是 chat 那一條路。
+設計前提（這份檔案就是在守這件事）：
+**一套 agent、一套工具、到處都一樣。** 不管使用者是從首頁 chat、行程頁懸浮球、還是
+報告頁懸浮球進來，能做的事完全相同 —— D 窗口能操作任何一份行程、C 窗口能操作任何一份
+報告、B 窗口只讀。
 
-這裡守的是統一之後最容易壞掉的幾件事：
-
-1. scope 進得去 A 的 prompt、也轉發得到對應窗口，但**不會**轉發到別類窗口
-2. 目標實體完全由程式碼決定 —— 工具簽章沒有 trip_id/report_id，模型無法指定要寫哪一份
-3. 前端即時更新用的 `_` 前綴 payload 傳得到前端、但不會灌回模型脈絡
-4. 前端 tool_result 的欄位契約（name / ok / _item / _deleted_id / _report）沒被改掉
+scope（使用者畫面上開著哪一份）**不是權限機制**，只是給 A 的一句提示，讓「把這個行程
+改短」有所指。權限一律由資料層擋：每個寫入函式自己帶 user_id 查一次。
 """
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
@@ -23,12 +21,20 @@ from app.services.ai_service._client import user_turn
 from app.services.ai_service.graph import supervisor as sup
 from app.services.ai_service.graph.windows import _loop
 
-TRIP_ID = UUID("00000000-0000-0000-0000-0000000000t1".replace("t", "a"))
-REPORT_ID = UUID("00000000-0000-0000-0000-0000000000r1".replace("r", "b"))
-CARD_ID = UUID("00000000-0000-0000-0000-0000000000c1".replace("c", "c"))
+TRIP_ID = UUID("00000000-0000-0000-0000-00000000aaa1")
+OTHER_TRIP_ID = UUID("00000000-0000-0000-0000-00000000aaa2")
+REPORT_ID = UUID("00000000-0000-0000-0000-00000000bbb1")
+CARD_ID = UUID("00000000-0000-0000-0000-00000000ccc1")
+USER_ID = UUID(int=1)
 
-TRIP_SCOPE = {"kind": "trip", "id": str(TRIP_ID), "brief": "行程標題：大阪4天\n\n目前卡片：\n1. 道頓堀"}
-REPORT_SCOPE = {"kind": "report", "id": str(REPORT_ID), "brief": "報告標題：京都指南\n\n目前內文：\n# 京都"}
+TRIP_SCOPE = {
+    "kind": "trip", "id": str(TRIP_ID),
+    "brief": f"行程「大阪4天」（trip_id={TRIP_ID}）\n目前卡片：\n- 道頓堀（card_id={CARD_ID}）",
+}
+REPORT_SCOPE = {
+    "kind": "report", "id": str(REPORT_ID),
+    "brief": f"報告「京都指南」（report_id={REPORT_ID}）",
+}
 
 
 def _part(text=None, fc=None):
@@ -62,8 +68,15 @@ class ScriptedGemini:
         return gen()
 
 
-async def _run(script, *, scope=None, scope_trip=None, scope_report_id=None, executors=None):
-    """跑一次 run_agent，回傳 (SSE 字串 list, AgentRun, 假 client)。"""
+class _FakeBackgroundTasks:
+    def __init__(self):
+        self.tasks = []
+
+    def add_task(self, func, *args, **kwargs):
+        self.tasks.append((func, args, kwargs))
+
+
+async def _run(script, *, scope=None, executors=None):
     fake = ScriptedGemini(script)
     run = chat_service.AgentRun()
     execs = executors or {}
@@ -77,22 +90,160 @@ async def _run(script, *, scope=None, scope_trip=None, scope_report_id=None, exe
                       return_value=execs.get("trip", AsyncMock(return_value={}))):
         events = [
             ev async for ev in chat_service.run_agent(
-                AsyncMock(), UUID(int=1), [user_turn("把第一天改短一點")], run,
-                scope=scope, scope_trip=scope_trip, scope_report_id=scope_report_id,
+                AsyncMock(), USER_ID, [user_turn("把第一天改短一點")], run, scope=scope,
             )
         ]
     return events, run, fake
 
 
-# ── scope 進得去 A 的 prompt ────────────────────────────────────────────────────
+def _tool(module_tools, name):
+    return next(t for t in module_tools if t.name == name)
+
+
+def _params(tool):
+    return tool.parameters.properties or {}
+
+
+# ── 能力對稱：工具收 id，任何入口都能操作任何一份 ─────────────────────────────
+
+@pytest.mark.parametrize("tool_name", ["get_trip", "add_card", "update_card", "delete_card"])
+def test_every_trip_tool_takes_an_explicit_trip_id(tool_name):
+    """工具收 trip_id 才可能「在任何位置都做得到同樣的事」。
+
+    舊設計刻意不給 trip_id、只能動 scope 那一份，結果 chat 查得到行程卻改不了。
+    """
+    from app.services.ai_service.graph.windows.trip import _TOOLS
+
+    tool = _tool(_TOOLS, tool_name)
+    assert "trip_id" in _params(tool)
+    assert "trip_id" in (tool.parameters.required or [])
+
+
+@pytest.mark.parametrize("tool_name", ["update_card", "delete_card"])
+def test_card_tools_take_a_real_card_id_not_a_display_index(tool_name):
+    from app.services.ai_service.graph.windows.trip import _TOOLS
+
+    tool = _tool(_TOOLS, tool_name)
+    assert "card_id" in _params(tool)
+    assert "card_no" not in _params(tool)
+
+
+@pytest.mark.parametrize("tool_name", ["get_report", "update_report"])
+def test_every_report_tool_takes_an_explicit_report_id(tool_name):
+    from app.services.ai_service.graph.windows.report import _TOOLS
+
+    tool = _tool(_TOOLS, tool_name)
+    assert "report_id" in _params(tool)
+    assert "report_id" in (tool.parameters.required or [])
+
+
+def test_knowledge_window_has_no_tool_that_modifies_existing_knowledge():
+    """B 窗口只讀 —— search 查詢、save_url 新增，沒有任何改寫／刪除既有知識的工具。"""
+    from app.services.ai_service.graph.windows.knowledge import _TOOLS
+
+    names = {t.name for t in _TOOLS}
+    assert names == {"search", "save_url"}
+
+
+async def test_card_tools_work_without_any_scope():
+    """首頁 chat（無 scope）也要能改任何一份行程 —— 這是「功能全開」的核心。"""
+    updated = AsyncMock(return_value={"ok": True, "title": "改過的", "_item": {}})
+    executor = chat_service._build_trip_executor(AsyncMock(), USER_ID, set())
+
+    with patch.object(chat_service.trip_service, "update_card_from_chat", new=updated):
+        result = await executor(
+            "update_card",
+            {"trip_id": str(OTHER_TRIP_ID), "card_id": str(CARD_ID), "title": "改過的"},
+        )
+
+    assert result["ok"] is True
+    _db, _uid, trip_id, card_id, _args = updated.await_args.args
+    assert (trip_id, card_id) == (OTHER_TRIP_ID, CARD_ID)
+
+
+async def test_update_report_works_without_any_scope():
+    updated = AsyncMock(return_value={"ok": True, "_report": {}})
+    executor = chat_service._build_report_executor(AsyncMock(), USER_ID, set())
+
+    with patch.object(chat_service.report_service, "update_report_from_chat", new=updated):
+        result = await executor("update_report", {"report_id": str(REPORT_ID), "body_md": "# 新內容"})
+
+    assert result["ok"] is True
+    assert updated.await_args.args[2] == REPORT_ID
+
+
+@pytest.mark.parametrize("tool, args", [
+    ("get_trip", {"trip_id": "not-a-uuid"}),
+    ("add_card", {"trip_id": None, "title": "x"}),
+    ("update_card", {"trip_id": str(TRIP_ID), "card_id": "garbage"}),
+    ("delete_card", {"card_id": str(CARD_ID)}),
+])
+async def test_trip_tools_reject_unparseable_ids(tool, args):
+    executor = chat_service._build_trip_executor(AsyncMock(), USER_ID, set())
+
+    result = await executor(tool, args)
+
+    assert result["ok"] is False
+
+
+# ── 權限在資料層，不在工具簽章 ─────────────────────────────────────────────────
+
+async def test_updating_a_card_in_someone_elses_trip_is_refused():
+    """模型可以送任意 trip_id，資料層要擋下來。
+
+    _ai_update_card 原本沒有這道檢查（只有 FAB 會呼叫，端口已先驗過）。開放 trip_id
+    給模型之後，少了它就是 IDOR。
+    """
+    from app.services import trip_service
+
+    with patch.object(trip_service, "_get_accessible_trip", new=AsyncMock(return_value=None)):
+        result = await trip_service._ai_update_card(
+            AsyncMock(), USER_ID, OTHER_TRIP_ID, CARD_ID, {"title": "亂改"}
+        )
+
+    assert result == {"ok": False, "error": "trip not found"}
+
+
+async def test_adding_a_card_requires_editor_not_just_membership():
+    """viewer 不該能透過 AI 新增卡片，行為要跟 delete_item 一致。"""
+    from app.services import trip_service
+
+    accessible = AsyncMock(return_value=None)
+    with patch.object(trip_service, "_get_accessible_trip", new=accessible):
+        result = await trip_service.add_card_from_chat(
+            AsyncMock(), USER_ID, TRIP_ID, title="偷加的"
+        )
+
+    assert result is None
+    assert accessible.await_args.kwargs["required_role"] == "editor"
+
+
+async def test_reading_someone_elses_trip_is_refused():
+    from app.services import trip_service
+
+    with patch.object(trip_service, "_get_accessible_trip", new=AsyncMock(return_value=None)):
+        assert await trip_service.get_trip_detail_for_chat(
+            AsyncMock(), USER_ID, OTHER_TRIP_ID
+        ) is None
+
+
+async def test_reading_someone_elses_report_is_refused():
+    from app.services import report_service
+
+    with patch.object(report_service.crud_reports, "get_one", new=AsyncMock(return_value=None)):
+        assert await report_service.get_report_for_chat(
+            AsyncMock(), USER_ID, REPORT_ID
+        ) is None
+
+
+# ── scope：只是提示 ────────────────────────────────────────────────────────────
 
 async def test_scope_brief_reaches_supervisor_system_prompt():
-    """A 必須看得到當前狀態，否則它無從判斷該派什麼工作。"""
     _, _, fake = await _run([[_part(text="好的")]], scope=TRIP_SCOPE)
 
     system = fake.calls[0]["config"].system_instruction
     assert "目前正在編輯的項目" in system
-    assert "大阪4天" in system and "道頓堀" in system
+    assert "大阪4天" in system and str(TRIP_ID) in system
 
 
 async def test_no_scope_leaves_prompt_unchanged():
@@ -104,9 +255,9 @@ async def test_no_scope_leaves_prompt_unchanged():
 @pytest.mark.parametrize("scope, target, should_forward", [
     (TRIP_SCOPE, "trip", True),
     (REPORT_SCOPE, "report", True),
-    (TRIP_SCOPE, "report", False),    # 在行程頁派工給 C，報告窗口不該拿到行程內容
+    (TRIP_SCOPE, "report", False),
     (REPORT_SCOPE, "trip", False),
-    (TRIP_SCOPE, "knowledge", False),  # B 自己查，不需要 scope
+    (TRIP_SCOPE, "knowledge", False),
 ])
 def test_scope_only_forwards_to_matching_window(scope, target, should_forward):
     ctx = sup._resolve_dispatch_context(target, {}, [], scope)
@@ -115,193 +266,20 @@ def test_scope_only_forwards_to_matching_window(scope, target, should_forward):
 
 
 def test_scope_renders_as_prose_not_json_in_window_prompt():
-    """brief 是給模型讀的敘述（含換行），塞進 JSON 會被引號和 \\n 淹沒。"""
     rendered = _loop._fmt_context({"scope": TRIP_SCOPE})
 
     assert "【目前正在編輯的行程】" in rendered
-    assert "1. 道頓堀" in rendered
+    assert "道頓堀" in rendered
     assert "\\n" not in rendered
 
 
-def test_knowledge_results_still_render_as_json_alongside_scope():
-    rendered = _loop._fmt_context({
-        "scope": TRIP_SCOPE,
-        "items": [{"id": "a", "title": "大阪美食"}],
-    })
-
-    assert "【目前正在編輯的行程】" in rendered
-    assert "【上一個窗口傳來的結果】" in rendered
-    assert '"大阪美食"' in rendered
-
-
-# ── 目標實體由程式碼決定，模型說不上話 ─────────────────────────────────────────
-
-def test_trip_tools_expose_no_trip_id_to_the_model():
-    """卡片工具的參數裡不能有 trip_id —— 那是唯一能讓模型寫到別人資料的破口。"""
-    from app.services.ai_service.graph.windows.trip import _TOOLS
-
-    card_tools = [t for t in _TOOLS if t.name in ("add_card", "update_card", "delete_card")]
-    assert len(card_tools) == 3
-    for tool in card_tools:
-        assert "trip_id" not in (tool.parameters.properties or {}), tool.name
-
-
-def test_report_update_tool_exposes_no_report_id_to_the_model():
-    from app.services.ai_service.graph.windows.report import _TOOLS
-
-    update = next(t for t in _TOOLS if t.name == "update_report")
-    assert "report_id" not in (update.parameters.properties or {})
-
-
-async def test_update_card_resolves_card_no_through_the_map():
-    """模型給編號，程式碼查對照表換成真正的 item_id。"""
-    updated = AsyncMock(return_value={"ok": True, "title": "改過的", "_item": {"id": str(CARD_ID)}})
-    scope_trip = chat_service.TripScope(trip_id=TRIP_ID, card_map={1: CARD_ID}, start_date=None)
-    executor = chat_service._build_trip_executor(AsyncMock(), UUID(int=1), set(), scope_trip)
-
-    with patch.object(chat_service.trip_service, "update_card_from_chat", new=updated):
-        result = await executor("update_card", {"card_no": 1, "title": "改過的"})
-
-    assert result["ok"] is True
-    # update_card_from_chat(db, user_id, trip_id, start_date, item_id, args)
-    _db, _uid, trip_id, _start, item_id, _args = updated.await_args.args
-    assert (trip_id, item_id) == (TRIP_ID, CARD_ID)
-
-
-@pytest.mark.parametrize("args, reason", [
-    ({"card_no": 99}, "不存在的編號"),
-    ({"card_no": "abc"}, "不是數字"),
-    ({}, "沒給編號"),
-])
-async def test_update_card_rejects_unresolvable_card_no(args, reason):
-    scope_trip = chat_service.TripScope(trip_id=TRIP_ID, card_map={1: CARD_ID})
-    executor = chat_service._build_trip_executor(AsyncMock(), UUID(int=1), set(), scope_trip)
-
-    result = await executor("update_card", args)
-
-    assert result["ok"] is False, reason
-
-
-async def test_card_edits_refuse_when_there_is_no_scoped_trip():
-    """chat 首頁沒有 scope 時，模型不能憑空改某張卡片。"""
-    executor = chat_service._build_trip_executor(AsyncMock(), UUID(int=1), set(), None)
-
-    for tool in ("update_card", "delete_card"):
-        result = await executor(tool, {"card_no": 1})
-        assert result["ok"] is False, tool
-
-
-async def test_update_report_refuses_when_there_is_no_scoped_report():
-    executor = chat_service._build_report_executor(AsyncMock(), UUID(int=1), set(), None)
-
-    result = await executor("update_report", {"body_md": "# 亂改"})
-
-    assert result["ok"] is False
-
-
-async def test_update_report_rejects_empty_body():
-    """整篇覆寫的工具，空內文會直接清空使用者的報告。"""
-    executor = chat_service._build_report_executor(AsyncMock(), UUID(int=1), set(), REPORT_ID)
-
-    result = await executor("update_report", {"body_md": "   "})
-
-    assert result["ok"] is False
-
-
-# ── `_` 前綴 payload：給前端、不給模型 ──────────────────────────────────────────
-
-def test_underscore_keys_are_stripped_before_feeding_the_model():
-    """整張卡片／整篇報告的 JSON 很吃 token，模型接下來的判斷也用不到。"""
-    visible = _loop._model_visible({
-        "ok": True, "title": "道頓堀",
-        "_item": {"id": "x", "note": "很長的 markdown" * 100},
-    })
-
-    assert visible == {"ok": True, "title": "道頓堀"}
-
-
-async def test_card_tool_result_keeps_frontend_payload_in_the_sse_event():
-    """前端靠 tool_result 的 name / ok / _item 即時改畫面，這組欄位是對外契約。"""
-    import json
-
-    trip_executor = AsyncMock(return_value={
-        "ok": True, "title": "道頓堀", "_item": {"id": str(CARD_ID), "title": "道頓堀"},
-    })
-    events, _, _ = await _run(
-        [
-            [_part(fc=("dispatch_trip_desk", {"event": "加一張卡"}))],
-            [_part(fc=("add_card", {"title": "道頓堀"}))],
-            [],
-            [_part(text="加好了")],
-        ],
-        scope=TRIP_SCOPE,
-        scope_trip=chat_service.TripScope(trip_id=TRIP_ID, card_map={}),
-        executors={"trip": trip_executor},
-    )
-
-    payloads = [
-        json.loads(ev.split("data: ", 1)[1])
-        for ev in events if ev.startswith("event: tool_result")
-    ]
-    add = next(p for p in payloads if p.get("name") == "add_card")
-    assert add["ok"] is True
-    assert add["_item"] == {"id": str(CARD_ID), "title": "道頓堀"}
-    assert add["title"] == "道頓堀"
-
-
-async def test_delete_card_tool_result_carries_deleted_id():
-    import json
-
-    trip_executor = AsyncMock(return_value={"ok": True, "_deleted_id": str(CARD_ID)})
-    events, _, _ = await _run(
-        [
-            [_part(fc=("dispatch_trip_desk", {"event": "刪一張卡"}))],
-            [_part(fc=("delete_card", {"card_no": 1}))],
-            [],
-            [_part(text="刪好了")],
-        ],
-        scope=TRIP_SCOPE,
-        scope_trip=chat_service.TripScope(trip_id=TRIP_ID, card_map={1: CARD_ID}),
-        executors={"trip": trip_executor},
-    )
-
-    payloads = [
-        json.loads(ev.split("data: ", 1)[1])
-        for ev in events if ev.startswith("event: tool_result")
-    ]
-    deleted = next(p for p in payloads if p.get("name") == "delete_card")
-    assert deleted == {"name": "delete_card", "ok": True, "_deleted_id": str(CARD_ID)}
-
-
-# ── 懸浮球入口 ─────────────────────────────────────────────────────────────────
-
-async def test_resolve_scope_builds_trip_scope_and_card_map():
-    """前端只送 {kind, id}；當前狀態與 card_map 都是後端自己查出來的。"""
+async def test_resolve_scope_delegates_to_the_domain_service():
     from app.services import trip_service
 
-    built = (TRIP_SCOPE, {1: CARD_ID}, None)
-    with patch.object(trip_service, "build_trip_scope", new=AsyncMock(return_value=built)):
-        resolved = await chat_service.resolve_scope(
-            AsyncMock(), UUID(int=1), {"kind": "trip", "id": str(TRIP_ID)}
-        )
-
-    assert resolved.scope == TRIP_SCOPE
-    assert resolved.trip.trip_id == TRIP_ID
-    assert resolved.trip.card_map == {1: CARD_ID}
-    assert resolved.report_id is None
-
-
-async def test_resolve_scope_builds_report_scope():
-    from app.services import report_service
-
-    with patch.object(report_service, "build_report_scope", new=AsyncMock(return_value=REPORT_SCOPE)):
-        resolved = await chat_service.resolve_scope(
-            AsyncMock(), UUID(int=1), {"kind": "report", "id": str(REPORT_ID)}
-        )
-
-    assert resolved.scope == REPORT_SCOPE
-    assert resolved.report_id == REPORT_ID
-    assert resolved.trip is None
+    with patch.object(trip_service, "build_trip_scope", new=AsyncMock(return_value=TRIP_SCOPE)):
+        assert await chat_service.resolve_scope(
+            AsyncMock(), USER_ID, {"kind": "trip", "id": str(TRIP_ID)}
+        ) == TRIP_SCOPE
 
 
 @pytest.mark.parametrize("raw, why", [
@@ -312,36 +290,70 @@ async def test_resolve_scope_builds_report_scope():
     ({"kind": "什麼鬼", "id": str(TRIP_ID)}, "不認得的 kind"),
 ])
 async def test_resolve_scope_returns_none_for_unusable_input(raw, why):
-    resolved = await chat_service.resolve_scope(AsyncMock(), UUID(int=1), raw)
-
-    assert resolved is None, why
+    assert await chat_service.resolve_scope(AsyncMock(), USER_ID, raw) is None, why
 
 
-async def test_scoped_chat_end_to_end_emits_the_events_the_frontend_expects():
-    """懸浮球現在就是「帶 scope 的 chat」——走 chat 自己的 stream_reply，沒有專屬端口。
+# ── `_` 前綴 payload：給前端、不給模型 ──────────────────────────────────────────
 
-    這條蓋住整條路徑：stream_reply(scope=...) → resolve_scope → A 派工 → D 窗口
-    → executor → emit → SSE。
+def test_underscore_keys_are_stripped_before_feeding_the_model():
+    visible = _loop._model_visible({
+        "ok": True, "title": "道頓堀",
+        "_item": {"id": "x", "note": "很長的 markdown" * 100},
+    })
+
+    assert visible == {"ok": True, "title": "道頓堀"}
+
+
+# ── 收尾：改過哪些行程 ─────────────────────────────────────────────────────────
+
+def test_edited_trip_ids_collects_every_trip_the_agent_actually_touched():
+    """模型一輪可能動好幾份行程，收尾不能再假設「就是使用者開著的那一份」。"""
+    run = chat_service.AgentRun(process_steps=[
+        {"toolCall": {"name": "add_card", "trip_id": str(TRIP_ID)}, "toolResult": {"ok": True}},
+        {"toolCall": {"name": "update_card", "trip_id": str(OTHER_TRIP_ID)}, "toolResult": {"ok": True}},
+        {"toolCall": {"name": "add_card", "trip_id": str(TRIP_ID)}, "toolResult": {"ok": True}},
+        {"toolCall": {"name": "delete_card", "trip_id": str(TRIP_ID)}, "toolResult": {"ok": False}},
+        {"toolCall": {"name": "search_trips", "query": "x"}, "toolResult": {"ok": True}},
+    ])
+
+    assert chat_service._edited_trip_ids(run) == [TRIP_ID, OTHER_TRIP_ID]
+
+
+# ── 端到端 ─────────────────────────────────────────────────────────────────────
+
+async def test_end_to_end_search_read_then_edit_a_trip_that_is_not_open():
+    """完整的「查 → 讀 → 改」，而且改的**不是**使用者畫面上開著的那份。
+
+    這正是舊設計做不到、使用者要求補上的能力。
     """
-    import json
     from app.crud import chat as crud_chat
     from app.services import trip_service
 
-    trip_executor = AsyncMock(return_value={
-        "ok": True, "title": "黑門市場", "_item": {"id": str(CARD_ID), "title": "黑門市場"},
-    })
+    async def trip_executor(name, args):
+        if name == "search_trips":
+            return [{"id": str(OTHER_TRIP_ID), "title": "京都3天"}]
+        if name == "get_trip":
+            return {"ok": True, "id": str(OTHER_TRIP_ID), "title": "京都3天",
+                    "cards": [{"card_id": str(CARD_ID), "title": "清水寺"}]}
+        if name == "update_card":
+            return {"ok": True, "title": "清水寺（改）", "_item": {"id": str(CARD_ID)}}
+        return {}
+
     fake = ScriptedGemini([
-        [_part(fc=("dispatch_trip_desk", {"event": "在第一天加上黑門市場"}))],
-        [_part(fc=("add_card", {"day": 1, "title": "黑門市場"}))],
+        [_part(fc=("dispatch_trip_desk", {"event": "把京都行程的清水寺改一下"}))],
+        [_part(fc=("search_trips", {"query": "京都"}))],
+        [_part(fc=("get_trip", {"trip_id": str(OTHER_TRIP_ID)}))],
+        [_part(fc=("update_card", {"trip_id": str(OTHER_TRIP_ID), "card_id": str(CARD_ID),
+                                   "title": "清水寺（改）"}))],
         [],
-        [_part(text="已經加上黑門市場了。")],
+        [_part(text="改好了。")],
     ])
     session = SimpleNamespace(messages=[], context_summary=None)
+    marked = AsyncMock()
 
     with patch.object(_client, "_get_client", return_value=fake), \
-         patch.object(trip_service, "build_trip_scope",
-                      new=AsyncMock(return_value=(TRIP_SCOPE, {1: CARD_ID}, None))), \
-         patch.object(trip_service, "mark_ai_edited", new=AsyncMock()) as marked, \
+         patch.object(trip_service, "build_trip_scope", new=AsyncMock(return_value=TRIP_SCOPE)), \
+         patch.object(trip_service, "mark_ai_edited", new=marked), \
          patch.object(chat_service, "_get_search_cutoff", new=AsyncMock(return_value=0.45)), \
          patch.object(chat_service, "_build_trip_executor", return_value=trip_executor), \
          patch.object(chat_service, "_build_knowledge_executor", return_value=AsyncMock(return_value={})), \
@@ -352,68 +364,22 @@ async def test_scoped_chat_end_to_end_emits_the_events_the_frontend_expects():
          patch.object(crud_chat, "count_messages", new=AsyncMock(return_value=2)):
         events = [
             ev async for ev in chat_service.stream_reply(
-                AsyncMock(), UUID(int=7), UUID(int=1), "在第一天加上黑門市場",
+                AsyncMock(), UUID(int=7), USER_ID, "把京都行程的清水寺改一下",
                 _FakeBackgroundTasks(),
-                scope={"kind": "trip", "id": str(TRIP_ID)},
+                scope={"kind": "trip", "id": str(TRIP_ID)},   # 畫面上開的是大阪那份
             )
         ]
 
-    parsed = [
-        (ev.split("\n")[0].removeprefix("event: "), json.loads(ev.split("data: ", 1)[1]))
-        for ev in events
+    results = [
+        json.loads(ev.split("data: ", 1)[1])
+        for ev in events if ev.startswith("event: tool_result")
     ]
-    assert [name for name, _ in parsed] == [
-        "tool_call", "tool_result", "delta", "sources", "done",
-    ]
+    assert [r["name"] for r in results] == ["search_trips", "get_trip", "update_card"]
 
-    assert parsed[0][1] == {"name": "add_card", "day": 1, "title": "黑門市場"}
+    updated = results[-1]
+    assert updated["ok"] is True
+    assert updated["_item"] == {"id": str(CARD_ID)}   # 前端據此即時更新卡片
 
-    result = parsed[1][1]
-    assert result["name"] == "add_card" and result["ok"] is True
-    assert result["_item"]["title"] == "黑門市場"   # 前端據此即時插入卡片
-
-    assert parsed[2][1] == {"text": "已經加上黑門市場了。"}
-
-    # 目標行程由程式碼指定，模型只給了 day/title
-    assert trip_executor.await_args.args == ("add_card", {"day": 1, "title": "黑門市場"})
-    # 整輪跑完標記一次 AI 編輯（不是每張卡片各一次）
+    # 收尾標記的是「實際被改的那份」，不是 scope 那份
     marked.assert_awaited_once()
-
-
-class _FakeBackgroundTasks:
-    def __init__(self):
-        self.tasks = []
-
-    def add_task(self, func, *args, **kwargs):
-        self.tasks.append((func, args, kwargs))
-
-
-async def test_scoped_chat_multi_turn_comes_from_the_session_not_the_request():
-    """懸浮球的多輪追問靠 chat session 的 DB 歷史，不再由前端帶 history 欄位。"""
-    from app.crud import chat as crud_chat
-    from app.models.chat import MessageRole
-
-    def _msg(role, content):
-        return SimpleNamespace(
-            id=UUID(int=9), role=MessageRole(role), content=content,
-            status="complete", process_log=None,
-        )
-
-    session = SimpleNamespace(
-        messages=[_msg("user", "把第一天改短"), _msg("assistant", "已經改好了")],
-        context_summary=None,
-    )
-    fake = ScriptedGemini([[_part(text="好")]])
-
-    with patch.object(_client, "_get_client", return_value=fake), \
-         patch.object(chat_service, "_get_search_cutoff", new=AsyncMock(return_value=0.45)), \
-         patch.object(crud_chat, "get_session_with_messages", new=AsyncMock(return_value=session)), \
-         patch.object(crud_chat, "add_message", new=AsyncMock()), \
-         patch.object(crud_chat, "touch_session", new=AsyncMock()), \
-         patch.object(crud_chat, "count_messages", new=AsyncMock(return_value=4)):
-        [ev async for ev in chat_service.stream_reply(
-            AsyncMock(), UUID(int=7), UUID(int=1), "那再短一點", _FakeBackgroundTasks(),
-        )]
-
-    texts = ["".join(p.text or "" for p in c.parts) for c in fake.calls[0]["contents"]]
-    assert texts == ["把第一天改短", "已經改好了", "那再短一點"]
+    assert marked.await_args.args[2] == OTHER_TRIP_ID

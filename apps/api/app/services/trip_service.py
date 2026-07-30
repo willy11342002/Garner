@@ -332,9 +332,12 @@ async def add_card_from_chat(
     from datetime import datetime as _dt, timedelta
     from urllib.parse import quote
 
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    # 用 editor 權限（不是單純 get_trip）—— get_trip 對任何成員都放行，
+    # viewer 不該能透過 AI 新增卡片，行為要跟 delete_item 一致
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if accessible is None:
         return None
+    trip = accessible[0]
 
     def _parse_time(v):
         if not v or not isinstance(v, str):
@@ -479,69 +482,70 @@ async def search_trips_from_chat(
     ]
 
 
-async def build_trip_scope(
+async def get_trip_detail_for_chat(
     db: AsyncSession, user_id: UUID, trip_id: UUID
-) -> tuple[dict, dict[int, UUID], object] | None:
-    """組出「使用者正在編輯這份行程」要交給 graph 的 scope。
+) -> dict | None:
+    """D 窗口的 get_trip：讀一份行程的完整卡片清單。
 
-    回傳 (scope, card_map, trip_start_date)：
-      scope     —— 進 GraphState、最後成為 D 窗口 prompt 裡的當前狀態（純文字）
-      card_map  —— card_no → item_id 的對照，留在 executor 的 closure 裡，不給 LLM 看
-      start_date —— update_card 換算 day → 實際日期用
-
-    無權限或行程不存在時回 None。
+    模型要改卡片就得先知道有哪些卡、id 是什麼，所以這是「查 → 讀 → 改」的中間那步。
+    任何一份自己有權限的行程都讀得到，不限於使用者當前開著的那份。
+    無權限或不存在回 None。
     """
-    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="viewer")
     if accessible is None:
         return None
     trip = accessible[0]
 
-    # 以與詳情頁相同的排序編號，使用者看到的第 3 張就是模型眼中的 card_no=3
+    # 與詳情頁相同的排序，模型看到的順序就是使用者看到的順序
     items_sorted = sorted(
         trip.items or [],
         key=lambda i: (str(i.start_date) if i.start_date else "", i.order_index),
     )
-    card_map: dict[int, UUID] = {}
-    card_lines: list[str] = []
-    for n, it in enumerate(items_sorted, start=1):
-        card_map[n] = it.id
-        meta = []
-        if it.start_date:
-            meta.append(
-                str(it.start_date)
-                + (f"~{it.end_date}" if it.end_date and it.end_date != it.start_date else "")
-            )
-        if it.start_time:
-            meta.append(it.start_time.strftime("%H:%M"))
-        if it.category:
-            meta.append(it.category)
-        card_lines.append(f"{n}. {it.title}" + (f"（{' · '.join(meta)}）" if meta else ""))
+    return {
+        "id": str(trip.id),
+        "title": trip.title,
+        "start_date": str(trip.start_date) if trip.start_date else None,
+        "end_date": str(trip.end_date) if trip.end_date else None,
+        "cards": [
+            {
+                "card_id": str(it.id),
+                "title": it.title,
+                "start_date": str(it.start_date) if it.start_date else None,
+                "end_date": str(it.end_date) if it.end_date else None,
+                "start_time": it.start_time.strftime("%H:%M") if it.start_time else None,
+                "category": it.category,
+                "place_name": it.place_name,
+            }
+            for it in items_sorted
+        ],
+    }
 
-    header = [f"行程標題：{trip.title}"]
-    if trip.start_date:
-        header.append(f"起始日：{trip.start_date}")
-    if trip.end_date:
-        header.append(f"結束日：{trip.end_date}")
 
-    brief = (
-        "\n".join(header)
-        + "\n\n目前卡片：\n"
-        + ("\n".join(card_lines) if card_lines else "（目前沒有任何卡片）")
-    )
-    scope = {"kind": "trip", "id": str(trip_id), "brief": brief}
-    return scope, card_map, trip.start_date
+async def build_trip_scope(db: AsyncSession, user_id: UUID, trip_id: UUID) -> dict | None:
+    """使用者當前開著的行程，組成給 A 的一句提示。
+
+    **這不是權限機制** —— 它只讓「把這個行程改短一點」有所指。實際能改哪一份完全由
+    工具的 trip_id 決定，權限由資料層擋（見 _ai_update_card / add_card_from_chat）。
+    """
+    detail = await get_trip_detail_for_chat(db, user_id, trip_id)
+    if detail is None:
+        return None
+    cards = "\n".join(
+        f"- {c['title']}（card_id={c['card_id']}）" for c in detail["cards"]
+    ) or "（目前沒有任何卡片）"
+    brief = f"行程「{detail['title']}」（trip_id={detail['id']}）\n目前卡片：\n{cards}"
+    return {"kind": "trip", "id": str(trip_id), "brief": brief}
 
 
 async def update_card_from_chat(
     db: AsyncSession,
     user_id: UUID,
     trip_id: UUID,
-    trip_start_date,
     item_id: UUID,
     args: dict,
 ) -> dict:
     """D 窗口的 update_card：改一張既有卡片，回傳含 _item 的結果供前端即時更新。"""
-    return await _ai_update_card(db, user_id, trip_id, trip_start_date, item_id, args)
+    return await _ai_update_card(db, user_id, trip_id, item_id, args)
 
 
 async def delete_card_from_chat(
@@ -788,11 +792,18 @@ async def _ai_update_card(
     db: AsyncSession,
     user_id: UUID,
     trip_id: UUID,
-    trip_start_date,
     item_id: UUID,
     args: dict,
 ) -> dict:
     from datetime import timedelta
+
+    # 權限在這裡擋 —— 工具收得到模型給的任意 trip_id，不是別人的就查不到。
+    # （這條檢查原本不在：舊版只有 FAB 會呼叫，端口已先驗過權限。現在 chat 也能改
+    #  任一份行程，少了它就是 IDOR。）
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if accessible is None:
+        return {"ok": False, "error": "trip not found"}
+    trip_start_date = accessible[0].start_date
 
     item = await crud_trips.get_item(db, trip_id, item_id)
     if item is None:

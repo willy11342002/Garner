@@ -1,6 +1,11 @@
-"""C — 報告窗口：根據 B 查出的知識內容加工，新增／修改 AI 報告，並擁有報告的查詢功能。
+"""C — 報告窗口：查詢、新增、改寫使用者的任何一份 AI 報告。
 
 只看事件敘述 + 上一窗口（通常是 B）傳來的 context，看不到對話歷史。
+
+【能改哪一份？任何一份】
+工具全部收 report_id，能力不因入口而異 —— 從首頁 chat 進來、或從報告頁的 AI 懸浮球
+進來，做得到的事完全一樣。context["scope"] 只是「使用者畫面上開著哪一份」的提示，
+**不是權限機制**；權限由 crud_reports.get_one(db, user_id, ...) 在資料層擋。
 """
 from typing import Awaitable, Callable
 
@@ -12,21 +17,27 @@ from ._loop import run_window_loop
 ReportExecutor = Callable[[str, dict], Awaitable[dict]]
 
 _SYSTEM = """\
-你是「報告窗口」，負責產出新的 AI 報告（指南／清單／彙整）、或改寫既有報告，並能查詢既有報告。
+你是「報告窗口」，負責查詢、產出、改寫用戶的 AI 報告（指南／清單／彙整）。你可以操作用戶的**任何一份**報告。
 
-規則：
-- 若「目前正在編輯的報告」區塊存在，代表使用者正在某一份報告的頁面上：
-  用 update_report 改寫那一份，**不要呼叫 create_report**，除非事件明確要求「另外寫一份新的」
+要改既有報告時的固定順序：
+1. 不知道是哪一份 → search_reports 找出 report_id（「目前正在編輯的報告」區塊已經給了 report_id 的話就直接用，不用再查）
+2. get_report 讀出全文
+3. update_report 帶上 report_id 與改寫後的完整內文
+
+其他規則：
 - update_report 要輸出**完整**的 markdown 全文（含所有未修改的段落），它是整篇覆寫、不是差異套用；
-  在既有內文上接續修改，不要把使用者自己編輯過的內容砍掉重寫
+  一定要先 get_report 看過現況再改，在既有內文上接續修改，不要把使用者自己編輯過的內容砍掉重寫
+- 若「目前正在編輯的報告」區塊存在，代表使用者正看著那一份：預設就改那一份，
+  **不要呼叫 create_report**，除非事件明確要求「另外寫一份新的」
 - 若 context 裡已有可用的知識內容，直接用那些內容產出，不要反問主題
 - 若完全沒有任何可用知識內容、也無法從事件本身判斷要寫什麼，呼叫 report_missing_info 說明缺什麼
-- 事件提到「之前的報告」「上次的報告」而目前沒有正在編輯的報告時：先呼叫 search_reports 找出來回報，
-  由上層決定下一步；你只能改寫「使用者正在編輯的」那一份
 - create_report 只在事件明確要求「產出」新報告時呼叫，一輪事件只建一份
 - content 用 markdown 格式撰寫，可自由使用標題、段落、列表、粗體
+- 只能用 search_reports／get_report／create_report 實際拿到的 report_id，不要自己編
 - 只能引用提供的知識內容，不要憑空捏造
 """
+
+_REPORT_ID_PARAM = {"type": "string", "description": "要操作的報告 id（來自 search_reports／get_report／create_report）"}
 
 _TOOLS = [
     types.FunctionDeclaration(
@@ -45,27 +56,37 @@ _TOOLS = [
     types.FunctionDeclaration(
         name="update_report",
         description=(
-            "改寫使用者目前正在編輯的那份報告。body_md 必須是完整的 markdown 全文"
-            "（整篇覆寫，不是差異套用），在既有內文上接續修改。"
+            "改寫一份既有報告。body_md 必須是完整的 markdown 全文（整篇覆寫，不是差異套用），"
+            "所以要先 get_report 讀過現況再改。"
         ),
         parameters={
             "type": "object",
             "properties": {
+                "report_id": _REPORT_ID_PARAM,
                 "title": {"type": "string", "description": "新標題；不改標題就省略"},
                 "body_md": {"type": "string", "description": "完整的 markdown 內文（含所有修改）"},
             },
-            "required": ["body_md"],
+            "required": ["report_id", "body_md"],
         },
     ),
     types.FunctionDeclaration(
         name="search_reports",
-        description="語意搜尋用戶已建立的 AI 報告。事件提到「之前做的某個報告」或要修改報告時，先用此工具查出 report_id。",
+        description="語意搜尋用戶已建立的 AI 報告，取得 report_id。要改某一份既有報告時的第一步。",
         parameters={
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "查詢描述，例如「大阪旅遊指南」；留空則列最近幾筆"},
                 "limit": {"type": "integer", "description": "回傳筆數，預設 5"},
             },
+        },
+    ),
+    types.FunctionDeclaration(
+        name="get_report",
+        description="讀出一份報告的完整內文。update_report 是整篇覆寫，改之前必須先呼叫這個。",
+        parameters={
+            "type": "object",
+            "properties": {"report_id": _REPORT_ID_PARAM},
+            "required": ["report_id"],
         },
     ),
 ]
@@ -82,7 +103,8 @@ async def run_report_window(
         nonlocal created_report, updated, found_reports
         emit("tool_call", {"name": name, **args})
         result = await executor(name, args)
-        ok = bool(result.get("ok"))
+        # search_reports 回的是 list，其餘是 dict —— 別假設一定有 .get
+        ok = bool(result.get("ok")) if isinstance(result, dict) else bool(result)
 
         if name == "create_report":
             draft = result.get("draft")
@@ -96,10 +118,12 @@ async def run_report_window(
             updated = updated or ok
             # _report 原樣帶給前端做即時畫面更新；run_window_loop 會在灌回模型脈絡前
             # 把底線開頭的 key 濾掉（整篇報告 JSON 很吃 token）
-            event_data = {k: v for k, v in result.items() if k != "ok"}
+            event_data = {k: v for k, v in result.items() if k != "ok"} if isinstance(result, dict) else {}
         elif name == "search_reports":
             found_reports = result if isinstance(result, list) else []
             event_data = {"count": len(found_reports), "reports": found_reports}
+        elif name == "get_report" and isinstance(result, dict):
+            event_data = {"title": result.get("title")}
         else:
             event_data = {}
 
