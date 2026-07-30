@@ -20,6 +20,14 @@ class GraphState(TypedDict):
 
     context_summary: str | None
 
+    # 使用者「正在編輯的東西」。從 URL 路徑帶入（行程頁／報告頁的 AI 懸浮球），
+    # chat 首頁沒有這個所以是 None。形狀：
+    #   {"kind": "trip" | "report", "id": str, "brief": str}
+    # brief 是給 LLM 看的當前狀態摘要（行程的卡片清單、報告的全文），由 domain service
+    # 在進 graph 前組好；id → 實際資料的解析一律由 executor 用程式碼做，模型不得自行
+    # 指定要寫哪一個 id（見 windows/trip.py 的說明）。
+    scope: dict | None
+
     round: int
     max_rounds: int
 

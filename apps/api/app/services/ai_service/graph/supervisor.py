@@ -58,6 +58,31 @@ _SUPERVISOR_SYSTEM = """\
 - 全部完成後，用繁體中文簡潔回答用戶，不要過度列舉；只輸出你自己的回覆，不要模擬用戶的後續回應
 """
 
+_SCOPE_LABEL = {"trip": "旅遊行程", "report": "AI 報告"}
+
+_SCOPE_TEMPLATE = """\
+
+【使用者目前正在編輯的項目】
+使用者是在某一份{label}的頁面上跟你說話，不是從首頁。除非他明確要求「另外開一份新的」，
+否則所有修改都應該套用在這一份上 —— 派給{desk}時，系統會自動把這一份的 id 與當前狀態
+帶給該窗口，你不需要（也無法）自己指定要改哪一份。
+
+以下是它目前的狀態，供你判斷該派什麼工作：
+{brief}
+"""
+
+
+def _scope_block(scope: dict | None) -> str:
+    if not scope:
+        return ""
+    kind = scope.get("kind")
+    desk = "dispatch_trip_desk" if kind == "trip" else "dispatch_report_desk"
+    return _SCOPE_TEMPLATE.format(
+        label=_SCOPE_LABEL.get(kind, "項目"),
+        desk=desk,
+        brief=scope.get("brief") or "（無法取得當前狀態）",
+    )
+
 _ITEM_IDS_PARAM = {
     "type": "array",
     "items": {"type": "string"},
@@ -139,34 +164,49 @@ def _build_knowledge_index(
 
 
 def _resolve_dispatch_context(
-    target: str, args: dict, messages: list[types.Content]
+    target: str, args: dict, messages: list[types.Content], scope: dict | None = None
 ) -> dict | None:
-    """把 A 選出的 item_ids 換成完整資料（items/chunks，欄位不裁切），純程式碼處理，
-    不經過 LLM retype。knowledge 目標不需要 context（B 自己查）。"""
+    """組出要交給 C／D 窗口的 context。兩部分都是純程式碼處理，不經過 LLM retype：
+
+    - knowledge：A 選出的 item_ids 換成完整資料（items/chunks，欄位不裁切）
+    - scope：使用者當前正在編輯的項目（懸浮球入口）。原封不動轉發，窗口的 executor
+      據此決定要寫哪一份 —— 模型從頭到尾沒有機會指定 id，所以不可能寫到別人的資料。
+
+    knowledge 目標不需要 context（B 自己查）。
+    """
     if target not in ("report", "trip"):
         return None
+
+    context: dict = {}
+
+    # 只把跟這個窗口同類的 scope 轉發過去（在報告頁派工給 D 時，行程窗口不需要報告內容）
+    if scope and scope.get("kind") == target:
+        context["scope"] = scope
+
     selected = [i for i in (args.get("item_ids") or []) if isinstance(i, str)]
-    if not selected:
-        return None
-    items_by_id, all_chunks = _build_knowledge_index(messages)
-    selected_set = set(selected)
-    return {
-        "items": [items_by_id[i] for i in selected if i in items_by_id],
-        "chunks": [c for c in all_chunks if c.get("item_id") in selected_set],
-        "saved": [],
-    }
+    if selected:
+        items_by_id, all_chunks = _build_knowledge_index(messages)
+        selected_set = set(selected)
+        context.update({
+            "items": [items_by_id[i] for i in selected if i in items_by_id],
+            "chunks": [c for c in all_chunks if c.get("item_id") in selected_set],
+            "saved": [],
+        })
+
+    return context or None
 
 
-def _system_prompt(context_summary: str | None) -> str:
+def _system_prompt(context_summary: str | None, scope: dict | None) -> str:
     today = _dt.date.today().isoformat()
     system = _SUPERVISOR_SYSTEM + f"\n今天日期：{today}"
     if context_summary:
         system += f"\n\n【對話摘要（早期）】\n{context_summary}"
+    system += _scope_block(scope)
     return system
 
 
 async def _supervisor_node(state: GraphState, config: RunnableConfig) -> dict:
-    system = _system_prompt(state.get("context_summary"))
+    system = _system_prompt(state.get("context_summary"), state.get("scope"))
     round_ = state["round"]
     forced_final = round_ >= state["max_rounds"]
 
@@ -197,8 +237,11 @@ async def _supervisor_node(state: GraphState, config: RunnableConfig) -> dict:
         # 模型呼叫了不認得的名字，當作沒有派工，直接用已產生的文字收尾
         return {"final_reply": text, "finished": True, "dispatch_target": None}
 
-    # A 只決定「選哪些 id」；把 id 換成完整 items/chunks 這件事在程式碼裡做，不經過 LLM
-    dispatch_context = _resolve_dispatch_context(target, args, state["messages"])
+    # A 只決定「選哪些 id」；把 id 換成完整 items/chunks、以及帶上使用者當前編輯的項目，
+    # 都在程式碼裡做，不經過 LLM
+    dispatch_context = _resolve_dispatch_context(
+        target, args, state["messages"], state.get("scope")
+    )
 
     return {
         "messages": state["messages"] + [model_turn(text or None, calls=[(tool_name, args)])],

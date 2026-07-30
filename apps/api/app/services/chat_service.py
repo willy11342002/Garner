@@ -15,6 +15,7 @@ RunnableConfig 注入 graph。
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -102,6 +103,32 @@ async def rag_retrieve(
 
     sorted_results = sorted(merged.values(), key=lambda t: t[1])
     return sorted_results[offset: offset + limit]
+
+
+@dataclass
+class TripScope:
+    """使用者正在編輯的行程。card_map 刻意不進 GraphState —— 它是 uuid，只給 executor 用。"""
+    trip_id: UUID
+    card_map: dict[int, UUID]
+    start_date: object = None
+
+
+@dataclass
+class AgentRun:
+    """一次 agent 執行的累積結果。
+
+    graph 只管派工，這些跨輪累積的東西由呼叫端持有（chat 用來組 process_log 並持久化，
+    懸浮球用不到就丟掉）。
+    """
+    reply_text: str = ""
+    process_steps: list[dict] = field(default_factory=list)
+    dispatches: list[dict] = field(default_factory=list)
+    sources: list[dict] = field(default_factory=list)
+    seen_ids: set[UUID] = field(default_factory=set)
+
+    @property
+    def process_log(self) -> dict:
+        return {"thinking": "", "steps": self.process_steps, "dispatches": self.dispatches}
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +289,17 @@ def _build_knowledge_executor(
     return executor
 
 
-def _build_report_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
-    """C（報告窗口）的 domain executor：create_report / revise_report / search_reports。"""
+def _build_report_executor(
+    db: AsyncSession,
+    user_id: UUID,
+    seen_ids: set[UUID],
+    scope_report_id: UUID | None = None,
+):
+    """C（報告窗口）的 domain executor：create_report / update_report / search_reports。
+
+    update_report 的目標報告只能是 scope_report_id（使用者正在看的那一頁，id 來自已授權的
+    URL 路徑）。工具簽章裡沒有 report_id，模型無法指定要覆寫哪一份。
+    """
     created_report: dict | None = None
 
     async def executor(name: str, args: dict) -> dict:
@@ -283,21 +319,22 @@ def _build_report_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID])
                 created_report = draft
                 return {"draft": draft, "ok": True}
             except Exception:
+                logger.exception("create_from_chat failed")
                 return {"draft": None, "ok": False}
 
-        if name == "revise_report":
-            rid = args.get("report_id")
+        if name == "update_report":
+            if scope_report_id is None:
+                return {"ok": False, "error": "只能改寫使用者目前正在編輯的報告"}
+            body = args.get("body_md") or ""
+            if not body.strip():
+                return {"ok": False, "error": "body_md 不能為空"}
             try:
-                res = (
-                    await report_service.revise_from_chat(
-                        db, user_id, UUID(rid), args.get("instruction", "")
-                    )
-                    if rid
-                    else None
+                return await report_service.update_report_from_chat(
+                    db, user_id, scope_report_id, args.get("title"), body
                 )
-                return {"ok": res is not None, "report_id": rid}
             except Exception:
-                return {"ok": False, "report_id": rid}
+                logger.exception("update_report_from_chat failed")
+                return {"ok": False}
 
         if name == "search_reports":
             try:
@@ -315,9 +352,35 @@ def _build_report_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID])
     return executor
 
 
-def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
-    """D（旅遊窗口）的 domain executor：create_trip / add_trip_card / revise_trip / search_trips。"""
+def _build_trip_executor(
+    db: AsyncSession,
+    user_id: UUID,
+    seen_ids: set[UUID],
+    scope_trip: TripScope | None = None,
+):
+    """D（旅遊窗口）的 domain executor：create_trip / add_card / update_card / delete_card / search_trips。
+
+    **目標行程完全由程式碼決定**：本輪自己 create_trip 建的，或 scope_trip（使用者正在
+    看的那一頁，id 來自已授權的 URL 路徑）。工具簽章裡沒有 trip_id，模型無法指定要寫哪一份。
+    卡片同理用 card_no 經 card_map 換成 item_id。
+    """
     created_trip: dict | None = None
+
+    def _target_trip_id() -> UUID | None:
+        if created_trip is not None:
+            return UUID(created_trip["id"])
+        return scope_trip.trip_id if scope_trip else None
+
+    def _resolve_card(args: dict) -> UUID | str:
+        """card_no → item_id。回字串代表錯誤訊息。"""
+        if scope_trip is None:
+            return "只能修改使用者目前正在編輯的行程裡的卡片"
+        try:
+            no = int(args.get("card_no"))
+        except (TypeError, ValueError):
+            return "invalid card_no"
+        item_id = scope_trip.card_map.get(no)
+        return item_id if item_id is not None else "card_no not found"
 
     async def executor(name: str, args: dict) -> dict:
         nonlocal created_trip
@@ -326,7 +389,7 @@ def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
             if created_trip is not None:
                 return {"draft": created_trip, "ok": True}
             try:
-                # 建立「空」行程；卡片由後續 add_trip_card 逐張新增
+                # 建立「空」行程；卡片由後續 add_card 逐張新增
                 draft = await trip_service.create_trip_from_chat(
                     db, user_id,
                     title=args.get("title", "未命名行程"),
@@ -341,10 +404,10 @@ def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
                 logger.exception("create_trip_from_chat failed")
                 return {"draft": None, "ok": False}
 
-        if name == "add_trip_card":
-            # 卡片掛到本輪建立的行程（不信任模型給的 trip_id，避免誤寫他人行程）
-            if created_trip is None:
-                return {"ok": False}
+        if name == "add_card":
+            trip_id = _target_trip_id()
+            if trip_id is None:
+                return {"ok": False, "error": "沒有目標行程，請先 create_trip"}
             # 只接受本次實際檢索／預載過的知識 id（防模型亂編 id 寫到別人的知識）
             raw_src = args.get("source_item_ids") or []
             valid_src: list[str] = []
@@ -356,7 +419,7 @@ def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
                     continue
             try:
                 res = await trip_service.add_card_from_chat(
-                    db, user_id, UUID(created_trip["id"]),
+                    db, user_id, trip_id,
                     day=args.get("day"),
                     end_day=args.get("end_day"),
                     title=args.get("title", "未命名"),
@@ -365,11 +428,41 @@ def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
                     emoji=args.get("emoji"),
                     start_time=args.get("start_time"),
                     note=args.get("note"),
+                    ticket_url=args.get("ticket_url"),
                     source_item_ids=valid_src or None,
                 )
-                return {"ok": bool(res), "title": (res or {}).get("title")}
+                if not res or not res.get("id"):
+                    return {"ok": False}
+                # 帶完整卡片給前端即時新增（_ 前綴，不會灌回模型脈絡）
+                return await trip_service.card_read_json(
+                    db, user_id, trip_id, UUID(res["id"])
+                )
             except Exception:
                 logger.exception("add_card_from_chat failed")
+                return {"ok": False}
+
+        if name == "update_card":
+            resolved = _resolve_card(args)
+            if isinstance(resolved, str):
+                return {"ok": False, "error": resolved}
+            try:
+                return await trip_service.update_card_from_chat(
+                    db, user_id, scope_trip.trip_id, scope_trip.start_date, resolved, args
+                )
+            except Exception:
+                logger.exception("update_card_from_chat failed")
+                return {"ok": False}
+
+        if name == "delete_card":
+            resolved = _resolve_card(args)
+            if isinstance(resolved, str):
+                return {"ok": False, "error": resolved}
+            try:
+                return await trip_service.delete_card_from_chat(
+                    db, user_id, scope_trip.trip_id, resolved
+                )
+            except Exception:
+                logger.exception("delete_card_from_chat failed")
                 return {"ok": False}
 
         if name == "search_trips":
@@ -383,25 +476,157 @@ def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
                 logger.exception("search_trips failed")
                 return []
 
-        if name == "revise_trip":
-            tid = args.get("trip_id")
-            if not tid:
-                return None
-            try:
-                return await trip_service.revise_trip_from_chat(
-                    db, user_id, UUID(tid), args.get("instruction", "")
-                )
-            except Exception:
-                logger.exception("revise_trip failed: trip_id=%s", tid)
-                return None
-
         return {}
 
     return executor
 
 
 # ---------------------------------------------------------------------------
-# Stream reply
+# Agent 引擎（chat 與懸浮球共用）
+# ---------------------------------------------------------------------------
+
+
+async def run_agent(
+    db: AsyncSession,
+    user_id: UUID,
+    messages: list[types.Content],
+    run: AgentRun,
+    *,
+    background_tasks: BackgroundTasks | None = None,
+    context_summary: str | None = None,
+    scope: dict | None = None,
+    scope_trip: TripScope | None = None,
+    scope_report_id: UUID | None = None,
+    query_hint: str = "",
+):
+    """跑一次分層 agent（A 監督者派工給 B/C/D 窗口），yield SSE 字串。
+
+    chat 與行程／報告頁的 AI 懸浮球共用這一顆引擎 —— 差別只在呼叫端怎麼組 messages、
+    有沒有 scope、以及要不要持久化。累積結果寫進 `run`（async generator 沒法回傳值）。
+
+    Emits: delta | tool_call | tool_result | report_draft | trip_draft
+    （sources / done 由呼叫端在結束後自己補，因為那牽涉持久化時機）
+    """
+    knowledge_executor = _build_knowledge_executor(
+        db, user_id, background_tasks or BackgroundTasks(), run.seen_ids, run.sources,
+        await _get_search_cutoff(db), query_hint,
+        _item_tags, _item_locations,
+    )
+    config = {"configurable": {
+        "knowledge_executor": knowledge_executor,
+        "report_executor": _build_report_executor(db, user_id, run.seen_ids, scope_report_id),
+        "trip_executor": _build_trip_executor(db, user_id, run.seen_ids, scope_trip),
+    }}
+
+    initial_state = {
+        "messages": messages,
+        "context_summary": context_summary,
+        "scope": scope,
+        "round": 0,
+        "max_rounds": _SUPERVISOR_MAX_ROUNDS,
+        "dispatch_target": None,
+        "dispatch_tool_name": None,
+        "dispatch_event": None,
+        "dispatch_context": None,
+        "window_result": None,
+        "final_reply": "",
+        "finished": False,
+    }
+
+    from app.services.ai_service.graph import build_graph
+
+    pending_tool_call: dict | None = None
+    pending_dispatch: dict | None = None
+
+    async for mode, chunk in build_graph().astream(
+        initial_state, config=config, stream_mode=["custom", "updates"]
+    ):
+        if mode == "custom":
+            event, data = chunk["event"], chunk["data"]
+            if event == "tool_call":
+                pending_tool_call = data
+            elif event == "tool_result" and pending_tool_call is not None:
+                run.process_steps.append({"toolCall": pending_tool_call, "toolResult": data})
+                pending_tool_call = None
+            yield _sse(event, data)
+            continue
+
+        # mode == "updates": {node_name: partial_state_returned_by_that_node}
+        for node_name, partial in chunk.items():
+            if node_name == "supervisor":
+                if partial.get("dispatch_target"):
+                    pending_dispatch = {
+                        "target": partial["dispatch_target"],
+                        "event": partial.get("dispatch_event"),
+                    }
+                if partial.get("finished"):
+                    run.reply_text = partial.get("final_reply", "")
+            elif node_name in ("knowledge", "report", "trip") and pending_dispatch is not None:
+                run.dispatches.append({
+                    "target": pending_dispatch["target"],
+                    "event": pending_dispatch["event"],
+                    "result": partial.get("window_result"),
+                })
+                pending_dispatch = None
+
+
+def _item_tags(ui) -> list[str]:
+    try:
+        return [it.tag.name for it in (ui.item_tags or []) if it.tag]
+    except Exception:
+        return []
+
+
+def _item_locations(ui) -> list[str]:
+    try:
+        return [loc.name for loc in sorted(ui.locations or [], key=lambda l: l.order_index)]
+    except Exception:
+        return []
+
+
+async def run_scoped_agent_stream(
+    db: AsyncSession,
+    user_id: UUID,
+    instruction: str,
+    scope: dict,
+    *,
+    scope_trip: TripScope | None = None,
+    scope_report_id: UUID | None = None,
+    history: list[dict] | None = None,
+):
+    """行程／報告頁 AI 懸浮球的入口：帶「當前正在編輯的項目」跑完整分層 agent。
+
+    跟 chat 的差別：沒有 session、不持久化對話（history 由前端帶來的純文字組成），
+    而且是同步 SSE（一個 POST 直接回串流，不經 stream_registry）。
+    """
+    messages: list[types.Content] = []
+    for turn in history or []:
+        role, content = turn.get("role"), turn.get("content")
+        if not content:
+            continue
+        if role == "user":
+            messages.append(user_turn(content))
+        elif role == "assistant":
+            messages.append(model_turn(text=content))
+    messages.append(user_turn(instruction))
+
+    run = AgentRun()
+    async for sse in run_agent(
+        db, user_id, messages, run,
+        scope=scope,
+        scope_trip=scope_trip,
+        scope_report_id=scope_report_id,
+        query_hint=instruction,
+    ):
+        yield sse
+
+    if run.sources:
+        yield _sse("sources", run.sources)
+    yield _sse("done", {})
+
+
+# ---------------------------------------------------------------------------
+# Chat stream reply
 # ---------------------------------------------------------------------------
 
 
@@ -417,7 +642,7 @@ async def stream_reply(
     assistant_message_id: UUID | None = None,
 ):
     """
-    LangGraph 分層 agentic SSE stream：A 監督者派工給 B/C/D 窗口。
+    Chat 的 SSE stream：載入 session → 跑 run_agent → 持久化。
     Emits: tool_call | tool_result | sources | report_draft | trip_draft | delta | done
     """
     logger.debug(
@@ -434,27 +659,13 @@ async def stream_reply(
     context_summary = session.context_summary
 
     # ── Preload context items (from explore page jump) ───────────────────────
-    seen_ids: set[UUID] = set()
+    run = AgentRun()
     preloaded_items: list[ItemWithDist] = []
     if context_item_ids:
         for ui in await crud_items.get_by_ids(db, user_id, context_item_ids):
-            if ui.id not in seen_ids:
-                seen_ids.add(ui.id)
+            if ui.id not in run.seen_ids:
+                run.seen_ids.add(ui.id)
                 preloaded_items.append((ui, None))
-
-    cutoff = await _get_search_cutoff(db)
-
-    def _item_tags(ui) -> list[str]:
-        try:
-            return [it.tag.name for it in (ui.item_tags or []) if it.tag]
-        except Exception:
-            return []
-
-    def _item_locations(ui) -> list[str]:
-        try:
-            return [loc.name for loc in sorted(ui.locations or [], key=lambda l: l.order_index)]
-        except Exception:
-            return []
 
     if not skip_user_message:
         await crud_chat.add_message(
@@ -474,15 +685,7 @@ async def stream_reply(
         }
         for ui, _ in preloaded_items
     ]
-
-    all_sources: list[dict] = list(preloaded_sources)
-
-    knowledge_executor = _build_knowledge_executor(
-        db, user_id, background_tasks, seen_ids, all_sources, cutoff, user_content,
-        _item_tags, _item_locations,
-    )
-    report_executor = _build_report_executor(db, user_id, seen_ids)
-    trip_executor = _build_trip_executor(db, user_id, seen_ids)
+    run.sources.extend(preloaded_sources)
 
     # A 的訊息歷史：先放跨輪對話歷史，若有 preload 知識節點，用一組「假裝已經問過
     # B」的 function call / response 塞進去，讓 A 直接看到內容、不用再派工去問一次。
@@ -497,79 +700,28 @@ async def stream_reply(
         ))
     messages.append(user_turn(user_content))
 
-    initial_state = {
-        "messages": messages,
-        "context_summary": context_summary,
-        "round": 0,
-        "max_rounds": _SUPERVISOR_MAX_ROUNDS,
-        "dispatch_target": None,
-        "dispatch_tool_name": None,
-        "dispatch_event": None,
-        "dispatch_context": None,
-        "window_result": None,
-        "final_reply": "",
-        "finished": False,
-    }
-    config = {"configurable": {
-        "knowledge_executor": knowledge_executor,
-        "report_executor": report_executor,
-        "trip_executor": trip_executor,
-    }}
-
-    from app.services.ai_service.graph import build_graph
-
-    graph = build_graph()
-    reply_text = ""
-    process_steps: list[dict] = []
-    dispatches: list[dict] = []
-    pending_tool_call: dict | None = None
-    pending_dispatch: dict | None = None
-
     try:
-        async for mode, chunk in graph.astream(
-            initial_state, config=config, stream_mode=["custom", "updates"]
+        async for sse in run_agent(
+            db, user_id, messages, run,
+            background_tasks=background_tasks,
+            context_summary=context_summary,
+            query_hint=user_content,
         ):
-            if mode == "custom":
-                event = chunk["event"]
-                data = chunk["data"]
-                if event == "tool_call":
-                    pending_tool_call = data
-                elif event == "tool_result" and pending_tool_call is not None:
-                    process_steps.append({"toolCall": pending_tool_call, "toolResult": data})
-                    pending_tool_call = None
-                yield _sse(event, data)
-                continue
-
-            # mode == "updates": {node_name: partial_state_returned_by_that_node}
-            for node_name, partial in chunk.items():
-                if node_name == "supervisor":
-                    if partial.get("dispatch_target"):
-                        pending_dispatch = {
-                            "target": partial["dispatch_target"],
-                            "event": partial.get("dispatch_event"),
-                        }
-                    if partial.get("finished"):
-                        reply_text = partial.get("final_reply", "")
-                elif node_name in ("knowledge", "report", "trip") and pending_dispatch is not None:
-                    dispatches.append({
-                        "target": pending_dispatch["target"],
-                        "event": pending_dispatch["event"],
-                        "result": partial.get("window_result"),
-                    })
-                    pending_dispatch = None
+            yield sse
     except asyncio.CancelledError:
         # 使用者按停止 / 連線中斷 → generator 被取消，不持久化半截內容，乾淨拋出讓 Starlette 收尾
         logger.debug(
             "chat stream interrupted: session=%s partial_reply_len=%d (not persisted)",
-            session_id, len(reply_text),
+            session_id, len(run.reply_text),
         )
         raise
 
-    cited_ids = [str(i) for i in seen_ids]
-    yield _sse("sources", all_sources)
+    reply_text = run.reply_text
+    cited_ids = [str(i) for i in run.seen_ids]
+    yield _sse("sources", run.sources)
     yield _sse("done", {})
 
-    process_log = {"thinking": "", "steps": process_steps, "dispatches": dispatches}
+    process_log = run.process_log
 
     if assistant_message_id:
         await crud_chat.update_message(

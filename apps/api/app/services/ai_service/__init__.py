@@ -42,8 +42,6 @@ _LAZY_ATTRS = {
     # segment
     "segment": ".segment",
     "preload_segment": ".segment",
-    # tools
-    "stream_tool_loop": ".tools",
 }
 
 __all__ = list(_LAZY_ATTRS)

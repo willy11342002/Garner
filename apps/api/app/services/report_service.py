@@ -40,45 +40,10 @@ async def _to_read(db: AsyncSession, user_id: UUID, report: Report) -> ReportRea
 
 
 # ── Report AI FAB (SSE streaming) ──────────────────────────────────────────
-
-_REPORT_EDIT_SYSTEM = """\
-你是一個 AI 助理，負責幫用戶修改他們的報告。
-用戶會提供修改指令，你可以：
-1. 使用 search 工具查詢用戶的個人知識庫，補充相關資料
-2. 使用 update_report 工具更新報告標題（可選）與內文（必填）
-
-報告標題：{title}
-
-目前報告內文：
-{body_md}
-"""
-
-_REPORT_EDIT_TOOLS = [
-    types.FunctionDeclaration(
-        name="search",
-        description="搜尋用戶的個人知識庫，找相關文章、筆記、研究資料。",
-        parameters={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "查詢字串"},
-                "limit": {"type": "integer", "description": "回傳筆數（預設 5）", "default": 5},
-            },
-            "required": ["query"],
-        },
-    ),
-    types.FunctionDeclaration(
-        name="update_report",
-        description="更新報告的標題（可選）和完整 Markdown 內文。",
-        parameters={
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "新標題，不更改時省略"},
-                "body_md": {"type": "string", "description": "完整的 Markdown 內文（含所有修改）"},
-            },
-            "required": ["body_md"],
-        },
-    ),
-]
+#
+# 懸浮球跟 chat 走同一顆引擎（chat_service.run_scoped_agent_stream → A 監督者 →
+# B/C/D 窗口），所以這裡不再自己宣告工具或 prompt —— 工具集是 graph/windows/report.py
+# 的那一份，唯一的差別是帶上「使用者正在編輯這份報告」的 scope。
 
 
 async def ai_edit_report_stream(
@@ -88,55 +53,21 @@ async def ai_edit_report_stream(
     instruction: str,
     history: list[dict] | None = None,
 ):
-    """SSE streaming agentic report edit (search + update_report tools)."""
-    from app.services.ai_service.tools import stream_tool_loop
+    """報告頁 AI 懸浮球：帶 scope 跑完整分層 agent（SSE 串流）。"""
+    from app.services import chat_service
     from app.services.ai_service._client import _sse
 
-    report = await crud_reports.get_one(db, user_id, report_id)
-    if report is None:
+    scope = await build_report_scope(db, user_id, report_id)
+    if scope is None:
         yield _sse("error", {"message": "Report not found"})
         return
 
-    system = _REPORT_EDIT_SYSTEM.format(
-        title=report.title,
-        body_md=(report.body_md or "")[:16000],
-    )
-
-    async def execute_tool(name: str, args: dict) -> dict:
-        if name == "search":
-            from app.services.chat_service import rag_retrieve
-            query = args.get("query", "")
-            limit = int(args.get("limit", 5))
-            hits = await rag_retrieve(db, user_id, query, limit=limit)
-            items_out = [
-                {
-                    "id": str(ui.id),
-                    "title": ui.title or "",
-                    "summary": ui.summary or "",
-                }
-                for ui, _ in hits
-            ]
-            return {"count": len(items_out), "items": items_out}
-
-        if name == "update_report":
-            import asyncio
-            new_title = args.get("title") or None
-            new_body = args.get("body_md", "")
-            await crud_reports.update(
-                db, report,
-                title=new_title,
-                body_md=new_body,
-                last_edited_by="ai",
-            )
-            text = _embed_text_for_report(report)
-            asyncio.create_task(_embed_report_bg(report.id, user_id, text))
-            read = await _to_read(db, user_id, report)
-            return {"ok": True, "_report": read.model_dump(mode="json")}
-
-        return {"ok": False, "error": f"unknown tool: {name}"}
-
-    async for sse in stream_tool_loop(system, instruction, _REPORT_EDIT_TOOLS, execute_tool, history=history):
-        yield sse
+    async for ev in chat_service.run_scoped_agent_stream(
+        db, user_id, instruction, scope,
+        scope_report_id=report_id,
+        history=history,
+    ):
+        yield ev
 
 
 # ── chat tool 入口 ──────────────────────────────────────────────────────────
@@ -226,19 +157,45 @@ async def create_from_chat(
     }
 
 
-async def revise_from_chat(
-    db: AsyncSession, user_id: UUID, report_id: UUID, instruction: str
+async def build_report_scope(
+    db: AsyncSession, user_id: UUID, report_id: UUID
 ) -> dict | None:
-    """chat 的 revise_report 工具用：對既有報告做 AI 修改（保留人類編輯，在其上接續）。"""
-    import asyncio
+    """組出「使用者正在編輯這份報告」要交給 graph 的 scope。
+
+    brief 帶報告全文（截 16000 字），C 窗口的 update_report 是整篇覆寫，
+    必須看得到現況才能在既有內文上接續修改而不是砍掉重寫。
+    無權限或報告不存在時回 None。
+    """
     report = await crud_reports.get_one(db, user_id, report_id)
     if report is None:
         return None
-    new_body = await ai_service.revise_text(report.body_md, instruction)
-    await crud_reports.update(db, report, body_md=new_body, last_edited_by="ai")
-    text = _embed_text_for_report(report)
-    asyncio.create_task(_embed_report_bg(report.id, user_id, text))
-    return {"id": str(report.id), "title": report.title}
+    return {
+        "kind": "report",
+        "id": str(report_id),
+        "brief": f"報告標題：{report.title}\n\n目前內文：\n{(report.body_md or '')[:16000]}",
+    }
+
+
+async def update_report_from_chat(
+    db: AsyncSession,
+    user_id: UUID,
+    report_id: UUID,
+    title: str | None,
+    body_md: str,
+) -> dict:
+    """C 窗口的 update_report：整篇覆寫，回傳含 _report 的結果供前端即時更新。"""
+    import asyncio
+    report = await crud_reports.get_one(db, user_id, report_id)
+    if report is None:
+        return {"ok": False, "error": "report not found"}
+    await crud_reports.update(
+        db, report, title=title or None, body_md=body_md, last_edited_by="ai"
+    )
+    asyncio.create_task(
+        _embed_report_bg(report.id, user_id, _embed_text_for_report(report))
+    )
+    read = await _to_read(db, user_id, report)
+    return {"ok": True, "_report": read.model_dump(mode="json")}
 
 
 # ── REST 入口 ───────────────────────────────────────────────────────────────

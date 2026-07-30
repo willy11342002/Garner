@@ -166,9 +166,11 @@ async def test_knowledge_window_runs_tool_then_reports_back_to_supervisor():
 
     kinds = [e["event"] for e in events]
     assert "tool_call" in kinds and "tool_result" in kinds
+    # tool_result 用 `name` 帶工具名（跟 tool_call 一致）——行程／報告頁的懸浮球前端
+    # 靠這個欄位分辨要做什麼畫面更新，見 tests/test_scoped_agent.py
     tool_result = next(e["data"] for e in events if e["event"] == "tool_result")
     assert tool_result == {
-        "tool": "search",
+        "name": "search",
         "count": 1,
         "titles": [{"id": "item-1", "title": "台北小吃", "summary_preview": "很多攤"}],
     }

@@ -20,6 +20,17 @@ logger = logging.getLogger("garner.chat")
 
 Dispatch = Callable[[str, dict], Awaitable[dict]]
 
+
+def _model_visible(result):
+    """濾掉工具結果中底線開頭的 key。
+
+    那些是給前端做即時畫面更新的完整物件（`_item` 整張卡片、`_report` 整篇報告），
+    模型不需要看 —— 灌回脈絡只會吃掉大量 token，而且模型接著要做的判斷用不到。
+    """
+    if not isinstance(result, dict):
+        return result
+    return {k: v for k, v in result.items() if not k.startswith("_")}
+
 MISSING_INFO_TOOL = types.FunctionDeclaration(
     name="report_missing_info",
     description=(
@@ -36,10 +47,32 @@ MISSING_INFO_TOOL = types.FunctionDeclaration(
 )
 
 
+_SCOPE_HEADING = {
+    "trip": "【目前正在編輯的行程】",
+    "report": "【目前正在編輯的報告】",
+}
+
+
 def _fmt_context(context: dict | None) -> str:
+    """把 context 轉成 system prompt 的附加區塊。
+
+    scope（使用者正在編輯的項目）單獨拉出來用純文字呈現 —— 它的 brief 是給人／模型讀的
+    敘述（行程的卡片清單、報告的 markdown 全文），塞進 JSON 會被引號和 \\n 淹沒。
+    其餘（B 查到的 items/chunks）維持 JSON，結構化資料本來就該保留結構。
+    """
     if not context:
         return ""
-    return "\n\n【上一個窗口傳來的結果】\n" + json.dumps(context, ensure_ascii=False, indent=2)
+
+    out = ""
+    scope = context.get("scope")
+    if scope:
+        heading = _SCOPE_HEADING.get(scope.get("kind"), "【目前正在編輯的項目】")
+        out += f"\n\n{heading}\n{scope.get('brief') or '（無法取得當前狀態）'}"
+
+    rest = {k: v for k, v in context.items() if k != "scope"}
+    if rest:
+        out += "\n\n【上一個窗口傳來的結果】\n" + json.dumps(rest, ensure_ascii=False, indent=2)
+    return out
 
 
 async def run_window_loop(
@@ -84,7 +117,7 @@ async def run_window_loop(
         for name, args in calls:
             if name == "report_missing_info":
                 return args.get("missing") or "缺少必要資訊"
-            results.append((name, await dispatch(name, args)))
+            results.append((name, _model_visible(await dispatch(name, args))))
 
         messages.append(tool_results(*results))
 

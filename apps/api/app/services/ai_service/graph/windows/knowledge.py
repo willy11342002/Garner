@@ -81,8 +81,7 @@ async def run_knowledge_window(
             items = result.get("items", [])
             all_items.extend(items)
             all_chunks.extend(result.get("chunks", []))
-            tool_result_data = {
-                "tool": name,
+            event_data = {
                 "count": len(items),
                 "titles": [
                     {
@@ -95,8 +94,7 @@ async def run_knowledge_window(
             }
         elif name == "save_url":
             saved.append(result)
-            tool_result_data = {
-                "tool": name,
+            event_data = {
                 "ok": bool(result.get("ok")),
                 "id": result.get("id"),
                 "title": result.get("title"),
@@ -104,9 +102,9 @@ async def run_knowledge_window(
                 "error": result.get("error"),
             }
         else:
-            tool_result_data = {"tool": name}
+            event_data = {}
 
-        emit("tool_result", tool_result_data)
+        emit("tool_result", {"name": name, **event_data})
         return result
 
     missing = await run_window_loop(
