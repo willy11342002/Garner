@@ -1,5 +1,5 @@
 """Knowledge chain analysis — hop-level and full-chain synthesis."""
-from ._client import _gemini_call, _parse_json
+from ._client import _parse_json, generate, user_turn
 
 _HOP_SYSTEM = """\
 你是用戶的個人知識庫助理。分析兩筆內容之間的關聯，用繁體中文回答，返回 JSON。
@@ -47,10 +47,7 @@ async def analyze_chain_hop(
         title_b=title_b or "(無標題)",
         summary_b=summary_b or "(無摘要)",
     )
-    raw = await _gemini_call([
-        {"role": "system", "content": _HOP_SYSTEM},
-        {"role": "user", "content": prompt},
-    ], timeout=60)
+    raw = await generate([user_turn(prompt)], system=_HOP_SYSTEM)
     return _parse_json(raw)
 
 
@@ -60,7 +57,4 @@ async def analyze_full_chain(items: list[dict]) -> str:
         for i, it in enumerate(items)
     )
     prompt = _CHAIN_TEMPLATE.format(items=items_text)
-    return await _gemini_call([
-        {"role": "system", "content": _CHAIN_SYSTEM},
-        {"role": "user", "content": prompt},
-    ], timeout=60)
+    return await generate([user_turn(prompt)], system=_CHAIN_SYSTEM)

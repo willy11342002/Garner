@@ -5,6 +5,7 @@
 """
 from uuid import UUID
 
+from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import reports as crud_reports
@@ -36,112 +37,6 @@ async def _to_read(db: AsyncSession, user_id: UUID, report: Report) -> ReportRea
         created_at=report.created_at,
         updated_at=report.updated_at,
     )
-
-
-# ── Report AI FAB (SSE streaming) ──────────────────────────────────────────
-
-_REPORT_EDIT_SYSTEM = """\
-你是一個 AI 助理，負責幫用戶修改他們的報告。
-用戶會提供修改指令，你可以：
-1. 使用 search 工具查詢用戶的個人知識庫，補充相關資料
-2. 使用 update_report 工具更新報告標題（可選）與內文（必填）
-
-報告標題：{title}
-
-目前報告內文：
-{body_md}
-"""
-
-_REPORT_EDIT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search",
-            "description": "搜尋用戶的個人知識庫，找相關文章、筆記、研究資料。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "查詢字串"},
-                    "limit": {"type": "integer", "description": "回傳筆數（預設 5）", "default": 5},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_report",
-            "description": "更新報告的標題（可選）和完整 Markdown 內文。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "新標題，不更改時省略"},
-                    "body_md": {"type": "string", "description": "完整的 Markdown 內文（含所有修改）"},
-                },
-                "required": ["body_md"],
-            },
-        },
-    },
-]
-
-
-async def ai_edit_report_stream(
-    db: AsyncSession,
-    user_id: UUID,
-    report_id: UUID,
-    instruction: str,
-    history: list[dict] | None = None,
-):
-    """SSE streaming agentic report edit (search + update_report tools)."""
-    from app.services.ai_service.tools import stream_tool_loop
-    from app.services.ai_service._client import _sse
-
-    report = await crud_reports.get_one(db, user_id, report_id)
-    if report is None:
-        yield _sse("error", {"message": "Report not found"})
-        return
-
-    system = _REPORT_EDIT_SYSTEM.format(
-        title=report.title,
-        body_md=(report.body_md or "")[:16000],
-    )
-
-    async def execute_tool(name: str, args: dict) -> dict:
-        if name == "search":
-            from app.services.chat_service import rag_retrieve
-            query = args.get("query", "")
-            limit = int(args.get("limit", 5))
-            hits = await rag_retrieve(db, user_id, query, limit=limit)
-            items_out = [
-                {
-                    "id": str(ui.id),
-                    "title": ui.title or "",
-                    "summary": ui.summary or "",
-                }
-                for ui, _ in hits
-            ]
-            return {"count": len(items_out), "items": items_out}
-
-        if name == "update_report":
-            import asyncio
-            new_title = args.get("title") or None
-            new_body = args.get("body_md", "")
-            await crud_reports.update(
-                db, report,
-                title=new_title,
-                body_md=new_body,
-                last_edited_by="ai",
-            )
-            text = _embed_text_for_report(report)
-            asyncio.create_task(_embed_report_bg(report.id, user_id, text))
-            read = await _to_read(db, user_id, report)
-            return {"ok": True, "_report": read.model_dump(mode="json")}
-
-        return {"ok": False, "error": f"unknown tool: {name}"}
-
-    async for sse in stream_tool_loop(system, instruction, _REPORT_EDIT_TOOLS, execute_tool, history=history):
-        yield sse
 
 
 # ── chat tool 入口 ──────────────────────────────────────────────────────────
@@ -231,19 +126,62 @@ async def create_from_chat(
     }
 
 
-async def revise_from_chat(
-    db: AsyncSession, user_id: UUID, report_id: UUID, instruction: str
+async def get_report_for_chat(
+    db: AsyncSession, user_id: UUID, report_id: UUID
 ) -> dict | None:
-    """chat 的 revise_report 工具用：對既有報告做 AI 修改（保留人類編輯，在其上接續）。"""
-    import asyncio
+    """C 窗口的 get_report：讀一份報告的全文。
+
+    update_report 是整篇覆寫，模型必須先看到現況才能在既有內文上接續修改而不是砍掉重寫。
+    任何一份自己的報告都讀得到，不限於使用者當前開著的那份。
+    """
     report = await crud_reports.get_one(db, user_id, report_id)
     if report is None:
         return None
-    new_body = await ai_service.revise_text(report.body_md, instruction)
-    await crud_reports.update(db, report, body_md=new_body, last_edited_by="ai")
-    text = _embed_text_for_report(report)
-    asyncio.create_task(_embed_report_bg(report.id, user_id, text))
-    return {"id": str(report.id), "title": report.title}
+    return {
+        "id": str(report.id),
+        "title": report.title,
+        "body_md": (report.body_md or "")[:16000],
+    }
+
+
+async def build_report_scope(
+    db: AsyncSession, user_id: UUID, report_id: UUID
+) -> dict | None:
+    """使用者當前開著的報告，組成給 A 的一句提示。
+
+    **這不是權限機制** —— 它只讓「幫我把這份改短」有所指。實際能改哪一份完全由工具的
+    report_id 決定，權限由資料層擋（crud_reports.get_one 帶 user_id）。
+    """
+    detail = await get_report_for_chat(db, user_id, report_id)
+    if detail is None:
+        return None
+    return {
+        "kind": "report",
+        "id": str(report_id),
+        "brief": f"報告「{detail['title']}」（report_id={detail['id']}）",
+    }
+
+
+async def update_report_from_chat(
+    db: AsyncSession,
+    user_id: UUID,
+    report_id: UUID,
+    title: str | None,
+    body_md: str,
+) -> dict:
+    """C 窗口的 update_report：整篇覆寫，回傳含 _report 的結果供前端即時更新。"""
+    import asyncio
+    report = await crud_reports.get_one(db, user_id, report_id)
+    if report is None:
+        return {"ok": False, "error": "report not found"}
+    await crud_reports.update(
+        db, report, title=title or None, body_md=body_md, last_edited_by="ai"
+    )
+    asyncio.create_task(
+        _embed_report_bg(report.id, user_id, _embed_text_for_report(report))
+    )
+    read = await _to_read(db, user_id, report)
+    return {"ok": True, "_report": read.model_dump(mode="json")}
 
 
 # ── REST 入口 ───────────────────────────────────────────────────────────────

@@ -198,13 +198,4 @@ class TripUpdate(BaseModel):
     end_date: date | None = None
 
 
-# ── AI 修改 ───────────────────────────────────────────────────────────────────
-
-class TripAIEditTurn(BaseModel):
-    role: str  # "user" | "assistant"
-    content: str
-
-
-class TripAIEditRequest(BaseModel):
-    instruction: str
-    history: list[TripAIEditTurn] | None = None
+# AI 修改行程走 chat 的 SendMessageRequest（帶 scope），這裡不再有專屬 schema。

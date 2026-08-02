@@ -13,14 +13,14 @@ item_ids 參數；實際把這些 id 換成完整資料（items/chunks，欄位�
 由 _build_knowledge_index() 在程式碼裡做，不經過 LLM retype，避免失真。
 """
 import datetime as _dt
-import json
 import logging
 
+from google.genai import types
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from .._client import _chunk_parts, _gemini_generate_stream
+from .._client import _chunk_parts, generate_stream, model_turn, tool_results
 from .emit import emit
 from .state import GraphState
 from .windows import run_knowledge_window, run_report_window, run_trip_window
@@ -58,86 +58,102 @@ _SUPERVISOR_SYSTEM = """\
 - 全部完成後，用繁體中文簡潔回答用戶，不要過度列舉；只輸出你自己的回覆，不要模擬用戶的後續回應
 """
 
+_SCOPE_LABEL = {"trip": "旅遊行程", "report": "AI 報告"}
+
+_SCOPE_TEMPLATE = """\
+
+【使用者目前正在編輯的項目】
+使用者是在某一份{label}的頁面上跟你說話，不是從首頁。除非他明確要求「另外開一份新的」，
+否則所有修改都應該套用在這一份上 —— 派給{desk}時，系統會自動把這一份的 id 與當前狀態
+帶給該窗口，你不需要（也無法）自己指定要改哪一份。
+
+以下是它目前的狀態，供你判斷該派什麼工作：
+{brief}
+"""
+
+
+def _scope_block(scope: dict | None) -> str:
+    if not scope:
+        return ""
+    kind = scope.get("kind")
+    desk = "dispatch_trip_desk" if kind == "trip" else "dispatch_report_desk"
+    return _SCOPE_TEMPLATE.format(
+        label=_SCOPE_LABEL.get(kind, "項目"),
+        desk=desk,
+        brief=scope.get("brief") or "（無法取得當前狀態）",
+    )
+
+_ITEM_IDS_PARAM = {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "從對話歷史中先前查到的知識庫內容裡，篩選出跟這次事件真正相關、有用的知識 id；只列有用的，不相關的不要列。若目前沒有相關內容，留空並改派給 dispatch_knowledge_base 先查。",
+}
+
+_KNOWLEDGE_TOOL = "dispatch_knowledge_base"
+
 _DISPATCH_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "dispatch_knowledge_base",
-            "description": "派工給知識庫窗口：查找或存入用戶的個人知識庫內容。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "event": {"type": "string", "description": "獨立、完整描述要查什麼或要存什麼網址的事件敘述"},
-                },
-                "required": ["event"],
+    types.FunctionDeclaration(
+        name=_KNOWLEDGE_TOOL,
+        description="派工給知識庫窗口：查找或存入用戶的個人知識庫內容。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "event": {"type": "string", "description": "獨立、完整描述要查什麼或要存什麼網址的事件敘述"},
             },
+            "required": ["event"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "dispatch_report_desk",
-            "description": "派工給報告窗口：產出或修改 AI 報告，或查詢既有報告。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "event": {"type": "string", "description": "獨立、完整描述要產出／修改／查詢什麼報告的事件敘述"},
-                    "item_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "從對話歷史中先前查到的知識庫內容裡，篩選出跟這次事件真正相關、有用的知識 id；只列有用的，不相關的不要列。若目前沒有相關內容，留空並改派給 dispatch_knowledge_base 先查。",
-                    },
-                },
-                "required": ["event"],
+    ),
+    types.FunctionDeclaration(
+        name="dispatch_report_desk",
+        description="派工給報告窗口：產出或修改 AI 報告，或查詢既有報告。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "event": {"type": "string", "description": "獨立、完整描述要產出／修改／查詢什麼報告的事件敘述"},
+                "item_ids": _ITEM_IDS_PARAM,
             },
+            "required": ["event"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "dispatch_trip_desk",
-            "description": "派工給旅遊窗口：規劃或修改旅遊行程，或查詢既有行程。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "event": {"type": "string", "description": "獨立、完整描述要規劃／修改／查詢什麼行程的事件敘述"},
-                    "item_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "從對話歷史中先前查到的知識庫內容裡，篩選出跟這次事件真正相關、有用的知識 id；只列有用的，不相關的不要列。若目前沒有相關內容，留空並改派給 dispatch_knowledge_base 先查。",
-                    },
-                },
-                "required": ["event"],
+    ),
+    types.FunctionDeclaration(
+        name="dispatch_trip_desk",
+        description="派工給旅遊窗口：規劃或修改旅遊行程，或查詢既有行程。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "event": {"type": "string", "description": "獨立、完整描述要規劃／修改／查詢什麼行程的事件敘述"},
+                "item_ids": _ITEM_IDS_PARAM,
             },
+            "required": ["event"],
         },
-    },
+    ),
 ]
 
 _DISPATCH_TARGET = {
-    "dispatch_knowledge_base": "knowledge",
+    _KNOWLEDGE_TOOL: "knowledge",
     "dispatch_report_desk": "report",
     "dispatch_trip_desk": "trip",
 }
 
 
-def _build_knowledge_index(messages: list[dict]) -> tuple[dict[str, dict], list[dict]]:
+def _build_knowledge_index(
+    messages: list[types.Content],
+) -> tuple[dict[str, dict], list[dict]]:
     """掃過『整個對話歷史』（不只最近一輪），把每一次 dispatch_knowledge_base 查到的
     items（依 id 建索引，同 id 以較新的一次覆蓋）與 chunks 都收集起來，供 A 篩選出的
-    item_ids 換成完整、未經摘要裁切的原始資料。"""
-    tool_call_id_to_name: dict[str, str] = {}
+    item_ids 換成完整、未經摘要裁切的原始資料。
+
+    Gemini 的 functionResponse 自帶工具名，所以這裡直接認 name 就好，不必像 OpenAI
+    格式那樣先建一張 tool_call_id → name 的對照表再回查。
+    """
     items_by_id: dict[str, dict] = {}
     all_chunks: list[dict] = []
-    for m in messages:
-        if m.get("role") == "assistant":
-            for tc in m.get("tool_calls") or []:
-                tool_call_id_to_name[tc["id"]] = tc["function"]["name"]
-        elif m.get("role") == "tool":
-            if tool_call_id_to_name.get(m.get("tool_call_id")) != "dispatch_knowledge_base":
+    for content in messages:
+        for part in content.parts or []:
+            fr = part.function_response
+            if fr is None or fr.name != _KNOWLEDGE_TOOL:
                 continue
-            try:
-                data = json.loads(m.get("content") or "{}")
-            except Exception:
-                continue
+            data = fr.response
             if not isinstance(data, dict):
                 continue
             for it in data.get("items") or []:
@@ -147,49 +163,65 @@ def _build_knowledge_index(messages: list[dict]) -> tuple[dict[str, dict], list[
     return items_by_id, all_chunks
 
 
-def _resolve_dispatch_context(target: str, args: dict, messages: list[dict]) -> dict | None:
-    """把 A 選出的 item_ids 換成完整資料（items/chunks，欄位不裁切），純程式碼處理，
-    不經過 LLM retype。knowledge 目標不需要 context（B 自己查）。"""
+def _resolve_dispatch_context(
+    target: str, args: dict, messages: list[types.Content], scope: dict | None = None
+) -> dict | None:
+    """組出要交給 C／D 窗口的 context。兩部分都是純程式碼處理，不經過 LLM retype：
+
+    - knowledge：A 選出的 item_ids 換成完整資料（items/chunks，欄位不裁切）
+    - scope：使用者當前正在編輯的項目（懸浮球入口）。原封不動轉發，窗口的 executor
+      據此決定要寫哪一份 —— 模型從頭到尾沒有機會指定 id，所以不可能寫到別人的資料。
+
+    knowledge 目標不需要 context（B 自己查）。
+    """
     if target not in ("report", "trip"):
         return None
+
+    context: dict = {}
+
+    # 只把跟這個窗口同類的 scope 轉發過去（在報告頁派工給 D 時，行程窗口不需要報告內容）
+    if scope and scope.get("kind") == target:
+        context["scope"] = scope
+
     selected = [i for i in (args.get("item_ids") or []) if isinstance(i, str)]
-    if not selected:
-        return None
-    items_by_id, all_chunks = _build_knowledge_index(messages)
-    selected_set = set(selected)
-    return {
-        "items": [items_by_id[i] for i in selected if i in items_by_id],
-        "chunks": [c for c in all_chunks if c.get("item_id") in selected_set],
-        "saved": [],
-    }
+    if selected:
+        items_by_id, all_chunks = _build_knowledge_index(messages)
+        selected_set = set(selected)
+        context.update({
+            "items": [items_by_id[i] for i in selected if i in items_by_id],
+            "chunks": [c for c in all_chunks if c.get("item_id") in selected_set],
+            "saved": [],
+        })
+
+    return context or None
 
 
-def _system_prompt(context_summary: str | None) -> str:
+def _system_prompt(context_summary: str | None, scope: dict | None) -> str:
     today = _dt.date.today().isoformat()
     system = _SUPERVISOR_SYSTEM + f"\n今天日期：{today}"
     if context_summary:
         system += f"\n\n【對話摘要（早期）】\n{context_summary}"
+    system += _scope_block(scope)
     return system
 
 
 async def _supervisor_node(state: GraphState, config: RunnableConfig) -> dict:
-    system = _system_prompt(state.get("context_summary"))
+    system = _system_prompt(state.get("context_summary"), state.get("scope"))
     round_ = state["round"]
     forced_final = round_ >= state["max_rounds"]
 
-    full_messages = [{"role": "system", "content": system}] + state["messages"]
     tools = None if forced_final else _DISPATCH_TOOLS
 
     text = ""
-    tool_calls_list: list[dict] = []
-    async for chunk in _gemini_generate_stream(full_messages, tools=tools):
+    tool_calls_list: list[tuple[str, dict]] = []
+    async for chunk in generate_stream(state["messages"], system=system, tools=tools):
         for part in _chunk_parts(chunk):
             if part.text:
                 text += part.text
                 emit("delta", {"text": part.text})
             elif part.function_call:
                 fc = part.function_call
-                tool_calls_list.append({"name": fc.name, "args": dict(fc.args or {})})
+                tool_calls_list.append((fc.name, dict(fc.args or {})))
 
     if forced_final or not tool_calls_list:
         logger.debug(
@@ -199,33 +231,24 @@ async def _supervisor_node(state: GraphState, config: RunnableConfig) -> dict:
         return {"final_reply": text, "finished": True, "dispatch_target": None}
 
     # prompt 已規範一次只派一個窗口；這裡只取第一個 tool call 以防模型多開
-    tc = tool_calls_list[0]
-    target = _DISPATCH_TARGET.get(tc["name"])
+    tool_name, args = tool_calls_list[0]
+    target = _DISPATCH_TARGET.get(tool_name)
     if target is None:
         # 模型呼叫了不認得的名字，當作沒有派工，直接用已產生的文字收尾
         return {"final_reply": text, "finished": True, "dispatch_target": None}
 
-    tc_id = f"supervisor_{round_}_0"
-    event_text = tc["args"].get("event", "")
-    # A 只決定「選哪些 id」；把 id 換成完整 items/chunks 這件事在程式碼裡做，不經過 LLM
-    dispatch_context = _resolve_dispatch_context(target, tc["args"], state["messages"])
-
-    assistant_msg = {
-        "role": "assistant",
-        "content": text or None,
-        "tool_calls": [{
-            "id": tc_id,
-            "type": "function",
-            "function": {"name": tc["name"], "arguments": json.dumps(tc["args"], ensure_ascii=False)},
-        }],
-    }
+    # A 只決定「選哪些 id」；把 id 換成完整 items/chunks、以及帶上使用者當前編輯的項目，
+    # 都在程式碼裡做，不經過 LLM
+    dispatch_context = _resolve_dispatch_context(
+        target, args, state["messages"], state.get("scope")
+    )
 
     return {
-        "messages": state["messages"] + [assistant_msg],
+        "messages": state["messages"] + [model_turn(text or None, calls=[(tool_name, args)])],
         "round": round_ + 1,
         "dispatch_target": target,
-        "dispatch_tool_call_id": tc_id,
-        "dispatch_event": event_text,
+        "dispatch_tool_name": tool_name,
+        "dispatch_event": args.get("event", ""),
         "dispatch_context": dispatch_context,
     }
 
@@ -244,13 +267,9 @@ def _after_window(state: GraphState, result: dict) -> dict:
     依 A 選的 item_ids 重新解析（見 _resolve_dispatch_context），所以這裡刻意不寫，
     避免留著一個下一輪馬上會被蓋掉、看起來卻像有作用的欄位。
     """
-    tc_id = state["dispatch_tool_call_id"]
-    tool_msg = {
-        "role": "tool", "tool_call_id": tc_id,
-        "content": json.dumps(result, ensure_ascii=False, default=str),
-    }
     return {
-        "messages": state["messages"] + [tool_msg],
+        "messages": state["messages"] + [tool_results((state["dispatch_tool_name"], result))],
+        "window_result": result,
         "dispatch_target": None,
     }
 

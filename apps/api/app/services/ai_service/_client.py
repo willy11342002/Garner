@@ -1,7 +1,19 @@
-"""Gemini client primitives — uses google-genai SDK."""
+"""Gemini client primitives — uses google-genai SDK, native types throughout.
+
+對話內容一律用 `google.genai.types.Content` / `types.Part` 表示，不再經過
+OpenAI 格式的 dict 中介。呼叫端用下面的 builder 直接組：
+
+    user_turn("台北有什麼好吃的")
+    model_turn(text="我查一下", calls=[("search", {"query": "台北美食"})])
+    tool_results(("search", {"count": 3}))
+
+這樣工具參數不用「dumps 成字串再 loads 回來」，也不用維護 tool_call_id → name
+的對照表（Gemini 的 functionResponse 直接帶 name）。
+"""
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from typing import AsyncIterator
 
 import google.genai as genai
@@ -70,149 +82,154 @@ def _emb() -> str:
     return _model_cache["embedding"]
 
 
-def _to_gemini_contents(messages: list[dict]) -> tuple[str | None, list[dict]]:
-    """Convert OpenAI-format messages → (system_instruction, gemini_contents).
+# ── Content builders ───────────────────────────────────────────────────────────
+#
+# 呼叫端用這些組對話，不要自己手刻 types.Content —— 集中在這裡才能保證
+# 「相鄰同 role 要合併」「空 parts 要丟掉」這類 Gemini 的硬性要求只實作一次。
 
-    Handles: system → systemInstruction, user/assistant/tool roles,
-    multimodal image_url → inlineData, tool_calls → functionCall,
-    tool results → functionResponse.
+
+def text_part(text: str) -> types.Part:
+    return types.Part(text=text)
+
+
+def image_part(data: bytes, mime_type: str = "image/jpeg") -> types.Part:
+    """圖片 part。直接吃 bytes，SDK 內部處理 base64，不用先組 data: URL 再拆回來。"""
+    return types.Part.from_bytes(data=data, mime_type=mime_type)
+
+
+def user_turn(*parts: str | types.Part) -> types.Content:
+    """使用者這一輪。字串會自動包成 text part，方便最常見的純文字情況。
+
+    空字串不會產生 part（否則會送出一個空的 text part，Gemini 視為無效內容）。
     """
-    system_text: str | None = None
-    contents: list[dict] = []
-    tc_id_to_name: dict[str, str] = {}
-
-    for msg in messages:
-        role = msg["role"]
-
-        if role == "system":
-            system_text = (system_text + "\n\n" + msg["content"]) if system_text else msg["content"]
-
-        elif role == "user":
-            raw = msg.get("content") or ""
-            if isinstance(raw, str):
-                parts: list[dict] = [{"text": raw}] if raw else []
-            else:
-                parts = []
-                for item in raw:
-                    if item.get("type") == "text":
-                        parts.append({"text": item["text"]})
-                    elif item.get("type") == "image_url":
-                        url = item["image_url"]["url"]
-                        if url.startswith("data:"):
-                            mime, b64 = url[5:].split(";base64,", 1)
-                            parts.append({"inlineData": {"mimeType": mime, "data": b64}})
-            if contents and contents[-1]["role"] == "user":
-                contents[-1]["parts"].extend(parts)
-            elif parts:
-                contents.append({"role": "user", "parts": parts})
-
-        elif role == "assistant":
-            parts = []
-            if msg.get("content"):
-                parts.append({"text": msg["content"]})
-            for tc in msg.get("tool_calls", []):
-                fn = tc["function"]
-                name = fn["name"]
-                args_raw = fn.get("arguments", "{}")
-                try:
-                    args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-                except Exception:
-                    args = {}
-                parts.append({"functionCall": {"name": name, "args": args}})
-                tc_id_to_name[tc["id"]] = name
-            if parts:
-                contents.append({"role": "model", "parts": parts})
-
-        elif role == "tool":
-            tc_id = msg.get("tool_call_id", "")
-            name = tc_id_to_name.get(tc_id, "unknown")
-            raw_content = msg.get("content", "{}")
-            try:
-                response_data = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
-            except Exception:
-                response_data = {"result": raw_content}
-            fr_part = {"functionResponse": {"name": name, "response": response_data}}
-            if contents and contents[-1]["role"] == "user":
-                contents[-1]["parts"].append(fr_part)
-            else:
-                contents.append({"role": "user", "parts": [fr_part]})
-
-    return system_text, contents
+    return types.Content(
+        role="user",
+        parts=[text_part(p) if isinstance(p, str) else p for p in parts if p],
+    )
 
 
-def _oi_tools_to_sdk(tools: list[dict]) -> types.Tool:
-    """Convert OpenAI-format tool list to SDK types.Tool."""
-    declarations = []
-    for t in tools:
-        fn = t["function"]
-        declarations.append(types.FunctionDeclaration(
-            name=fn["name"],
-            description=fn.get("description", ""),
-            parameters=fn.get("parameters", {}),
-        ))
-    return types.Tool(function_declarations=declarations)
+def model_turn(
+    text: str | None = None,
+    calls: Sequence[tuple[str, dict]] = (),
+) -> types.Content:
+    """模型這一輪：可帶文字、可帶 function call，兩者可並存。
+
+    calls 是 (工具名, 參數 dict) 的序列 —— 參數保持 dict，不再序列化成 JSON 字串。
+    """
+    parts = ([text_part(text)] if text else []) + [
+        types.Part.from_function_call(name=name, args=args or {}) for name, args in calls
+    ]
+    return types.Content(role="model", parts=parts)
 
 
-def _make_config(
-    system_instr: str | None,
-    tools: list[dict] | None = None,
+def _json_safe(value: object) -> dict:
+    """把工具結果轉成純 JSON 型別的 dict。
+
+    工具結果常常夾帶 UUID、datetime、Decimal 這類 SDK 序列化不了的值（例如 crud 直接
+    回傳的 ORM 衍生 dict）。舊的 OpenAI-dict 路徑是靠 json.dumps(..., default=str) 順手
+    擋掉的；改成原生 types 後那層網不見了，所以在這裡明確補回來 —— 少了它，一個
+    datetime 就會讓整條串流在送出前炸掉。
+    """
+    if not isinstance(value, dict):
+        value = {"result": value}
+    return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
+def tool_results(*results: tuple[str, object]) -> types.Content:
+    """工具執行結果。Gemini 把 functionResponse 歸在 user 這一側。
+
+    response 必須是 dict；非 dict 的結果（例如工具回了 list 或純字串）包成 {"result": ...}。
+    """
+    return types.Content(
+        role="user",
+        parts=[
+            types.Part.from_function_response(name=name, response=_json_safe(response))
+            for name, response in results
+        ],
+    )
+
+
+def _prepare(contents: Sequence[types.Content]) -> list[types.Content]:
+    """送出前的正規化：丟掉空 parts 的 content，合併相鄰同 role 的 content。
+
+    Gemini 不接受連續兩個同 role 的 content，也不接受 parts 為空的 content。
+    """
+    out: list[types.Content] = []
+    for c in contents:
+        if not c.parts:
+            continue
+        if out and out[-1].role == c.role:
+            out[-1].parts.extend(c.parts)
+        else:
+            out.append(types.Content(role=c.role, parts=list(c.parts)))
+    return out
+
+
+def _config(
+    system: str | None,
+    tools: Sequence[types.FunctionDeclaration] | None,
 ) -> types.GenerateContentConfig | None:
     kwargs: dict = {}
-    if system_instr:
-        kwargs["system_instruction"] = system_instr
+    if system:
+        kwargs["system_instruction"] = system
     if tools:
-        kwargs["tools"] = [_oi_tools_to_sdk(tools)]
+        kwargs["tools"] = [types.Tool(function_declarations=list(tools))]
     return types.GenerateContentConfig(**kwargs) if kwargs else None
 
 
-async def _gemini_call(
-    messages: list[dict], *, timeout: int = 90, tools: list[dict] | None = None
+def _unavailable_if_auth_error(e: genai.errors.ClientError):
+    """401/403 代表服務端拒絕，不是使用者的 auth 問題 —— 轉成 503 讓前端別誤判。"""
+    if getattr(e, "status_code", None) in (401, 403):
+        raise RuntimeError("Gemini service unavailable")
+    raise e
+
+
+async def generate(
+    contents: Sequence[types.Content],
+    *,
+    system: str | None = None,
+    tools: Sequence[types.FunctionDeclaration] | None = None,
+    model: str | None = None,
 ) -> str:
-    """Non-streaming Gemini call. Returns text."""
-    client = _get_client()
-    system_instr, contents = _to_gemini_contents(messages)
-    config = _make_config(system_instr, tools)
+    """非串流呼叫，回傳文字。"""
     try:
-        response = await client.aio.models.generate_content(
-            model=_llm(),
-            contents=contents,
-            config=config,
+        response = await _get_client().aio.models.generate_content(
+            model=model or _llm(),
+            contents=_prepare(contents),
+            config=_config(system, tools),
         )
         return response.text or ""
     except genai.errors.ClientError as e:
-        if getattr(e, "status_code", None) in (401, 403):
-            raise RuntimeError("Gemini service unavailable")
-        raise
+        _unavailable_if_auth_error(e)
 
 
-async def _llm_call(prompt: str, timeout: int = 90) -> str:
-    return await _gemini_call([{"role": "user", "content": prompt}], timeout=timeout)
+async def _llm_call(prompt: str) -> str:
+    """單一 prompt 的便利包裝（ingest / report / chain 的多數呼叫都是這種）。"""
+    return await generate([user_turn(prompt)])
 
 
-async def _gemini_generate_stream(
-    messages: list[dict],
-    tools: list[dict] | None = None,
+async def generate_stream(
+    contents: Sequence[types.Content],
+    *,
+    system: str | None = None,
+    tools: Sequence[types.FunctionDeclaration] | None = None,
+    model: str | None = None,
 ) -> AsyncIterator:
-    """Yield raw SDK chunks from a Gemini streaming call.
+    """串流呼叫，yield 原始 SDK chunk。
 
-    Each chunk has .candidates[0].content.parts — text parts and/or functionCall parts.
-    Use _chunk_parts(chunk) to read them safely (parts can be None, not just absent).
+    每個 chunk 是 .candidates[0].content.parts —— 可能是 text、也可能是 functionCall。
+    一律用 _chunk_parts(chunk) 讀，parts 可能是 None 而不只是缺席。
     """
-    client = _get_client()
-    system_instr, contents = _to_gemini_contents(messages)
-    config = _make_config(system_instr, tools)
     try:
-        stream = await client.aio.models.generate_content_stream(
-            model=_llm(),
-            contents=contents,
-            config=config,
+        stream = await _get_client().aio.models.generate_content_stream(
+            model=model or _llm(),
+            contents=_prepare(contents),
+            config=_config(system, tools),
         )
         async for chunk in stream:
             yield chunk
     except genai.errors.ClientError as e:
-        if getattr(e, "status_code", None) in (401, 403):
-            raise RuntimeError("Gemini service unavailable")
-        raise
+        _unavailable_if_auth_error(e)
 
 
 def _chunk_parts(chunk) -> list:

@@ -6,6 +6,8 @@
 """
 from typing import Awaitable, Callable
 
+from google.genai import types
+
 from ..emit import emit
 from ._loop import run_window_loop
 
@@ -23,50 +25,44 @@ _SYSTEM = """\
 """
 
 _TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search",
-            "description": "搜尋用戶的個人知識庫。可以用語意查詢、或按來源類型、日期範圍過濾。可多次呼叫換角度搜尋。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "語意搜尋描述句，完整描述想找的概念或主題（用完整句子，不要只寫關鍵字）",
-                    },
-                    "source_type": {
-                        "type": "string",
-                        "enum": ["youtube", "article", "ig"],
-                        "description": "按來源類型過濾",
-                    },
-                    "start_date": {"type": "string", "description": "儲存日期下限，格式 YYYY-MM-DD"},
-                    "end_date": {"type": "string", "description": "儲存日期上限，格式 YYYY-MM-DD"},
-                    "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 15"},
-                    "offset": {"type": "integer", "description": "跳過前 N 筆，用於換頁"},
-                    "item_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "直接按知識 ID 查詢（例如剛用 save_url 存入的條目）。有此參數時略過語意搜尋，直接回傳指定 ID 的知識。",
-                    },
+    types.FunctionDeclaration(
+        name="search",
+        description="搜尋用戶的個人知識庫。可以用語意查詢、或按來源類型、日期範圍過濾。可多次呼叫換角度搜尋。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "語意搜尋描述句，完整描述想找的概念或主題（用完整句子，不要只寫關鍵字）",
+                },
+                "source_type": {
+                    "type": "string",
+                    "enum": ["youtube", "article", "ig"],
+                    "description": "按來源類型過濾",
+                },
+                "start_date": {"type": "string", "description": "儲存日期下限，格式 YYYY-MM-DD"},
+                "end_date": {"type": "string", "description": "儲存日期上限，格式 YYYY-MM-DD"},
+                "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 15"},
+                "offset": {"type": "integer", "description": "跳過前 N 筆，用於換頁"},
+                "item_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "直接按知識 ID 查詢（例如剛用 save_url 存入的條目）。有此參數時略過語意搜尋，直接回傳指定 ID 的知識。",
                 },
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_url",
-            "description": "將一個網址（YouTube 影片、網頁文章）存入用戶的知識庫，系統會自動抓取內容、產生摘要與標籤。只在事件明確要求存入網址時呼叫。會消耗一次存入額度。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
-                },
-                "required": ["url"],
+    ),
+    types.FunctionDeclaration(
+        name="save_url",
+        description="將一個網址（YouTube 影片、網頁文章）存入用戶的知識庫，系統會自動抓取內容、產生摘要與標籤。只在事件明確要求存入網址時呼叫。會消耗一次存入額度。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
             },
+            "required": ["url"],
         },
-    },
+    ),
 ]
 
 
@@ -85,8 +81,7 @@ async def run_knowledge_window(
             items = result.get("items", [])
             all_items.extend(items)
             all_chunks.extend(result.get("chunks", []))
-            tool_result_data = {
-                "tool": name,
+            event_data = {
                 "count": len(items),
                 "titles": [
                     {
@@ -99,8 +94,7 @@ async def run_knowledge_window(
             }
         elif name == "save_url":
             saved.append(result)
-            tool_result_data = {
-                "tool": name,
+            event_data = {
                 "ok": bool(result.get("ok")),
                 "id": result.get("id"),
                 "title": result.get("title"),
@@ -108,9 +102,9 @@ async def run_knowledge_window(
                 "error": result.get("error"),
             }
         else:
-            tool_result_data = {"tool": name}
+            event_data = {}
 
-        emit("tool_result", tool_result_data)
+        emit("tool_result", {"name": name, **event_data})
         return result
 
     missing = await run_window_loop(

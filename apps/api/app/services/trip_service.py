@@ -2,6 +2,7 @@ import asyncio
 import logging
 from uuid import UUID, uuid4
 
+from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import trips as crud_trips
@@ -331,9 +332,12 @@ async def add_card_from_chat(
     from datetime import datetime as _dt, timedelta
     from urllib.parse import quote
 
-    trip = await crud_trips.get_trip(db, user_id, trip_id)
-    if trip is None:
+    # 用 editor 權限（不是單純 get_trip）—— get_trip 對任何成員都放行，
+    # viewer 不該能透過 AI 新增卡片，行為要跟 delete_item 一致
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if accessible is None:
         return None
+    trip = accessible[0]
 
     def _parse_time(v):
         if not v or not isinstance(v, str):
@@ -478,49 +482,85 @@ async def search_trips_from_chat(
     ]
 
 
-async def revise_trip_from_chat(
-    db: AsyncSession,
-    user_id: UUID,
-    trip_id: UUID,
-    instruction: str,
+async def get_trip_detail_for_chat(
+    db: AsyncSession, user_id: UUID, trip_id: UUID
 ) -> dict | None:
-    """chat 的 revise_trip 工具用：消費 ai_edit_trip_stream 的所有事件，回傳操作摘要 dict。"""
-    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    """D 窗口的 get_trip：讀一份行程的完整卡片清單。
+
+    模型要改卡片就得先知道有哪些卡、id 是什麼，所以這是「查 → 讀 → 改」的中間那步。
+    任何一份自己有權限的行程都讀得到，不限於使用者當前開著的那份。
+    無權限或不存在回 None。
+    """
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="viewer")
     if accessible is None:
         return None
     trip = accessible[0]
-    added, updated, deleted = [], [], []
-    async for ev in ai_edit_trip_stream(db, user_id, trip_id, instruction):
-        # ev 是 SSE 字串 "data: {...}\n\n"；解析 tool_result 事件摘要
-        if "tool_result" not in ev:
-            continue
-        import json as _json
-        for line in ev.splitlines():
-            if not line.startswith("data:"):
-                continue
-            try:
-                payload = _json.loads(line[5:].strip())
-                result = payload.get("result", {})
-                if "_deleted_id" in result:
-                    deleted.append(result["_deleted_id"])
-                elif "_item" in result:
-                    item = result["_item"]
-                    iid = item.get("id", "")
-                    ititle = item.get("title", "")
-                    if result.get("ok"):
-                        added.append({"id": iid, "title": ititle})
-                    else:
-                        updated.append({"id": iid, "title": ititle})
-            except Exception:
-                pass
-    asyncio.create_task(_embed_trip_bg(trip_id, user_id))
+
+    # 與詳情頁相同的排序，模型看到的順序就是使用者看到的順序
+    items_sorted = sorted(
+        trip.items or [],
+        key=lambda i: (str(i.start_date) if i.start_date else "", i.order_index),
+    )
     return {
-        "trip_id": str(trip_id),
-        "trip_title": trip.title,
-        "added": len(added),
-        "updated": len(updated),
-        "deleted": len(deleted),
+        "id": str(trip.id),
+        "title": trip.title,
+        "start_date": str(trip.start_date) if trip.start_date else None,
+        "end_date": str(trip.end_date) if trip.end_date else None,
+        "cards": [
+            {
+                "card_id": str(it.id),
+                "title": it.title,
+                "start_date": str(it.start_date) if it.start_date else None,
+                "end_date": str(it.end_date) if it.end_date else None,
+                "start_time": it.start_time.strftime("%H:%M") if it.start_time else None,
+                "category": it.category,
+                "place_name": it.place_name,
+            }
+            for it in items_sorted
+        ],
     }
+
+
+async def build_trip_scope(db: AsyncSession, user_id: UUID, trip_id: UUID) -> dict | None:
+    """使用者當前開著的行程，組成給 A 的一句提示。
+
+    **這不是權限機制** —— 它只讓「把這個行程改短一點」有所指。實際能改哪一份完全由
+    工具的 trip_id 決定，權限由資料層擋（見 _ai_update_card / add_card_from_chat）。
+    """
+    detail = await get_trip_detail_for_chat(db, user_id, trip_id)
+    if detail is None:
+        return None
+    cards = "\n".join(
+        f"- {c['title']}（card_id={c['card_id']}）" for c in detail["cards"]
+    ) or "（目前沒有任何卡片）"
+    brief = f"行程「{detail['title']}」（trip_id={detail['id']}）\n目前卡片：\n{cards}"
+    return {"kind": "trip", "id": str(trip_id), "brief": brief}
+
+
+async def update_card_from_chat(
+    db: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    item_id: UUID,
+    args: dict,
+) -> dict:
+    """D 窗口的 update_card：改一張既有卡片，回傳含 _item 的結果供前端即時更新。"""
+    return await _ai_update_card(db, user_id, trip_id, item_id, args)
+
+
+async def delete_card_from_chat(
+    db: AsyncSession, user_id: UUID, trip_id: UUID, item_id: UUID
+) -> dict:
+    """D 窗口的 delete_card：刪一張卡片，回傳 _deleted_id 供前端即時移除。"""
+    ok = await delete_item(db, user_id, trip_id, item_id)
+    return {"ok": ok, "_deleted_id": str(item_id)}
+
+
+async def card_read_json(
+    db: AsyncSession, user_id: UUID, trip_id: UUID, item_id: UUID
+) -> dict:
+    """把一張卡片序列化成 _item payload（前端即時更新用）。"""
+    return await _item_read_json(db, trip_id, item_id, ok=True, user_id=user_id)
 
 
 async def _geocode_items_bg(items: list[tuple[UUID, str]]) -> None:
@@ -719,124 +759,11 @@ async def reorder_items(
 
 
 # ── AI 修改既有行程 ──────────────────────────────────────────────────────────────
-
-_TRIP_EDIT_SYSTEM = """\
-你是 Garner 的旅遊行程編輯助理。用戶有一份「既有」的旅遊行程，會給你修改指示。
-你的工作是依指示，用工具對這份行程的卡片做「新增／修改／刪除」，把行程調整到位。
-你也可以查詢用戶的知識庫，把存過的景點／美食資訊帶進行程卡片。
-
-規則：
-- 只能用工具改動行程，不要把行程內容用文字重貼一遍
-- 需要查知識庫時主動呼叫 search，例如「幫我補上我存過的大阪美食」→ 先 search 再 add_card
-- 新增景點／餐廳／交通／住宿：用 add_card，一個地點一張卡，title 只放名稱（≤20 字），細節放 note
-  - 若某張卡的地點與知識庫搜尋結果的「地點」相符，用 source_item_ids 帶上對應知識的 id
-- 修改某張卡片：用 update_card，card_no 用下方「目前卡片」清單的編號；只填要改的欄位
-- 刪除某張卡片：用 delete_card，card_no 用清單編號
-- 一次指示可呼叫多個工具（例如新增好幾張卡、或同時改多張）
-- place_name 只放純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址
-- 用戶提供票券／訂位網址，或要你補上票券連結時，用 ticket_url 帶上完整網址（與地標 place_name 是不同欄位，網址放這裡）
-- 跨日的卡片（住宿連住數晚、租車多日、多日票券）要帶 end_day：例如「前 3 天住 A 飯店、後 2 天住 B 飯店」就建兩張住宿卡，A 卡 day=1/end_day=3、B 卡 day=4/end_day=5
-- 全部改完後，用繁體中文寫 1～2 句話簡短說明你做了哪些調整
-- 若用戶提問（例如「推薦景點」「需要帶什麼」「旅遊要用哪些 APP」等），先呼叫 search 查知識庫，再根據結果用繁體中文回答；若知識庫沒有相關資料，也可直接用旅遊知識回答
-- 只有完全與旅遊、行程、出行無關的問題，才簡短說明無法回答
-"""
-
-_TRIP_EDIT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search",
-            "description": "搜尋用戶的個人知識庫，找存過的景點、美食、住宿、交通等資訊。用戶說「補上我存過的...」或需要查知識庫時呼叫。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "語意搜尋描述句，例如「大阪必吃美食」「京都景點」"},
-                    "limit": {"type": "integer", "description": "回傳筆數，預設 6，最多 12"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "add_card",
-            "description": "在這份行程新增一張卡片（單一景點／餐廳／交通／住宿）。需要幾個點就呼叫幾次。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "day": {"type": "integer", "description": "第幾天，從 1 開始（行程有起始日才會排到該天）"},
-                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填；住宿／租車／多日票等才填，例如住前 3 天 day=1、end_day=3"},
-                    "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動，簡短（≤20 字）"},
-                    "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址"},
-                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
-                    "emoji": {"type": "string", "description": "代表性 emoji，可選"},
-                    "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
-                    "note": {"type": "string", "description": "卡片細節（玩法、交通、提醒等），markdown 格式，可選"},
-                    "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址），可選"},
-                    "source_item_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "從 search 結果中，與這張卡片地點相符的知識 id 陣列。可選，沒有相符就省略。",
-                    },
-                },
-                "required": ["title"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_card",
-            "description": "修改一張既有卡片。card_no 用「目前卡片」清單的編號。只填要變更的欄位，未填的保持不變。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "card_no": {"type": "integer", "description": "要修改的卡片編號（見「目前卡片」清單）"},
-                    "day": {"type": "integer", "description": "改成第幾天，從 1 開始（行程有起始日才生效）"},
-                    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天）；傳 0 可改回單日"},
-                    "title": {"type": "string", "maxLength": 30, "description": "新的卡片名稱（簡短）"},
-                    "place_name": {"type": "string", "description": "新的純地點名稱（含城市），用於地圖定位，不要放網址"},
-                    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "新的分類"},
-                    "emoji": {"type": "string", "description": "新的 emoji"},
-                    "start_time": {"type": "string", "description": "新的建議時間 HH:MM"},
-                    "note": {"type": "string", "description": "新的卡片細節（markdown）"},
-                    "booked": {"type": "boolean", "description": "是否已預定票券"},
-                    "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址）；傳空字串可清除"},
-                },
-                "required": ["card_no"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_card",
-            "description": "刪除一張既有卡片。card_no 用「目前卡片」清單的編號。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "card_no": {"type": "integer", "description": "要刪除的卡片編號（見「目前卡片」清單）"},
-                },
-                "required": ["card_no"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_url",
-            "description": "將一個網址（YouTube 影片、網頁文章）存入用戶的知識庫，系統會自動抓取內容、產生摘要與標籤。只在用戶明確提供網址並要求存入時呼叫。會消耗一次存入額度。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "要存入的完整網址（https://...）"},
-                },
-                "required": ["url"],
-            },
-        },
-    },
-]
+#
+# 行程頁的 AI 懸浮球沒有專屬端口也沒有專屬引擎 —— 它就是打 chat 的
+# POST /chat/sessions/{id}/messages，body 多帶 scope={"kind":"trip","id":...}。
+# 這裡只剩兩種東西：build_trip_scope（組當前狀態給 chat_service.resolve_scope 用）、
+# 以及卡片實際寫入的 helper（由 D 窗口的 executor 呼叫）。
 
 
 def _parse_time_str(v):
@@ -865,11 +792,18 @@ async def _ai_update_card(
     db: AsyncSession,
     user_id: UUID,
     trip_id: UUID,
-    trip_start_date,
     item_id: UUID,
     args: dict,
 ) -> dict:
     from datetime import timedelta
+
+    # 權限在這裡擋 —— 工具收得到模型給的任意 trip_id，不是別人的就查不到。
+    # （這條檢查原本不在：舊版只有 FAB 會呼叫，端口已先驗過權限。現在 chat 也能改
+    #  任一份行程，少了它就是 IDOR。）
+    accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
+    if accessible is None:
+        return {"ok": False, "error": "trip not found"}
+    trip_start_date = accessible[0].start_date
 
     item = await crud_trips.get_item(db, trip_id, item_id)
     if item is None:
@@ -961,176 +895,15 @@ async def _item_read_json(
     return {"ok": ok, "title": item.title, "_item": read.model_dump(mode="json")}
 
 
-async def ai_edit_trip_stream(
-    db: AsyncSession,
-    user_id: UUID,
-    trip_id: UUID,
-    instruction: str,
-    history: list[dict] | None = None,
-):
-    """AI 修改既有行程（SSE 串流）：依用戶指示用工具逐張新刪修卡片。
+async def mark_ai_edited(db: AsyncSession, user_id: UUID, trip_id: UUID) -> None:
+    """agent 動過這份行程之後的收尾：標記 last_edited_by 並重算 embedding。
 
-    每執行一個工具就 yield 一個 tool_result 事件，前端據此即時更新畫面：
-      add_card / update_card → 帶完整卡片（_item）
-      delete_card           → 帶 _deleted_id
-    history 為先前的對話（[{role, content}]），讓多輪追問有記憶。
-    行程不存在時 yield error 事件。
+    由 chat_service 在 scope 是 trip 的那一輪跑完後呼叫一次（不是每張卡片各跑一次）。
     """
-    from app.services import ai_service
-
     accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
     if accessible is None:
-        yield ai_service._sse("error", {"message": "trip not found"})
         return
-    trip, _ = accessible
-
-    # 以與詳情頁相同的排序呈現卡片，並建立 編號 → item_id 的對照
-    items_sorted = sorted(
-        trip.items or [],
-        key=lambda i: (str(i.start_date) if i.start_date else "", i.order_index),
-    )
-    card_map: dict[int, UUID] = {}
-    card_lines: list[str] = []
-    for n, it in enumerate(items_sorted, start=1):
-        card_map[n] = it.id
-        meta = []
-        if it.start_date:
-            meta.append(str(it.start_date) + (f"~{it.end_date}" if it.end_date and it.end_date != it.start_date else ""))
-        if it.start_time:
-            meta.append(it.start_time.strftime("%H:%M"))
-        if it.category:
-            meta.append(it.category)
-        meta_str = f"（{' · '.join(meta)}）" if meta else ""
-        card_lines.append(f"{n}. {it.title}{meta_str}")
-
-    header = [f"行程標題：{trip.title}"]
-    if trip.start_date:
-        header.append(f"起始日：{trip.start_date}")
-    if trip.end_date:
-        header.append(f"結束日：{trip.end_date}")
-    cards_block = "\n".join(card_lines) if card_lines else "（目前沒有任何卡片）"
-    user_message = (
-        "\n".join(header)
-        + "\n\n目前卡片：\n"
-        + cards_block
-        + "\n\n修改指示：\n"
-        + instruction.strip()
-    )
-
-    trip_start_date = trip.start_date
-
-    async def execute_tool(name: str, args: dict) -> dict:
-        if name == "search":
-            from app.services import ai_service as _ai
-            from app.crud import items as crud_items, chunks as crud_chunks
-            query = (args.get("query") or "").strip()
-            if not query:
-                return {"count": 0, "items": []}
-            try:
-                limit = min(int(args.get("limit") or 6), 12)
-                embedding = await _ai.embed(query)
-                from app.services.chat_service import rag_retrieve
-                hits = await rag_retrieve(db, user_id, query, limit=limit)
-                items_out = []
-                for ui, _dist in hits:
-                    summary = ""
-                    if ui.notes_md:
-                        summary = next(iter(ui.notes_md.values()), "") if isinstance(ui.notes_md, dict) else str(ui.notes_md)
-                    items_out.append({
-                        "id": str(ui.id),
-                        "title": ui.title or "",
-                        "summary": summary[:500] if summary else "",
-                    })
-                return {"count": len(items_out), "items": items_out}
-            except Exception:
-                logger.exception("search tool failed in trip ai_edit")
-                return {"count": 0, "items": []}
-
-        if name == "add_card":
-            raw_ids = args.get("source_item_ids") or []
-            source_ids = [str(x) for x in raw_ids if x]
-            res = await add_card_from_chat(
-                db, user_id, trip_id,
-                day=args.get("day"),
-                end_day=args.get("end_day"),
-                title=args.get("title", "未命名"),
-                place_name=args.get("place_name"),
-                category=args.get("category"),
-                emoji=args.get("emoji"),
-                start_time=args.get("start_time"),
-                note=args.get("note"),
-                ticket_url=args.get("ticket_url"),
-                source_item_ids=source_ids or None,
-            )
-            if not res or not res.get("id"):
-                return {"ok": False}
-            return await _item_read_json(db, trip_id, UUID(res["id"]), ok=True, user_id=user_id)
-
-        if name == "update_card":
-            try:
-                no = int(args.get("card_no"))
-            except (TypeError, ValueError):
-                return {"ok": False, "error": "invalid card_no"}
-            item_id = card_map.get(no)
-            if item_id is None:
-                return {"ok": False, "error": "card_no not found"}
-            return await _ai_update_card(db, user_id, trip_id, trip_start_date, item_id, args)
-
-        if name == "delete_card":
-            try:
-                no = int(args.get("card_no"))
-            except (TypeError, ValueError):
-                return {"ok": False, "error": "invalid card_no"}
-            item_id = card_map.get(no)
-            if item_id is None:
-                return {"ok": False, "error": "card_no not found"}
-            ok = await delete_item(db, user_id, trip_id, item_id)
-            return {"ok": ok, "_deleted_id": str(item_id)}
-
-        if name == "save_url":
-            import asyncio as _asyncio
-            from fastapi import BackgroundTasks as _BackgroundTasks
-            from app.quota_depends import _get_plan, _get_limit, _count_monthly_saves
-            from app.services import item_service
-            from app.schemas.item import ItemCreate
-            url = (args.get("url") or "").strip()
-            if not url:
-                return {"ok": False, "error": "url is required"}
-            try:
-                plan_id, _ = await _get_plan(db, user_id)
-                limit = await _get_limit(db, plan_id, "saves_monthly")
-                if limit is not None:
-                    used = await _count_monthly_saves(db, user_id)
-                    if used >= limit:
-                        return {"ok": False, "error": "quota_exceeded", "used": used, "limit": limit}
-                bt = _BackgroundTasks()
-                result = await item_service.create_item(db, user_id, ItemCreate(url=url), bt)
-                for task in bt.tasks:
-                    _asyncio.create_task(task.func(*task.args, **task.kwargs))
-                return {
-                    "ok": True,
-                    "id": str(result.id),
-                    "title": result.title or url,
-                    "source_type": result.source_type,
-                    "status": result.status,
-                }
-            except Exception:
-                logger.exception("save_url failed in trip ai_edit: url=%s", url)
-                return {"ok": False, "error": "failed to save url"}
-
-        return {"ok": False, "error": "unknown tool"}
-
-    from datetime import date as _date
-    system = _TRIP_EDIT_SYSTEM + f"\n今天日期：{_date.today().isoformat()}"
-    async for ev in ai_service.stream_tool_loop(
-        system, user_message, _TRIP_EDIT_TOOLS, execute_tool, history=history
-    ):
-        yield ev
-
-    # 標記為 AI 最後編輯（靜默，不另發事件）
-    accessible2 = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
-    if accessible2 is not None:
-        await crud_trips.update_trip(db, accessible2[0], last_edited_by="ai")
+    await crud_trips.update_trip(db, accessible[0], last_edited_by="ai")
     asyncio.create_task(_embed_trip_bg(trip_id, user_id))
 
 

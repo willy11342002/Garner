@@ -20,11 +20,7 @@ _LAZY_ATTRS = {
     "analyze_chain_hop": ".chain",
     "analyze_full_chain": ".chain",
     # chat
-    "agentic_chat_stream": ".chat",
-    "chat_stream": ".chat",
     "compress_memory": ".chat",
-    "synthesize_custom": ".chat",
-    "synthesize_focus": ".chat",
     # embed
     "embed": ".embed",
     "embed_many": ".embed",
@@ -46,8 +42,6 @@ _LAZY_ATTRS = {
     # segment
     "segment": ".segment",
     "preload_segment": ".segment",
-    # tools
-    "stream_tool_loop": ".tools",
 }
 
 __all__ = list(_LAZY_ATTRS)
