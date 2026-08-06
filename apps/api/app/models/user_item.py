@@ -54,7 +54,7 @@ class UserItem(Base):
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ── BM25 full-text search fields ────────────────────────────────────────
-    # title_zh / notes_zh：CKIP 斷詞後、空白分隔的文字，供 search_tsv 衍生使用
+    # title_zh / notes_zh：jieba 斷詞後、空白分隔的文字，供 search_tsv 衍生使用
     title_zh: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes_zh: Mapped[str | None] = mapped_column(Text, nullable=True)
     # search_tsv 由 DB 端 GENERATED ALWAYS AS 從 title_zh/notes_zh 自動衍生，唯讀。

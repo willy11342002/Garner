@@ -4,7 +4,7 @@ Revision ID: 0056
 Revises: 0055
 Create Date: 2026-07-26
 
-user_items 加 title_zh / notes_zh（CKIP 斷詞後文字）+ search_tsv（DB 端 GENERATED
+user_items 加 title_zh / notes_zh（中文斷詞後文字，當時用 CKIP，現已改為 jieba）+ search_tsv（DB 端 GENERATED
 tsvector，供 hybrid search 的 BM25-like 全文檢索用），並建 GIN index。
 """
 from typing import Sequence, Union
