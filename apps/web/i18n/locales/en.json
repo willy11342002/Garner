@@ -328,16 +328,9 @@
     "title": "Set Up Quick Save",
     "page_title": "Garner — Set Up Quick Save",
     "desktop": {
-      "detecting": "Detecting Extension…",
       "desc": "Install the Garner Extension to save any page with one click.",
       "install_btn": "Install Chrome Extension →",
-      "install_hint": "After installing, refresh this page to authorise.",
-      "authorising": "Authorising Extension…",
-      "status_done": "Extension connected",
-      "hint_done": "You can now save any page with one click.",
-      "key_or": "or",
-      "key_close": "Close this tab",
-      "error": "Authorisation failed. Please refresh and try again."
+      "install_hint": "Once installed, click the Garner icon in your toolbar to save — no extra authorisation needed."
     },
     "ios": {
       "desc": "Install the Garner Shortcut on your iPhone — share and save instantly, no Token setup needed.",

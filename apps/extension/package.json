@@ -1,7 +1,7 @@
 {
   "name": "garner-extension",
   "displayName": "Garner — 一鍵收藏，AI 幫你整理",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "gen-icon": "node scripts/gen-icon.mjs",
@@ -10,32 +10,20 @@
     "package": "plasmo package"
   },
   "dependencies": {
-    "plasmo": "^0.90.0",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "plasmo": "^0.90.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.289",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
     "sharp": "^0.33.0",
     "typescript": "^5.7.0"
   },
   "manifest": {
-    "host_permissions": [
-      "$PLASMO_PUBLIC_API_BASE_URL/*"
-    ],
     "permissions": [
       "activeTab",
-      "tabs",
-      "storage",
-      "sidePanel"
+      "storage"
     ],
     "action": {
       "default_title": "儲存到 Garner"
-    },
-    "side_panel": {
-      "default_path": "sidepanel.html"
     }
   }
 }

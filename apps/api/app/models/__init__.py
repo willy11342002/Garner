@@ -1,5 +1,4 @@
 from app.models.app_setting import AppSetting
-from app.models.personal_access_token import PersonalAccessToken
 from app.models.plan_feature_limit import PlanFeatureLimit
 from app.models.user_feature_usage import UserFeatureUsage
 from app.models.notification import Notification, NotificationType
@@ -42,7 +41,6 @@ __all__ = [
     "AppSetting",
     "Notification",
     "NotificationType",
-    "PersonalAccessToken",
     "PlanFeatureLimit",
     "UserFeatureUsage",
 ]

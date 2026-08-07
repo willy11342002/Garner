@@ -63,10 +63,10 @@ garner/
 - `quick_meta` — `POST /items/` 建立當下同步跑的輕量 metadata 前置步驟（在背景 ingest pipeline 之前跑,讓 201/203 回應時 title/thumbnail 就正確）：YouTube/TikTok 用平台原生 oEmbed；IG/Facebook 沒有可用的官方 oEmbed（需 Meta App Review），改用 `facebookexternalhit` User-Agent 直接抓貼文頁面的 og:title/og:description/og:image（IG/FB 官方連結預覽爬蟲會放行、跳過登入牆);Article 直接重用現有單次 Apify 呼叫（本來就快，同時拿到 title + 全文）。逾時/失敗回退成 title=null + API 回 203，交給背景 pipeline 補正。
 
 ### API routers（`apps/api/app/routers/`）
-`items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `pat`（personal access token）· `trips` · `trip_tags`
+`items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `trips` · `trip_tags`
 
 ### API crud（`apps/api/app/crud/`）
-`items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `personal_access_tokens` · `trips`
+`items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `trips`
 
 ### Web composables（`apps/web/composables/`）
 - `useItems` / `useItemStore` — Item 資料與狀態
@@ -307,19 +307,18 @@ routeRules: {
 
 ```
 apps/extension/
-├── popup.vue            # Popup UI（存入成功提示）
-├── contents/            # Content scripts（偵測頁面、抓 og:image）
-│   └── detector.ts
-├── background/          # Service worker
+├── background/          # Service worker（整個擴充只有這一支）
 │   └── index.ts
 ├── assets/
 ├── .env
 └── package.json
 ```
 
-- Extension 功能邊界：偵測頁面 → 抓 og:image → 呼叫 FastAPI → Popup 顯示結果
-- Popup 只顯示存入狀態（成功 / 處理中 / 失敗），不做複雜 UI
-- API endpoint 從 `PLASMO_PUBLIC_API_BASE_URL` 讀取
+- **Extension 不接觸後端**：點 toolbar icon → `chrome.tabs.create` 開新分頁到 `${PLASMO_PUBLIC_WEB_URL}/app/quick-add?url=<當前分頁網址>`，由網頁版（`apps/web/pages/app/quick-add.vue`）負責呼叫 API、認證、顯示結果。非 http(s) 的分頁（`chrome://` 等）改開 `/app`。iOS 捷徑走的是同一條路徑。
+- **不要把 API base 寫回擴充**：後端網址是 build-time 寫死的，一改就得重送 Chrome Web Store 審核（審核要等幾天）。2026-08 後端從 Railway 搬到 Fly.io 就是這樣讓線上版整個掛掉。擴充只認前端網域，後端搬家與擴充無關。
+- 擴充沒有 UI（無 popup / sidepanel / options）也沒有 content script。權限只有 `activeTab` + `storage`（storage 僅用於升級時清掉舊版殘留的 PAT），沒有 `host_permissions`。
+- 認證由網頁版處理：未登入時 `middleware/auth.global.ts` 會導去 `/login?redirect=...`，登入後自動回到 quick-add 繼續新增。
+- **PAT（personal access token）機制已於 2026-08 整套移除**（router / crud / model / `personal_access_tokens` 表 / `dependencies` 的 PAT 驗證分支全刪，migration `0058`）。它原本只服務擴充與 iOS 捷徑，兩者改走 quick-add 後就沒有用途了。`get_current_user` 現在只認 Supabase JWT，不要再引入長期有效的 token。
 - **部署前必須先升版號**：Chrome Web Store 要求每次上傳的版本必須大於已發布版本，否則會報 `Invalid version number` 錯誤。每次發布前請先更新 `apps/extension/package.json` 的 `version` 欄位（遵循 semver，patch release 改第三位即可）。
 
 ---

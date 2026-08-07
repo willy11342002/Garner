@@ -328,16 +328,9 @@
     "title": "設置極速存入",
     "page_title": "Garner — 設置極速存入",
     "desktop": {
-      "detecting": "偵測 Extension 中…",
       "desc": "安裝 Garner Extension，在任何網頁上按一下即可存入。",
       "install_btn": "前往安裝 Chrome Extension →",
-      "install_hint": "安裝完成後，重新整理此頁面即可授權。",
-      "authorising": "正在授權 Extension…",
-      "status_done": "Extension 已連結",
-      "hint_done": "可以開始在任何頁面一鍵存入了。",
-      "key_or": "或",
-      "key_close": "關閉此頁",
-      "error": "授權失敗，請重新整理後再試。"
+      "install_hint": "安裝後點一下工具列的 Garner 圖示即可存入，不需要額外授權。"
     },
     "ios": {
       "desc": "在 iPhone 上安裝 Garner 捷徑，分享時直接存入內容，不需要額外設定 Token。",

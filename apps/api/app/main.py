@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, pat, quota, reports, search, tags, trips, trip_tags
+from app.routers import admin, articles, auth, billing, chat, items, locations, notifications, quota, reports, search, tags, trips, trip_tags
 
 import logging
 # DEBUG=true（本地開發）→ 全域 log 層級設為 DEBUG，看得到 AI chat 的逐步動作
@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
     await close_checkpointer()
 
 
-app = FastAPI(title="Garner API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Garner API", version="0.2.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in settings.allowed_origins.split(",")]
 _origin_regex = r"chrome-extension://.*"
@@ -121,7 +121,6 @@ app.add_middleware(
 
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(pat.router, prefix="/auth/pat", tags=["pat"])
 app.include_router(articles.router, prefix="/articles", tags=["articles"])
 app.include_router(items.router, prefix="/items", tags=["items"])
 app.include_router(locations.router, tags=["locations"])

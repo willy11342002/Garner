@@ -6,47 +6,16 @@
 
       <!-- Desktop: Chrome Extension -->
       <template v-if="device === 'desktop'">
-        <!-- 偵測中 -->
-        <template v-if="extInstalled === null">
-          <p class="connected__hint">{{ t('connected.desktop.detecting') }}</p>
-        </template>
-
-        <!-- 未安裝 Extension -->
-        <template v-else-if="extInstalled === false">
-          <p class="connected__desc">{{ t('connected.desktop.desc') }}</p>
-          <a
-            href="https://chromewebstore.google.com/detail/nleemnjodbbknndffljjmcolkicmdghh"
-            target="_blank"
-            rel="noopener"
-            class="connected__install-btn"
-          >
-            {{ t('connected.desktop.install_btn') }}
-          </a>
-          <p class="connected__hint-sm">{{ t('connected.desktop.install_hint') }}</p>
-        </template>
-
-        <!-- 已安裝：授權中 -->
-        <template v-else-if="status === 'loading'">
-          <p class="connected__hint">{{ t('connected.desktop.authorising') }}</p>
-        </template>
-
-        <!-- 已安裝：授權成功 -->
-        <template v-else-if="status === 'done'">
-          <div class="connected__success-icon">✓</div>
-          <p class="connected__status">{{ t('connected.desktop.status_done') }}</p>
-          <p class="connected__hint">{{ t('connected.desktop.hint_done') }}</p>
-          <div class="connected__key">
-            <kbd>Ctrl</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
-            <span class="connected__key-or">{{ t('connected.desktop.key_or') }}</span>
-            <kbd>⌘</kbd><span class="connected__key-sep">+</span><kbd>W</kbd>
-            <span class="connected__key-or">{{ t('connected.desktop.key_close') }}</span>
-          </div>
-        </template>
-
-        <!-- 授權失敗 -->
-        <template v-else>
-          <p class="connected__error">{{ t('connected.desktop.error') }}</p>
-        </template>
+        <p class="connected__desc">{{ t('connected.desktop.desc') }}</p>
+        <a
+          href="https://chromewebstore.google.com/detail/nleemnjodbbknndffljjmcolkicmdghh"
+          target="_blank"
+          rel="noopener"
+          class="connected__install-btn"
+        >
+          {{ t('connected.desktop.install_btn') }}
+        </a>
+        <p class="connected__hint-sm">{{ t('connected.desktop.install_hint') }}</p>
       </template>
 
       <!-- iOS: Shortcut -->
@@ -103,69 +72,16 @@
 </template>
 
 <script setup lang="ts">
-definePageMeta({})
+// 這頁只做一件事：依裝置給對應的安裝連結（Chrome Extension / iOS 捷徑）。
+// 兩者都是「開分頁到 /app/quick-add?url=...」由網頁版用既有 session 存入，
+// 不需要授權、不需要發 token，所以這裡沒有任何 API 呼叫。
 const { t } = useI18n()
 useHead({ title: t('connected.page_title') })
 
-const client = useSupabaseClient()
-const config = useRuntimeConfig()
-
-// 裝置偵測
 const ua = import.meta.client ? navigator.userAgent : ''
 const isIOSPhone = /iPhone|iPod/.test(ua)
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/.test(ua)
 const device = isIOSPhone ? 'ios' : isMobile ? 'android' : 'desktop'
-
-type Status = 'loading' | 'done' | 'error'
-const status = ref<Status>('loading')
-// null = 偵測中，true/false = 偵測結果
-const extInstalled = ref<boolean | null>(null)
-
-onMounted(async () => {
-  if (device !== 'desktop') return
-
-  // PING / PONG 偵測 extension（timeout 1s fallback）
-  extInstalled.value = await new Promise<boolean>(resolve => {
-    const timer = setTimeout(() => {
-      window.removeEventListener('message', handler)
-      resolve(false)
-    }, 1000)
-    function handler(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return
-      if (e.data?.type !== 'GARNER_PONG') return
-      clearTimeout(timer)
-      window.removeEventListener('message', handler)
-      resolve(true)
-    }
-    window.addEventListener('message', handler)
-    window.postMessage({ type: 'GARNER_PING' }, window.location.origin)
-  })
-
-  // 不管有沒有擴充都靜默建立 PAT
-  try {
-    const { data: { session } } = await client.auth.getSession()
-    if (!session) { status.value = 'error'; return }
-
-    const resp = await fetch(`${config.public.apiBase}/auth/pat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ name: 'Chrome Extension' }),
-    })
-
-    if (!resp.ok) { status.value = 'error'; return }
-
-    const { token } = await resp.json()
-    if (extInstalled.value) {
-      window.postMessage({ type: 'GARNER_TOKEN_UPDATE', pat: token }, window.location.origin)
-      status.value = 'done'
-    }
-  } catch {
-    status.value = 'error'
-  }
-})
 </script>
 
 <style scoped>
@@ -197,33 +113,12 @@ onMounted(async () => {
   line-height: 1;
 }
 
-.connected__success-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-  font-size: 18px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 12px;
-}
-
 .connected__title {
   font-family: var(--font-brand);
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.03em;
   margin: 0 0 20px;
-}
-
-.connected__status {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--accent);
-  margin: 0 0 8px;
 }
 
 .connected__desc {
@@ -233,24 +128,10 @@ onMounted(async () => {
   margin: 0 0 20px;
 }
 
-.connected__hint {
-  font-size: 13px;
-  color: var(--text-mid);
-  margin: 0 0 20px;
-  line-height: 1.6;
-}
-
 .connected__hint-sm {
   font-size: 11.5px;
   color: var(--text-dim);
   margin: 10px 0 0;
-  line-height: 1.6;
-}
-
-.connected__error {
-  font-size: 13px;
-  color: #e85555;
-  margin: 0;
   line-height: 1.6;
 }
 
@@ -269,34 +150,6 @@ onMounted(async () => {
   transition: opacity 0.15s;
 }
 .connected__install-btn:hover { opacity: 0.88; }
-
-/* Key shortcut */
-.connected__key {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-mid);
-  font-size: 13px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.connected__key kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3px 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.connected__key-sep { font-size: 11px; color: var(--text-mid); }
-.connected__key-or { margin: 0 4px; color: var(--text-dim); font-size: 12px; }
 
 /* Steps */
 .connected__steps {
