@@ -11,7 +11,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U garner -d garner"]
+      # 走 TCP + 密碼認證，跟 app 的連線方式一致。
+      # 原本用 pg_isready 不做認證，role 不存在時照樣回綠燈，
+      # depends_on 就會放行一個其實連不上的 DB。
+      test: ["CMD-SHELL", "PGPASSWORD=garner psql -h 127.0.0.1 -U garner -d garner -c 'select 1' || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -32,6 +35,10 @@ services:
         condition: service_healthy
     volumes:
       - ./apps/api:/app
+      # 蓋在 bind mount 之上，讓映像內預先下載好的 flashrank 模型不被遮住。
+      # 少了這行，容器每次都要重抓 98.7MB，還會經由 bind mount 把 162MB
+      # 寫回主機的 apps/api/.cache 並觸發 --reload。
+      - api_cache:/app/.cache
     command: sh entrypoint.sh
 
   web:
@@ -50,3 +57,4 @@ services:
 
 volumes:
   postgres_data:
+  api_cache:
