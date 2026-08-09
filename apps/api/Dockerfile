@@ -6,6 +6,12 @@ COPY --from=ghcr.io/astral-sh/uv:0.6.11 /uv /uvx /bin/
 
 WORKDIR /app
 
+# venv 必須放在 /app 之外。docker-compose.yml 會把 ./apps/api 掛載成 /app，
+# 預設的 /app/.venv 會被主機（Windows）的 .venv 整個蓋掉，容器裡就找不到
+# alembic / uvicorn。放 /opt/venv 就不受掛載影響。
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # 依賴層：只複製 lock 與 pyproject，原始碼改動時這層仍能命中 cache。
@@ -14,9 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 # --no-install-project：此時 app/ 還沒複製進來，先只裝第三方依賴。
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
-
-# 讓後續的 python / uvicorn 直接走 uv 建好的環境
-ENV PATH="/app/.venv/bin:$PATH"
 
 # Pre-download the FlashRank reranker model weights into the image so cold
 # starts (this app scales to zero when idle) don't hit the network on every

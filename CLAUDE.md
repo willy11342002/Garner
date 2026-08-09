@@ -250,8 +250,13 @@ CI／部署／Docker 三邊各解出一組版本，測的跟跑的就不是同�
 - `uv.lock` 進版控，是依賴的唯一真相。CI 與部署一律加 `--locked`（lock 與 pyproject 不一致就讓它失敗）。
 - uv 版本釘在三處：`apps/api/Dockerfile`、`.github/workflows/ci.yml`、`.github/workflows/deploy-api.yml`。
   要升級就三處一起升，不要只動一處。
-- `apps/api/.dockerignore` 必須排除 `.venv` 與 `.env`：uv 在映像內的 `/app/.venv` 建環境，
-  本機 Windows venv 蓋上去會直接壞掉；`.env` 有真實金鑰，不能烤進映像。
+- 映像內的 venv 放 `/opt/venv`（靠 `UV_PROJECT_ENVIRONMENT`），**不要用預設的 `/app/.venv`**：
+  `docker-compose.yml` 會把 `./apps/api` 掛載成 `/app`，預設路徑會被主機 venv 整個蓋掉，
+  容器裡就找不到 `alembic` / `uvicorn`。
+- `apps/api/.dockerignore` 必須排除 `.venv` 與 `.env`（`.env` 有真實金鑰，不能烤進映像）。
+- `apps/api/entrypoint.sh` **不是死檔**，`docker-compose.yml` 的 api service 靠它啟動
+  （本機 compose 專用：對 compose 內的 pgvector 跑 migration + `--reload`）。
+  生產的 migration 走 `deploy-api.yml`，兩者是不同環境、不重複。
 
 ### Async 規則
 
