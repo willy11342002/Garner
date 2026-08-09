@@ -337,6 +337,26 @@ routeRules: {
 - 跨頁共用的元件樣式（例如 `.selbar`）獨立成一支 CSS 檔案。
 - 每個頁面（`app/index.vue`、`app/archive.vue` 等）有對應的 CSS 檔案（`home.css`、`archive.css`）。
 
+### 依賴管理（pnpm，版本釘在 `packageManager`）
+
+- pnpm 版本由 `apps/web/package.json` 的 `packageManager` 欄位決定。Dockerfile 只跑
+  `corepack enable`（**不要用 `corepack prepare pnpm@latest`**，那等於每次建置抓當下最新版）；
+  GitHub Actions 的 `pnpm/action-setup` 要帶 `package_json_file: apps/web/package.json`
+  （repo 根目錄沒有 package.json，不指定會找不到版本）。
+- pnpm 10+ 的設定一律放 `apps/web/pnpm-workspace.yaml`，**不是** package.json 的 `pnpm` 欄位，
+  也不是 `.npmrc`（後者現在只讀 auth / registry）。
+- 依賴的 build script 預設不執行，且 pnpm 11 的 `strictDepBuilds` 預設為 true——沒放行就是
+  建置失敗。放行寫在 `allowBuilds`，**它是 map 不是 list**：
+  `esbuild: true`，寫成 `- esbuild` 陣列不會生效也不會報錯。舊的 `onlyBuiltDependencies`
+  在 pnpm 11 已移除。
+- `apps/web/Dockerfile` 必須把 `pnpm-workspace.yaml` 跟 package.json、lock 一起 COPY，
+  否則 install 當下讀不到 `allowBuilds`。
+- `nuxt.config.ts` 釘的是 `preset: 'vercel'`（生產走 Vercel），產物在 `.vercel/output`。
+  Docker 映像要的是 `.output`，靠 Dockerfile 內的 `NITRO_PRESET=node-server` 覆寫，
+  **不要去改 nuxt.config.ts**。
+- `apps/web/.dockerignore` 必須排除 `node_modules`（pnpm 的 symlink 會讓 docker 打包
+  build context 失敗）與 `.env`。
+
 ### 命名規則
 
 - 元件檔案：`PascalCase`（`ItemCard.vue`）

@@ -37,5 +37,6 @@
     "@nuxt/typescript-build": "^3.0.0",
     "@vite-pwa/nuxt": "^1.1.1",
     "typescript": "^5.7.0"
-  }
+  },
+  "packageManager": "pnpm@11.3.0"
 }

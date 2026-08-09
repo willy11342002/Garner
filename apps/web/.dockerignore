@@ -1,0 +1,16 @@
+# node_modules 必須排除：pnpm 的 symlink / hardlink 結構會讓 docker 打包 context 時
+# 直接失敗（archive/tar: unknown file mode），而且映像內本來就會自己 pnpm install。
+node_modules
+
+# 機密：.env 有真實金鑰，不能進 builder 層
+.env
+.env.*
+!.env.example
+
+# 建置產物（映像內會重新產生）
+.nuxt
+.output
+dist
+.vercel
+
+.git

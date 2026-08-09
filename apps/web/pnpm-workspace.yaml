@@ -1,3 +1,13 @@
+# pnpm 10+ 起，除了 auth / registry 之外的設定一律讀這個檔案，
+# 不再讀 package.json 的 "pnpm" 欄位，也不再讀 .npmrc。
+#
+# pnpm 預設不執行依賴的 build script，但這幾個套件的 postinstall 是用來取得平台
+# 原生 binary 的（esbuild 尤其關鍵，缺了 nuxt build 直接失敗），必須明確放行，
+# 否則乾淨環境（Docker / CI）會以 ERR_PNPM_IGNORED_BUILDS 中止。
+#
+# 注意兩件事：
+# 1. 鍵名是 allowBuilds。pnpm 11 已移除舊的 onlyBuiltDependencies。
+# 2. 它是 map 不是 list——值要寫 true / false，寫成陣列不會生效（也不會報錯）。
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true
