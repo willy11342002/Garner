@@ -15,6 +15,9 @@ build/
 # Python
 __pycache__/
 downloads/
+# flashrank 模型快取（約 162MB）。compose 把 ./apps/api 掛成 /app，
+# 容器在 /app/.cache 下載的模型會直接寫回這裡。
+.cache/
 *.ipynb
 *.pyc
 .venv/

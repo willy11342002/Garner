@@ -14,6 +14,10 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
+# 主機上的 flashrank 快取（162MB）。映像自己會在建置時預先下載，
+# 讓 COPY . . 把主機版本蓋上去只會拖慢建置並帶進 __MACOSX 垃圾。
+.cache/
+
 # 開發用，執行期不需要
 tests/
 *.ipynb
