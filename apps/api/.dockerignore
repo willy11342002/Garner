@@ -1,0 +1,19 @@
+# 本機 venv 必須排除：uv 會在映像內的 /app/.venv 建環境，
+# 若讓 COPY . . 把 Windows 的 .venv 蓋上去，映像會直接壞掉。
+.venv
+venv
+
+# 機密：這個目錄下的 .env 有真實金鑰，絕對不能進映像
+.env
+.env.*
+!.env.example
+
+# Python 產物
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# 開發用，執行期不需要
+tests/
+*.ipynb

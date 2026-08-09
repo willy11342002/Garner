@@ -54,10 +54,8 @@ pnpm dev               # http://localhost:3000
 ```bash
 cd apps/api
 cp .env.example .env   # 填入環境變數
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload  # http://localhost:8000
+uv sync                # 依 uv.lock 建 .venv（預設含 dev 依賴）
+uv run uvicorn app.main:app --reload  # http://localhost:8000
 ```
 
 ### 4. Chrome Extension（Plasmo）

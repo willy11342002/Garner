@@ -230,6 +230,29 @@ apps/api/
 - Pydantic schema 命名：`ItemCreate`、`ItemRead`、`ItemUpdate`（動作後綴）
 - Router prefix：`/items`、`/tags`
 
+### 依賴管理（uv，**禁止 pip**）
+
+**任何情況都不准用 `pip`。** 這不是偏好問題：`pip install -e .` 會無視 `uv.lock` 重新解析依賴，
+CI／部署／Docker 三邊各解出一組版本，測的跟跑的就不是同一組。2026-08 之前 CI 的 pytest
+長期是 command not found（`pip install -e .` 不含 dev 依賴），再被 `continue-on-error: true`
+蓋掉，156 個測試從來沒真的跑過——就是這樣來的。
+
+| 要做的事 | 指令 |
+|---|---|
+| 安裝／同步依賴 | `uv sync`（預設含 dev group） |
+| 生產環境安裝 | `uv sync --locked --no-dev` |
+| 跑任何 Python 指令 | `uv run <cmd>`（`uv run pytest`、`uv run alembic upgrade head`） |
+| 新增依賴 | `uv add <pkg>`（自動更新 `uv.lock`） |
+| 新增 dev 依賴 | `uv add --dev <pkg>` |
+
+- dev 依賴放 `[dependency-groups]`（PEP 735），**不要放 `[project.optional-dependencies]`**：
+  `uv sync` 預設就會裝前者，後者得多打 `--extra dev`——這是踩過的坑。
+- `uv.lock` 進版控，是依賴的唯一真相。CI 與部署一律加 `--locked`（lock 與 pyproject 不一致就讓它失敗）。
+- uv 版本釘在三處：`apps/api/Dockerfile`、`.github/workflows/ci.yml`、`.github/workflows/deploy-api.yml`。
+  要升級就三處一起升，不要只動一處。
+- `apps/api/.dockerignore` 必須排除 `.venv` 與 `.env`：uv 在映像內的 `/app/.venv` 建環境，
+  本機 Windows venv 蓋上去會直接壞掉；`.env` 有真實金鑰，不能烤進映像。
+
 ### Async 規則
 
 - 所有 route handler 都用 `async def`
@@ -353,6 +376,7 @@ apps/extension/
 
 ## 重要技術決策（禁止在未討論前更改）
 
+- Python 依賴一律走 uv（`uv sync` / `uv run`），**禁止任何形式的 pip**；`uv.lock` 是唯一真相，CI 與部署用 `--locked`（細節見上方「依賴管理」）
 - BackgroundTasks 異步處理：MVP 階段不引入 Celery
 - Embedding 維度：1536（OpenAI text-embedding-3-small），不得更改，改了要 re-embed 全部資料
 - 軟刪除：`deleted_at` 欄位 + 排程硬刪除，禁止直接 hard delete

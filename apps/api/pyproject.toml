@@ -32,7 +32,10 @@ dependencies = [
     "jieba>=0.42.1",
 ]
 
-[project.optional-dependencies]
+# dev 依賴放 [dependency-groups]（PEP 735）而非 [project.optional-dependencies]。
+# 差別很重要：`uv sync` 預設就會裝 dependency-groups 的 dev，但 extras 必須額外
+# 加 --extra dev 才會裝——CI 當初 pytest 抓不到就是踩這個洞。
+[dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.25.0",

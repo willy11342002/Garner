@@ -15,17 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          version: '0.6.11'
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
 
       - name: Install dependencies
-        run: pip install -e .
+        run: uv sync --locked --no-dev   # 部署不需要 pytest / ipykernel
         working-directory: apps/api
 
       - name: Run migrations
-        run: alembic upgrade head
+        run: uv run alembic upgrade head
         working-directory: apps/api
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
