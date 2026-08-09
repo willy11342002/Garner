@@ -26,6 +26,10 @@ venv/
 .plasmo/
 keys.json
 
+# Claude Code
+# settings.json（外掛宣告）要進版控；settings.local.json 有 API key，永遠不要
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db

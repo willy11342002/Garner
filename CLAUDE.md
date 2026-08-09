@@ -43,6 +43,34 @@ garner/
 
 ---
 
+## AI 外掛協作規則（superpowers / gstack / CE）
+
+> 本專案裝了三套 agent 外掛，它們的 plan / review / debug 技能高度重疊。以下規則決定誰負責哪一段，避免互搶觸發。
+> superpowers 與 compound-engineering 是 **project scope**（只在本專案生效，宣告於 `.claude/settings.json`）；gstack 是全域安裝（`~/.claude/skills/gstack`，所有專案都看得到）。
+
+**最高優先**：本文件的分層規則與上方「開發新功能前強制流程」**優先於任何外掛的內建流程**。外掛的建議與本文件衝突時，一律以本文件為準。
+
+**階段分工**（每一段只由一套負責，其餘不要重複觸發）
+
+| 階段 | 用 | 不要用 |
+|---|---|---|
+| 想清楚要不要做 | gstack `/office-hours`、`/spec` | `/ce-ideate`、`/ce-brainstorm` |
+| 拆計畫 | superpowers `/write-plan` | `/ce-plan`、gstack `/autoplan` |
+| 寫碼 | superpowers TDD + `/execute-plan` | `/ce-work` |
+| 除錯 | superpowers `systematic-debugging` | gstack `/investigate`、`/ce-debug` |
+| 驗 UI | gstack `/qa`、`/browse` | `/ce-test-browser` |
+| Code review | gstack `/review` | `/ce-code-review` |
+| 出貨 | gstack `/ship`、`/land-and-deploy` | `/ce-commit-push-pr` |
+| 收尾沉澱 | CE `/ce-compound` | gstack `/learn` |
+
+改 API 時建議先 `/freeze apps/api`，避免 monorepo 誤傷 web。
+
+**CE 的 compound 產出要導回這裡**：`/ce-compound` 預設寫進 `docs/solutions/`。本專案的單一真相來源是下方「現有模組地圖」——跑完 compound 後，若本輪新增了 service / composable / component，**必須回頭更新模組地圖**，不要讓 `docs/solutions/` 長成第二份真相來源。
+
+**成本提醒**：`/ce-plan`（~38k tok）、`/ce-babysit-pr`（~30k）、`/ce-compound`（~26k）、`/ce-code-review`（~20k）、superpowers `subagent-driven-development`（~10k）單次呼叫很貴，非必要不要順手打。
+
+---
+
 ## 現有模組地圖（動工前先掃，避免重造輪子）
 
 > 以實際 codebase 為準（非理想範本）。一句話描述職責，找相近的就擴充。
