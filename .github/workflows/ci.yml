@@ -34,7 +34,6 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-      - run: pip install -e .
+      - run: pip install -e ".[dev]"   # [dev] 才有 pytest，只裝 -e . 會 command not found
       - name: Run tests
         run: pytest tests/ -v
-        continue-on-error: true  # 測試不存在時不阻塞 CI
