@@ -4,7 +4,8 @@ interface Props {
   checkoutUrl?: string
 }
 
-const props = withDefaults(defineProps<Props>(), {
+// 不接回傳值：template 直接用 prop 名，script 內沒有用到 props 物件
+withDefaults(defineProps<Props>(), {
   currentPlan: undefined,
   checkoutUrl: undefined,
 })

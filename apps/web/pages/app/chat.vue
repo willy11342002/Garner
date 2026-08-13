@@ -11,7 +11,7 @@
             <span class="chat-quota__label">{{ t('chat.quota_label') }}</span>
           </div>
           <div v-if="quota.chat.limit !== null" class="chat-quota__bar">
-            <div class="chat-quota__fill" :style="{ width: chatQuotaPct + '%' }"></div>
+            <div class="chat-quota__fill" :style="{ width: chatQuotaPct + '%' }"/>
           </div>
         </div>
         <button class="chat-icon-btn" :title="t('chat.new')" @click="newSession">
@@ -135,7 +135,7 @@
                         :to="`/app/item/${item.id}`"
                       >
                         <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="src-card__thumb">
-                        <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                        <div v-else class="src-card__thumb src-card__thumb--empty"/>
                         <div class="src-card__body">
                           <span class="src-card__title">{{ item.title || item.url }}</span>
                           <span class="src-card__type">{{ sourceLabel(item.source_type) }}</span>
@@ -158,7 +158,7 @@
                         <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
                         <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
                         <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
-                          <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
+                          <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags?.join(', ') }}</span>
                           <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
                           <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
                         </template>
@@ -176,7 +176,7 @@
                       </div>
                       <Transition name="thinking">
                         <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${bi}`)" class="process-body__tool-titles">
-                          <button v-for="item in (block as ToolBlock).toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
+                          <button v-for="(item, ti) in (block as ToolBlock).toolResult!.titles" :key="item.id ?? ti" class="process-body__tool-title" @click="previewItemId = item.id">{{ item.title }}</button>
                         </div>
                       </Transition>
                     </div>
@@ -199,7 +199,7 @@
                   <div v-if="openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
                     <div v-for="src in sourcesMap[msg.id]" :key="src.id" class="src-card" role="button" @click="previewItemId = src.id">
                       <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
-                      <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                      <div v-else class="src-card__thumb src-card__thumb--empty"/>
                       <div class="src-card__body">
                         <span class="src-card__title">{{ src.title || src.url }}</span>
                         <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
@@ -246,7 +246,7 @@
                         </div>
                         <Transition name="thinking">
                           <div v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report' && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
-                            <button v-for="item in step.toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
+                            <button v-for="(item, ti) in step.toolResult.titles" :key="item.id ?? ti" class="process-body__tool-title" @click="previewItemId = item.id">{{ item.title }}</button>
                           </div>
                         </Transition>
                       </div>
@@ -271,7 +271,7 @@
                   <div v-if="openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
                     <div v-for="src in sourcesMap[msg.id]" :key="src.id" class="src-card" role="button" @click="previewItemId = src.id">
                       <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
-                      <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                      <div v-else class="src-card__thumb src-card__thumb--empty"/>
                       <div class="src-card__body">
                         <span class="src-card__title">{{ src.title || src.url }}</span>
                         <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
@@ -290,7 +290,7 @@
           <div v-if="(loading || liveBlocks.length) && streamingSessionId === activeSessionId" class="msg msg--assistant">
             <!-- 等待第一個 block 前顯示載入點 -->
             <div v-if="loading && !liveBlocks.length" class="msg-thinking">
-              <span></span><span></span><span></span>
+              <span/><span/><span/>
             </div>
 
             <!-- 依 SSE 到達順序顯示各 block -->
@@ -307,7 +307,7 @@
                     <span v-if="(block as ToolBlock).toolCall.query" class="process-body__param">query: "{{ (block as ToolBlock).toolCall.query }}"</span>
                     <span v-if="(block as ToolBlock).toolCall.name === 'add_trip_card' && (block as ToolBlock).toolCall.title" class="process-body__param">{{ (block as ToolBlock).toolCall.title }}</span>
                     <template v-if="(block as ToolBlock).toolCall.name === 'structured_filter'">
-                      <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags.join(', ') }}</span>
+                      <span v-if="(block as ToolBlock).toolCall.tags?.length" class="process-body__param">tags: {{ (block as ToolBlock).toolCall.tags?.join(', ') }}</span>
                       <span v-if="(block as ToolBlock).toolCall.source_type" class="process-body__param">source: {{ (block as ToolBlock).toolCall.source_type }}</span>
                       <span v-if="(block as ToolBlock).toolCall.start_date || (block as ToolBlock).toolCall.end_date" class="process-body__param">date: {{ (block as ToolBlock).toolCall.start_date ?? '…' }} ～ {{ (block as ToolBlock).toolCall.end_date ?? '…' }}</span>
                     </template>
@@ -329,7 +329,7 @@
                   </div>
                   <Transition name="thinking">
                     <div v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report' && openSteps.has(`live-${bi}`)" class="process-body__tool-titles">
-                      <div v-for="title in (block as ToolBlock).toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                      <button v-for="(item, ti) in (block as ToolBlock).toolResult!.titles" :key="item.id ?? ti" class="process-body__tool-title" @click="previewItemId = item.id">{{ item.title }}</button>
                     </div>
                   </Transition>
                 </div>
@@ -362,7 +362,7 @@
                     @click="previewItemId = src.id"
                   >
                     <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
-                    <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                    <div v-else class="src-card__thumb src-card__thumb--empty"/>
                     <div class="src-card__body">
                       <span class="src-card__title">{{ src.title || src.url }}</span>
                       <span class="src-card__type">{{ sourceLabel(src.source_type) }}</span>
@@ -386,7 +386,7 @@
               rows="1"
               @keydown.enter.exact.prevent="send"
               @input="autoResize"
-            ></textarea>
+            />
             <button
               v-if="loading && streamingSessionId === activeSessionId"
               class="chat-send-btn chat-send-btn--stop"
@@ -410,7 +410,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ReportDraft, TripDraft, ChatFolder, ChatMessage, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
+import type { ReportDraft, TripDraft, ChatFolder, ChatMessage, ChatProcessLog, ChatProcessStep, ChatSession, ChatSessionDetail, ChatSource, UsageSummary } from '~/types/api'
 useHead({ title: 'Garner — AI Chat' })
 
 // keepalive：切換頁面時不 unmount 本頁，進行中的串流（send 迴圈與所有狀態）持續運作，
@@ -481,15 +481,15 @@ const openContexts = ref<Set<string>>(new Set())
 function toggleStep(msgId: string, stepIdx: number) {
   const key = `${msgId}-${stepIdx}`
   const s = openSteps.value
-  s.has(key) ? s.delete(key) : s.add(key)
+  if (s.has(key)) s.delete(key)
+  else s.add(key)
   openSteps.value = new Set(s)
 }
 const openSources = ref<Set<string>>(new Set())
 
-type ProcessStep = { toolCall: Record<string, any>; toolResult: Record<string, any> | null }
-type ProcessLog = { thinking: string; steps: ProcessStep[] }
+type ProcessLog = ChatProcessLog
 type TextBlock = { type: 'text'; content: string }
-type ToolBlock = { type: 'tool'; toolCall: Record<string, any>; toolResult: Record<string, any> | null }
+type ToolBlock = { type: 'tool' } & ChatProcessStep
 type ThinkingBlock = { type: 'thinking'; content: string }
 type LiveBlock = TextBlock | ToolBlock | ThinkingBlock
 
@@ -594,15 +594,15 @@ onDeactivated(() => {
 })
 
 async function loadQuota() {
-  try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
+  try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch { /* 靜默：僅影響剩餘次數提示 */ }
 }
 
 async function loadFolders() {
-  try { folders.value = await apiFetch<ChatFolder[]>('/chat/folders') } catch {}
+  try { folders.value = await apiFetch<ChatFolder[]>('/chat/folders') } catch { /* 靜默：資料夾拿不到就維持空清單，不擋對話 */ }
 }
 
 async function loadSessions() {
-  try { sessions.value = await apiFetch<ChatSession[]>('/chat/sessions') } catch {}
+  try { sessions.value = await apiFetch<ChatSession[]>('/chat/sessions') } catch { /* 靜默：側欄清單拿不到就維持空清單，不擋對話 */ }
 }
 
 // 樂觀建立中的臨時 session → 真實建立請求的 promise（供 send() 在送訊息前解析出真實 id）
@@ -719,7 +719,7 @@ async function openSession(id: string) {
     // 來源卡（cited items）在背景載入，避免 N+1 請求擋住整個讀取
     loadSourcesForMessages(id, detail.messages)
     return
-  } catch {}
+  } catch { /* 靜默：載入失敗時不 return，往下把 sessionLoading 收掉避免卡住 spinner */ }
   sessionLoading.value = false
 }
 
@@ -913,7 +913,7 @@ function lsWrite(messageId: string, chunk: string) {
 }
 
 function lsClear(messageId: string) {
-  try { localStorage.removeItem(`${LS_PREFIX}${messageId}`) } catch {}
+  try { localStorage.removeItem(`${LS_PREFIX}${messageId}`) } catch { /* storage quota or private mode */ }
 }
 
 // ── Send message ──────────────────────────────────────────────────────────────
@@ -1247,7 +1247,7 @@ function sourceLabel(type: string | null) {
 }
 
 // ── 推理過程：各工具的圖示／結果文字／進行中文字 ──
-function stepIcon(name: string) {
+function stepIcon(name?: string) {
   return name === 'add_trip_card' ? '📍'
     : name === 'create_trip' ? '🗺️'
     : name === 'create_report' ? '📝'
@@ -1264,7 +1264,7 @@ function stepResultLabel(step: any): string {
   if (n === 'save_url') return r.ok ? `已存入「${r.title ?? ''}」` : (r.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗')
   return `找到 ${r.count ?? 0} 筆`
 }
-function stepPendingLabel(name: string): string {
+function stepPendingLabel(name?: string): string {
   if (name === 'create_report' || name === 'create_trip') return '生成中'
   if (name === 'add_trip_card') return '新增中'
   if (name === 'filter_sources') return '篩選中'

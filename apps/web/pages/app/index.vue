@@ -76,7 +76,7 @@ onMounted(async () => {
     <template v-else-if="itemStore.totalAll === 0">
       <section class="empty-state fadeup">
         <div class="placeholder placeholder--b empty-state__art">
-          <div class="placeholder__stripes"></div>
+          <div class="placeholder__stripes"/>
         </div>
         <div class="empty-state__body">
           <span class="empty-state__eyebrow">WELCOME TO GARNER</span>
@@ -89,7 +89,7 @@ onMounted(async () => {
               placeholder="貼入任何 YouTube 或網頁 URL..."
               :disabled="saving"
               @keydown.enter="quickSave"
-            />
+            >
             <button class="btn btn--accent" :disabled="saving" @click="quickSave">
               {{ saving ? '存入中...' : '存入' }}
             </button>
@@ -112,7 +112,7 @@ onMounted(async () => {
       <HomeSemanticSearchView v-else-if="currentView === 'semantic'" />
     </template>
 
-    <div class="shell__spacer"></div>
+    <div class="shell__spacer"/>
   </main>
 
   <HomeChatFab />

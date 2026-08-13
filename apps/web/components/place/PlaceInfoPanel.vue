@@ -78,7 +78,7 @@ const todayHours = computed(() => {
           :src="photoUrl(ref)"
           class="pip__photo"
           alt=""
-        />
+        >
       </div>
 
       <!-- Rating -->
@@ -118,7 +118,7 @@ const todayHours = computed(() => {
         <div class="pip__section-title">評論</div>
         <div v-for="(rev, i) in placeData.reviews" :key="i" class="pip__review">
           <div class="pip__review-header">
-            <img v-if="rev.author_photo" :src="rev.author_photo" class="pip__review-avatar" alt="" referrerpolicy="no-referrer" />
+            <img v-if="rev.author_photo" :src="rev.author_photo" class="pip__review-avatar" alt="" referrerpolicy="no-referrer" >
             <div v-else class="pip__review-avatar pip__review-avatar--empty" />
             <div class="pip__review-meta">
               <span class="pip__review-author">{{ rev.author || '匿名' }}</span>

@@ -47,10 +47,10 @@
               </button>
               <div class="trips-doc__titlewrap">
                 <h1
+                  ref="titleEl"
                   class="trips-doc__title"
                   contenteditable="true"
                   spellcheck="false"
-                  ref="titleEl"
                   @blur="onTitleBlur"
                   @keydown.enter.prevent="($event.target as HTMLElement).blur()"
                 >{{ current.title }}</h1>
@@ -114,7 +114,7 @@
                       @blur="finishEditTag(col.id)"
                       @keydown.enter.prevent="($event.target as HTMLElement).blur()"
                       @keydown.escape="cancelEditTag($event)"
-                    />
+                    >
                     <span
                       v-else
                       class="tag-chip"
@@ -165,7 +165,7 @@
                     @blur="confirmBoardTag"
                     @keydown.enter.prevent="($event.target as HTMLElement).blur()"
                     @keydown.escape="cancelBoardTag($event)"
-                  />
+                  >
                 </div>
                 <button v-else class="trips-addcol-btn" @click="startAddBoardTag">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -268,7 +268,7 @@
               :readonly="!isEditor"
               @blur="isEditor ? onTitleCommit() : undefined"
               @keydown.enter.prevent="isEditor && ($event.target as HTMLElement).blur()"
-            />
+            >
             <button v-if="editingItem?.id && isEditor" class="trips-modal__trash" :disabled="isSaving" @click="handleDeleteItem">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
             </button>
@@ -297,7 +297,7 @@
               <!-- editor: editable -->
               <div v-else class="trips-booked-row">
                 <label class="trips-check">
-                  <input type="checkbox" v-model="editForm.booked" @change="saveField('booked')" />
+                  <input v-model="editForm.booked" type="checkbox" @change="saveField('booked')" >
                   <span class="trips-field__lbl">{{ t('trips.fieldLabel.bookedTicket') }}</span>
                 </label>
                 <div class="trips-ticket">
@@ -313,7 +313,7 @@
                     :placeholder="t('trips.ticketUrlPlaceholder')"
                     @keydown.enter.prevent="commitTicket"
                     @blur="commitTicket"
-                  />
+                  >
                 </div>
               </div>
             </div>
@@ -322,11 +322,11 @@
             <div class="trips-field">
               <span class="trips-field__lbl">{{ t('trips.fieldLabel.time') }}</span>
               <div class="trips-field__timerow">
-                <input v-model="editForm.start_date" type="date" class="trips-field__input trips-field__dt" :disabled="!isEditor" @change="saveField('start_date')" />
-                <input v-model="editForm.start_time" type="time" class="trips-field__input trips-field__tm" :disabled="!isEditor" @change="saveField('start_time')" />
+                <input v-model="editForm.start_date" type="date" class="trips-field__input trips-field__dt" :disabled="!isEditor" @change="saveField('start_date')" >
+                <input v-model="editForm.start_time" type="time" class="trips-field__input trips-field__tm" :disabled="!isEditor" @change="saveField('start_time')" >
                 <span class="trips-field__sep">{{ t('trips.arrow') }}</span>
-                <input v-model="editForm.end_date" type="date" class="trips-field__input trips-field__dt" :disabled="!isEditor" @change="saveField('end_date')" />
-                <input v-model="editForm.end_time" type="time" class="trips-field__input trips-field__tm" :disabled="!isEditor" @change="saveField('end_time')" />
+                <input v-model="editForm.end_date" type="date" class="trips-field__input trips-field__dt" :disabled="!isEditor" @change="saveField('end_date')" >
+                <input v-model="editForm.end_time" type="time" class="trips-field__input trips-field__tm" :disabled="!isEditor" @change="saveField('end_time')" >
               </div>
             </div>
 
@@ -354,7 +354,7 @@
                   :placeholder="t('trips.placeUrlPlaceholder')"
                   @keydown.enter.prevent="commitPlace"
                   @blur="commitPlace"
-                />
+                >
               </template>
             </div>
 
@@ -391,7 +391,7 @@
                       @keydown.enter="confirmNewTag"
                       @keydown.escape="cancelNewTag"
                       @blur="cancelNewTag"
-                    />
+                    >
                   </div>
                   <button v-else class="trips-pill" @click="startAddTag">{{ t('trips.addNewTagBtn') }}</button>
                 </template>
@@ -448,7 +448,7 @@
           class="tep__search"
           :placeholder="t('trips.emojiSearchPlaceholder')"
           @keydown.escape="showEmojiPicker = false"
-        />
+        >
       </div>
     </Teleport>
 
@@ -972,6 +972,9 @@ async function handleAddItem() {
 }
 
 const panelRef = ref<HTMLElement | null>(null)
+// template 的 @touchstart 內聯 handler 會賦值，但 ESLint 只看得到 <script> 區塊，
+// 會誤判成沒被重新指派。改成 const 會讓「拖曳關閉卡片編輯器」整個失效。
+// eslint-disable-next-line prefer-const
 let _touchStartY = 0
 
 function doClose(): Promise<void> {

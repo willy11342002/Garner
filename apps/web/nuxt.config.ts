@@ -29,7 +29,9 @@ export default defineNuxtConfig({
     '~/assets/css/chat.css',
   ],
 
-  modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n', '@vite-pwa/nuxt'],
+  // @nuxt/eslint 必須列在這裡：eslint.config.mjs 匯入的 ./.nuxt/eslint.config.mjs
+  // 是這個模組在 `nuxt prepare` 時產生的。少了它 `pnpm lint` 會找不到設定檔而 exit 2。
+  modules: ['@nuxtjs/supabase', '@pinia/nuxt', '@nuxtjs/i18n', '@vite-pwa/nuxt', '@nuxt/eslint'],
 
   pwa: {
     registerType: 'autoUpdate',

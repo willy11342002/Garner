@@ -1,11 +1,21 @@
 name: CI
 
+# 同時掛 push 與 pull_request：本專案的實際流程是直接推 main（不開 PR），
+# 只掛 pull_request 的話 CI 等於從來沒跑過——2026-08 之前就是這樣，
+# lint-web 長期是壞的（缺 eslint.config.mjs、exit 2）卻沒有人看得到。
 on:
+  push:
+    branches: [main, develop]
   pull_request:
     branches: [main, develop]
 
+# 同一個 ref 只跑最新一次，避免連續推送時堆積。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint-web:
+  web:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,10 +32,13 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
           cache-dependency-path: apps/web/pnpm-lock.yaml
+      # postinstall 會跑 nuxt prepare，產生 .nuxt/eslint.config.mjs 與型別，
+      # lint 與 typecheck 都依賴它。
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
+      - run: pnpm run typecheck
 
-  test-api:
+  api:
     runs-on: ubuntu-latest
     defaults:
       run:

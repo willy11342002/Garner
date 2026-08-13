@@ -137,7 +137,8 @@ watch(() => props.reportId, () => {
 
 const openProcess = ref(new Set<string>())
 function toggleProcess(id: string) {
-  openProcess.value.has(id) ? openProcess.value.delete(id) : openProcess.value.add(id)
+  if (openProcess.value.has(id)) openProcess.value.delete(id)
+  else openProcess.value.add(id)
 }
 function stepIcon(name: string): string {
   if (name === 'search') return '🔍'
@@ -177,7 +178,9 @@ async function send(preset?: string) {
 
   const apiBase = config.public.apiBase as string
   const token = session.value?.access_token
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+  // 明確標成 Record<string, string>：三元運算子會推成兩個不同 shape 的聯集，
+  // 展開後 Authorization 變成 string | undefined，不符合 HeadersInit。
+  const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
 
   try {
     const sid = await ensureSession()

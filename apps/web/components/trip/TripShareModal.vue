@@ -69,7 +69,7 @@
                   type="email"
                   :placeholder="t('trips.share.emailPlaceholder')"
                   @keydown.enter.prevent="onInvite"
-                />
+                >
                 <select v-model="inviteRole" class="tsm-role-select">
                   <option value="viewer">{{ t('trips.role.viewer') }}</option>
                   <option value="editor">{{ t('trips.role.editor') }}</option>

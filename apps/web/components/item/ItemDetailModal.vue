@@ -39,7 +39,6 @@ const apiFetch = useApiFetch()
 const gmap = useGlobalMap()
 const { getItem, getItemTags, attachTag, detachTag, updateItem, resumeItem } = useItems()
 const { updateArticle } = useArticles()
-const { toggle: toggleChain, isInChain } = useChain()
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
@@ -445,31 +444,11 @@ const tagAdding = ref(false)
 const tagInputRef = ref<HTMLInputElement | null>(null)
 
 // ── Inline title editing ─────────────────────────────────────────────────────
+// 進入 / 儲存由 startEditNotes() / saveNotes() 一併處理（標題與筆記同一個編輯流程），
+// 這裡只留狀態與取消。
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
-const savingTitle = ref(false)
 const titleInputRef = ref<HTMLInputElement | null>(null)
-
-function startEditTitle() {
-  if (readonly.value) return
-  editingTitle.value = (item.value as Item)?.title ?? ''
-  isEditingTitle.value = true
-  nextTick(() => titleInputRef.value?.focus())
-}
-
-async function saveTitle() {
-  if (!item.value) return
-  const trimmed = editingTitle.value.trim()
-  isEditingTitle.value = false
-  if (trimmed === ((item.value as Item)?.title ?? '')) return
-  savingTitle.value = true
-  try {
-    await updateArticle(item.value.id, { title: trimmed || null })
-    if (fetchedItem.value) fetchedItem.value = { ...fetchedItem.value, title: trimmed || null }
-  } finally {
-    savingTitle.value = false
-  }
-}
 
 function cancelEditTitle() {
   isEditingTitle.value = false
@@ -524,7 +503,7 @@ function pollReanalyze(maxAttempts = 60) {
         _reanalyzePollTimer = null
         return
       }
-    } catch {}
+    } catch { /* 靜默：單次輪詢失敗不中斷，下面照樣排下一輪 */ }
     _reanalyzePollTimer = setTimeout(poll, 2000)
   }
   poll()
@@ -554,7 +533,7 @@ function pollAnalysis(maxAttempts = 90) {
         _analysisPollTimer = null
         return
       }
-    } catch {}
+    } catch { /* 靜默：單次輪詢失敗不中斷，下面照樣排下一輪 */ }
     _analysisPollTimer = setTimeout(poll, 2000)
   }
   _analysisPollTimer = setTimeout(poll, 2000)
@@ -591,6 +570,9 @@ async function retryIngest() {
 // ── Inline note editing ───────────────────────────────────────────────────────
 const isEditingNotes = ref(false)
 const editingNotesMd = ref('')
+// template 從以前就綁了 savingNotes（:disabled 與「儲存中」文案），但一直沒有宣告，
+// 所以那顆按鈕的 disabled 永遠是 undefined、儲存中狀態從沒顯示過。補回來。
+const savingNotes = ref(false)
 
 function startEditNotes() {
   editingNotesMd.value = (item.value as Item)?.notes_md ?? ''
@@ -607,7 +589,12 @@ async function saveNotes() {
   if (fetchedItem.value) fetchedItem.value = { ...fetchedItem.value, notes_md: notesMd, title: titleTrimmed }
   isEditingNotes.value = false
   isEditingTitle.value = false
-  updateArticle(item.value.id, { notes_md: notesMd, title: titleTrimmed })
+  savingNotes.value = true
+  try {
+    await updateArticle(item.value.id, { notes_md: notesMd, title: titleTrimmed })
+  } finally {
+    savingNotes.value = false
+  }
 }
 
 // ── Archive ───────────────────────────────────────────────────────────────────
@@ -739,24 +726,29 @@ async function handleRemoveTag(tag: Tag) {
     await detachTag(item.value.id, tag.id)
     tags.value = tags.value.filter(t => t.id !== tag.id)
   } finally {
-    delete tagRemoving.value[tag.id]
+    const { [tag.id]: _done, ...rest } = tagRemoving.value
+    tagRemoving.value = rest
   }
 }
 
 // ── Archive handlers ──────────────────────────────────────────────────────────
+// 一律走 fetchedItem 而不是 item：封存只對自己擁有的 Item 有意義，
+// readonly 模式下的 props.item 可能是 CollectionShareItem（沒有 status 欄位）。
+// template 也已用 v-if="!readonly" 把這兩顆按鈕擋在唯讀模式外。
 function requestArchive() {
-  if (item.value?.status === 'archived') confirmArchive()
+  if (fetchedItem.value?.status === 'archived') confirmArchive()
   else showArchiveConfirm.value = true
 }
 
 async function confirmArchive() {
-  if (!item.value) return
+  const target = fetchedItem.value
+  if (!target) return
   showArchiveConfirm.value = false
   archiving.value = true
   try {
-    const isArchived = item.value.status === 'archived'
-    await updateItem(item.value.id, { status: isArchived ? 'active' : 'archived' })
-    fetchedItem.value = { ...fetchedItem.value!, status: isArchived ? 'active' : 'archived' }
+    const isArchived = target.status === 'archived'
+    await updateItem(target.id, { status: isArchived ? 'active' : 'archived' })
+    fetchedItem.value = { ...target, status: isArchived ? 'active' : 'archived' }
     emit('archived')
   } finally {
     archiving.value = false
@@ -773,9 +765,9 @@ async function confirmArchive() {
         v-if="isOpen"
         ref="overlayRef"
         class="id-overlay"
+        tabindex="-1"
         @click.self="doClose"
         @keydown.esc="doClose"
-        tabindex="-1"
       >
         <div
           ref="panelRef"
@@ -793,7 +785,7 @@ async function confirmArchive() {
           <div class="id-media">
             <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="id-media__img" alt="">
             <div v-else class="placeholder placeholder--b id-media__ph">
-              <div class="placeholder__stripes"></div>
+              <div class="placeholder__stripes"/>
             </div>
             <a :href="item.url" target="_blank" rel="noopener" class="source-badge id-media__badge">{{ sourceLabel(item.url) }}</a>
           </div>
@@ -808,7 +800,7 @@ async function confirmArchive() {
                 class="id-body__title-input"
                 @keydown.enter.prevent="() => {}"
                 @keydown.esc.stop="cancelEditTitle"
-              />
+              >
               <h1 v-else class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
               <div class="id-body__actions">
                 <button
@@ -889,7 +881,7 @@ async function confirmArchive() {
                     @keydown.enter="handleAddTag"
                     @keydown.esc.stop="addingTag = false; newTagInput = ''"
                     @blur="handleAddTag"
-                  />
+                  >
                 </template>
                 <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
                   {{ t('itemModal.addTag') }}
@@ -945,7 +937,7 @@ async function confirmArchive() {
                     @input="onSearchInput"
                     @keydown.enter.prevent="onSearchInput"
                     @keydown.esc="clearSearch"
-                  />
+                  >
                   <span v-if="searchLoading" class="id-map-search__saving">{{ t('itemModal.searching') }}</span>
                   <span v-else-if="savingNewLoc" class="id-map-search__saving">{{ t('itemModal.adding') }}</span>
                   <button v-else-if="searchQuery" class="id-map-search__clear" @click="clearSearch">×</button>
@@ -1021,7 +1013,7 @@ async function confirmArchive() {
           <div class="idp-media">
             <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="idp-media__img" alt="">
             <div v-else class="placeholder placeholder--b idp-media__ph">
-              <div class="placeholder__stripes"></div>
+              <div class="placeholder__stripes"/>
             </div>
             <span class="source-badge idp-media__badge">{{ sourceLabel(item.url) }}</span>
           </div>
@@ -1035,7 +1027,7 @@ async function confirmArchive() {
                 class="id-body__title-input"
                 @keydown.enter.prevent="() => {}"
                 @keydown.esc.stop="cancelEditTitle"
-              />
+              >
               <h1 v-else class="id-body__title">{{ cardTitle(item.url, item.title) }}</h1>
 
             <div v-if="!readonly" class="id-body__tags">
@@ -1057,7 +1049,7 @@ async function confirmArchive() {
                   @keydown.enter="handleAddTag"
                   @keydown.esc.stop="addingTag = false; newTagInput = ''"
                   @blur="handleAddTag"
-                />
+                >
               </template>
               <button v-else class="id-tag__add" :disabled="tagAdding" @click="startAddingTag">
                 {{ t('itemModal.addTag') }}

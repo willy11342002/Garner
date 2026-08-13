@@ -37,7 +37,7 @@ export const useNotificationStore = defineStore('notifications', () => {
         const n = items.value.find(n => n.id === id)
         if (n) n.is_read = true
       })
-    } catch {}
+    } catch { /* 靜默：已讀標記失敗不影響閱讀，下次載入會以伺服器狀態為準 */ }
   }
 
   async function markAllRead() {
@@ -45,7 +45,7 @@ export const useNotificationStore = defineStore('notifications', () => {
       const apiFetch = useApiFetch()
       await apiFetch('/notifications/read-all', { method: 'PATCH' })
       items.value.forEach(n => { n.is_read = true })
-    } catch {}
+    } catch { /* 靜默：已讀標記失敗不影響閱讀，下次載入會以伺服器狀態為準 */ }
   }
 
   return { items, unreadCount, fetch, startPolling, stopPolling, markRead, markAllRead }

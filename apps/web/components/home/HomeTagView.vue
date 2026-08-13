@@ -84,13 +84,6 @@ function sourceLabel(url: string) {
   return t('home.source_article')
 }
 
-function relativeTime(dateStr: string) {
-  const d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
-  if (d === 0) return t('home.time_today')
-  if (d === 1) return t('home.time_1d')
-  return t('home.time_nd', { n: d })
-}
-
 // Tags from API (for chip bar counts)
 const tags = ref<Tag[]>([])
 
@@ -108,10 +101,6 @@ const tagColorIndex = computed(() => {
   allTagGroups.value.forEach((g, i) => map.set(g.tag.id, i))
   return map
 })
-function getTagColor(tagId: string) {
-  return tagColor(tagColorIndex.value.get(tagId) ?? 0)
-}
-
 // Active chips first, then inactive
 const orderedTagGroups = computed(() => {
   const active = allTagGroups.value.filter(g => selectedTagIds.value.has(g.tag.id))
@@ -225,23 +214,6 @@ const sortLabel = computed(() => ({
   saved_asc: t('home.sort_oldest'),
 })[sortOrder.value] ?? t('home.sort_newest'))
 
-// Filter summary text (e.g. "AI + 設計 · 近 30 天")
-const filterSummary = computed(() => {
-  const parts: string[] = []
-  if (selectedTagIds.value.size > 0) {
-    const names = [...selectedTagIds.value]
-      .map(id => {
-        const g = allTagGroups.value.find(g => g.tag.id === id)
-        return g ? localize(g.tag.name_i18n, g.tag.name) : ''
-      })
-      .filter(Boolean)
-    if (names.length) parts.push(names.join(' + '))
-  }
-  if (timeFilter.value !== 'all') {
-    parts.push(timeLabel.value)
-  }
-  return parts.join(' · ')
-})
 
 onMounted(async () => {
   tags.value = await apiFetch<Tag[]>('/tags/')
@@ -261,7 +233,7 @@ onMounted(async () => {
           type="text"
           class="filter-tag-search"
           :placeholder="t('home.tag_search_placeholder')"
-        />
+        >
       </div>
 
       <div
@@ -282,7 +254,7 @@ onMounted(async () => {
           <span
             class="tag-filter-chip__dot"
             :style="`background:var(--tag-${tagColor(tagColorIndex.get(group.tag.id) ?? 0)})`"
-          ></span>
+          />
           {{ localize(group.tag.name_i18n, group.tag.name) }}
           <span class="tag-filter-chip__count">{{ group.count }}</span>
           <span
@@ -305,7 +277,7 @@ onMounted(async () => {
             @input="onMobileSearchInput"
             @focus="onMobileSearchFocus"
             @blur="closeMobileDropdown"
-          />
+          >
           <div v-if="mobileDropdownOpen && filteredMobileGroups.length > 0" class="filter-mobile-dropdown">
             <button
               v-for="group in filteredMobileGroups"
@@ -317,7 +289,7 @@ onMounted(async () => {
               <span
                 class="tag-filter-chip__dot"
                 :style="`background:var(--tag-${tagColor(tagColorIndex.get(group.tag.id) ?? 0)})`"
-              ></span>
+              />
               {{ localize(group.tag.name_i18n, group.tag.name) }}
               <span class="filter-mobile-dropdown__count">{{ group.count }}</span>
               <span v-if="selectedTagIds.has(group.tag.id)" class="filter-mobile-dropdown__check">✓</span>
@@ -339,7 +311,7 @@ onMounted(async () => {
           <span
             class="tag-filter-chip__dot"
             :style="`background:var(--tag-${tagColor(tagColorIndex.get(id) ?? 0)})`"
-          ></span>
+          />
           {{ localize(allTagGroups.find(g => g.tag.id === id)?.tag.name_i18n ?? {}, allTagGroups.find(g => g.tag.id === id)?.tag.name ?? '') }}
           <span class="tag-filter-chip__remove">×</span>
         </button>
@@ -348,7 +320,7 @@ onMounted(async () => {
       <button v-if="hasActiveFilters" class="filter-clear-btn filter-clear-btn--desktop" @click="clearFilters">
         {{ t('home.filter_clear') }}
       </button>
-      <div class="filter-row__divider"></div>
+      <div class="filter-row__divider"/>
       <div class="filter-andor">
         <span class="filter-andor__label">{{ t('home.filter_match') }}</span>
         <button
@@ -401,9 +373,9 @@ onMounted(async () => {
         @click.prevent="openItemModal(item.id)"
       >
         <div class="card__thumb">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
+          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" >
           <div v-else class="placeholder placeholder--a">
-            <div class="placeholder__stripes"></div>
+            <div class="placeholder__stripes"/>
           </div>
           <span class="source-badge">{{ sourceLabel(item.url) }}</span>
           <button

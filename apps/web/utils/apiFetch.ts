@@ -25,8 +25,8 @@ export function useApiFetch() {
     async onResponseError({ response, options }) {
       // 401: token 過期，刷新 token，讓 ofetch 重試時 onRequest 帶新 token
       // _refreshed flag 確保每個請求只 refresh 一次，避免重試失敗後再次觸發
-      if (response.status === 401 && !(options as Record<string, unknown>)._refreshed) {
-        ;(options as Record<string, unknown>)._refreshed = true
+      if (response.status === 401 && !(options as unknown as Record<string, unknown>)._refreshed) {
+        ;(options as unknown as Record<string, unknown>)._refreshed = true
         try {
           await supabase.auth.refreshSession()
         } catch (error) {

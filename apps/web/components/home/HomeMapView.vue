@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { LatLngBounds } from 'leaflet'
+import type { LatLngBounds, Marker as LeafletMarker } from 'leaflet'
 
 interface MapLocation {
   id: string
@@ -41,7 +41,9 @@ const { toggle: chainToggle, isInChain } = useChain()
 
 // ── Map state ─────────────────────────────────────────────────────────────────
 const mapContainer = ref<HTMLElement | null>(null)
-let localMarkers: Map<string, ReturnType<typeof gmap.getL>['Marker'] extends undefined ? never : import('leaflet').Marker> = new Map()
+// 原本寫成 `ReturnType<typeof gmap.getL>['Marker'] extends undefined ? never : ...` 的
+// 條件型別，繞一圈的結果就是 Marker，而且 getL() 可能回 null 導致索引失敗。直接標型別。
+let localMarkers = new Map<string, LeafletMarker>()
 
 const locations = ref<MapLocation[]>([])
 const allLocatedItemIds = ref<Set<string>>(new Set())
@@ -76,7 +78,7 @@ async function extractLocations(itemId: string) {
       await loadLocationsInBounds()
       gmap.notifyLocationChange()
     }
-  } catch {}
+  } catch { /* 靜默：抽取地點失敗不影響地圖既有資料，finally 仍會清掉 loading 狀態 */ }
   finally {
     const s = new Set(extractingIds.value)
     s.delete(itemId)
@@ -94,7 +96,7 @@ async function setupMap() {
   try {
     const all = await apiFetch<MapLocation[]>('/locations?bounds=-90,-180,90,180')
     allLocatedItemIds.value = new Set(all.map(l => l.item_id))
-  } catch {}
+  } catch { /* 靜默：這只是預載全域標記集合，失敗仍會往下跑 loadLocationsInBounds */ }
 
   await loadLocationsInBounds()
   loadingMap.value = false
@@ -312,7 +314,7 @@ watch(gmap.locationVersion, () => {
         <div v-if="drawerTab === 'items'" class="map-drawer__items">
           <div v-for="loc in drawerItems" :key="loc.id" class="map-drawer__item">
             <div class="map-drawer__item-card" @click="openItem(loc.item_id)">
-              <img v-if="loc.item_thumbnail" :src="loc.item_thumbnail" class="map-drawer__item-thumb" alt="" />
+              <img v-if="loc.item_thumbnail" :src="loc.item_thumbnail" class="map-drawer__item-thumb" alt="" >
               <div v-else class="map-drawer__item-thumb map-drawer__item-thumb--empty" />
               <div class="map-drawer__item-body">
                 <span class="map-drawer__item-title">{{ loc.item_title || '（無標題）' }}</span>
@@ -352,7 +354,7 @@ watch(gmap.locationVersion, () => {
       </div>
       <div class="map-no-location__list">
         <div v-for="item in noLocationItems.slice(0, 20)" :key="item.id" class="map-no-location__row">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="map-no-location__thumb" alt="" />
+          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="map-no-location__thumb" alt="" >
           <div v-else class="map-no-location__thumb map-no-location__thumb--empty" />
           <span class="map-no-location__name">{{ item.title || '（無標題）' }}</span>
           <button

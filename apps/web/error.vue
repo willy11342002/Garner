@@ -3,7 +3,7 @@
     <nav class="nav">
       <NuxtLink to="/" class="nav__logo">Garner</NuxtLink>
       <div class="nav__right">
-        <button class="nav__theme" @click="toggle" aria-label="Toggle theme">
+        <button class="nav__theme" aria-label="Toggle theme" @click="toggle">
           <svg viewBox="0 0 24 24">
             <template v-if="!isDark">
               <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/>

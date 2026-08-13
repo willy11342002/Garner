@@ -33,7 +33,7 @@
                 <div v-if="openContexts.has(msg.id)" class="context-block__body">
                   <div v-for="item in userContextMap[msg.id]" :key="item.id" class="src-card">
                     <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="src-card__thumb">
-                    <div v-else class="src-card__thumb src-card__thumb--empty"></div>
+                    <div v-else class="src-card__thumb src-card__thumb--empty"/>
                     <div class="src-card__body">
                       <span class="src-card__title">{{ item.title || item.url }}</span>
                       <span class="src-card__type">{{ sourceLabel(item.source_type) }}</span>
@@ -76,7 +76,7 @@
                     </div>
                     <Transition name="thinking">
                       <div v-if="step.toolResult?.titles?.length && openSteps.has(`${msg.id}-${i}`)" class="process-body__tool-titles">
-                        <button v-for="item in step.toolResult.titles" :key="item.id ?? item" class="process-body__tool-title" @click="previewItemId = item.id ?? null">{{ item.title ?? item }}</button>
+                        <button v-for="(item, ti) in step.toolResult.titles" :key="item.id ?? ti" class="process-body__tool-title" @click="previewItemId = item.id">{{ item.title }}</button>
                       </div>
                     </Transition>
                   </div>
@@ -128,7 +128,7 @@
                 </div>
                 <Transition name="thinking">
                   <div v-if="step.toolResult?.titles?.length && openSteps.has(`live-${i}`)" class="process-body__tool-titles">
-                    <div v-for="title in step.toolResult.titles" :key="title" class="process-body__tool-title">{{ title }}</div>
+                    <button v-for="(item, ti) in step.toolResult.titles" :key="item.id ?? ti" class="process-body__tool-title" @click="previewItemId = item.id">{{ item.title }}</button>
                   </div>
                 </Transition>
                 <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
@@ -140,7 +140,7 @@
           </Transition>
         </div>
         <div v-if="loading && !streamingText" class="msg-thinking">
-          <span></span><span></span><span></span>
+          <span/><span/><span/>
         </div>
         <div v-if="streamingText" class="msg__bubble msg__bubble--streaming">
           <TiptapEditor :model-value="streamingText" readonly class="streaming-md" />
@@ -155,7 +155,7 @@
       <div class="hcp__chain-nodes">
         <div v-for="item in chainItems" :key="item.id" class="hcp__node">
           <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="hcp__node-thumb">
-          <div v-else class="hcp__node-thumb hcp__node-thumb--empty"></div>
+          <div v-else class="hcp__node-thumb hcp__node-thumb--empty"/>
           <span class="hcp__node-label">{{ truncate(item.title || item.url || '', 16) }}</span>
           <button class="hcp__node-remove" @click="chain.remove(item.id)">×</button>
         </div>
@@ -175,7 +175,7 @@
           rows="1"
           @keydown.enter.exact.prevent="send"
           @input="autoResize"
-        ></textarea>
+        />
         <button class="chat-send-btn" :disabled="loading || !inputText.trim() || chatQuotaFull" @click="send">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="16" height="16"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
@@ -186,7 +186,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ChatMessage, ChatSession, ChatSessionDetail, ChatSource, ReportDraft, TripDraft, UsageSummary } from '~/types/api'
+import type { ChatMessage, ChatProcessStep, ChatSession, ChatSessionDetail, ChatSource, ReportDraft, TripDraft, UsageSummary } from '~/types/api'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -210,14 +210,9 @@ const chatQuotaRemaining = computed(() => {
   if (!q || q.limit === null) return null
   return Math.max(0, q.limit - q.used)
 })
-const quotaWarning = computed(() => {
-  const q = quota.value?.chat
-  if (!q || q.limit === null) return false
-  const remaining = q.limit - q.used
-  return remaining <= Math.ceil(q.limit * 0.2) // 剩餘 ≤ 20% 才顯示
-})
 onMounted(async () => {
-  try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
+  // 配額只影響剩餘次數提示，拿不到就不顯示，不該擋住整個面板開啟
+  try { quota.value = await apiFetch<UsageSummary>('/quota/me') } catch { /* 靜默：僅影響提示顯示 */ }
 })
 
 // ── Session ────────────────────────────────────────────────
@@ -254,13 +249,14 @@ const liveTripDraft = ref<TripDraft | null>(null)
 function toggleStep(msgId: string, stepIdx: number) {
   const key = `${msgId}-${stepIdx}`
   const s = openSteps.value
-  s.has(key) ? s.delete(key) : s.add(key)
+  if (s.has(key)) s.delete(key)
+  else s.add(key)
   openSteps.value = new Set(s)
 }
 const openSources = ref<Set<string>>(new Set())
 
-type ProcessStep = { toolCall: Record<string, any>; toolResult: { count: number; titles: string[]; title?: string } | null }
-type ProcessLog = { thinking: string; steps: ProcessStep[]; sources: ChatSource[] }
+// 比 ChatProcessLog 多一個 sources：面板要在同一塊區域顯示引用來源
+type ProcessLog = { thinking: string; steps: ChatProcessStep[]; sources: ChatSource[] }
 const liveProcess = ref<ProcessLog>({ thinking: '', steps: [], sources: [] })
 const processMap = ref<Record<string, ProcessLog>>({})
 
@@ -278,19 +274,15 @@ function resetProcess() {
 
 function toggleThinking(id: string) {
   const s = openThinking.value
-  s.has(id) ? s.delete(id) : s.add(id)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
   openThinking.value = new Set(s)
-}
-
-function toggleSources(id: string) {
-  const s = openSources.value
-  s.has(id) ? s.delete(id) : s.add(id)
-  openSources.value = new Set(s)
 }
 
 function toggleContext(id: string) {
   const s = openContexts.value
-  s.has(id) ? s.delete(id) : s.add(id)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
   openContexts.value = new Set(s)
 }
 

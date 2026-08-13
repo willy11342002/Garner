@@ -195,7 +195,7 @@ async function deleteAccount() {
             :disabled="isDeleting"
             autocomplete="off"
             spellcheck="false"
-          />
+          >
           <p v-if="deleteError" class="delete-modal__error">{{ deleteError }}</p>
           <div class="delete-modal__actions">
             <button class="btn btn--ghost" :disabled="isDeleting" @click="closeDeleteModal">

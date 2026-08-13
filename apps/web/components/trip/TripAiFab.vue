@@ -103,11 +103,13 @@
 import type { TripItem } from '~/types/api'
 
 const props = defineProps<{ tripId: string }>()
+// 用 Vue 3.3+ 的具名 tuple 語法（跟 PricingPlans 等元件一致），
+// 舊的 call-signature 寫法會讓 card-added / card-updated 這兩條同型別簽章重複。
 const emit = defineEmits<{
-  (e: 'card-added', item: TripItem): void
-  (e: 'card-updated', item: TripItem): void
-  (e: 'card-deleted', id: string): void
-  (e: 'done'): void
+  'card-added': [item: TripItem]
+  'card-updated': [item: TripItem]
+  'card-deleted': [id: string]
+  done: []
 }>()
 
 const config = useRuntimeConfig()
@@ -142,7 +144,8 @@ watch(() => props.tripId, () => {
 
 const openProcess = ref(new Set<string>())
 function toggleProcess(id: string) {
-  openProcess.value.has(id) ? openProcess.value.delete(id) : openProcess.value.add(id)
+  if (openProcess.value.has(id)) openProcess.value.delete(id)
+  else openProcess.value.add(id)
 }
 function stepIcon(name: string): string {
   if (name === 'search') return '🔍'
@@ -184,7 +187,9 @@ async function send(preset?: string) {
 
   const apiBase = config.public.apiBase as string
   const token = session.value?.access_token
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+  // 明確標成 Record<string, string>：三元運算子會推成兩個不同 shape 的聯集，
+  // 展開後 Authorization 變成 string | undefined，不符合 HeadersInit。
+  const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
 
   try {
     const sid = await ensureSession()

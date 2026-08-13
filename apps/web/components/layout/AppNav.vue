@@ -35,7 +35,7 @@
         </button>
 
         <!-- 通知鈴鐺 -->
-        <div class="nav__notif" ref="notifEl">
+        <div ref="notifEl" class="nav__notif">
           <button class="nav__notif-btn" @click.stop="toggleNotif">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -206,7 +206,7 @@
         <div class="add-modal">
           <template v-if="addProcessingItemId">
             <div class="add-modal__processing">
-              <span class="add-modal__processing-dot"></span>
+              <span class="add-modal__processing-dot"/>
               <p class="add-modal__processing-text">{{ t('add.processing') }}</p>
             </div>
             <ol class="add-modal__steps">
@@ -221,8 +221,8 @@
               >
                 <span class="add-modal__step-icon">
                   <svg v-if="i < processingStep" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 8 6 11 13 4"/></svg>
-                  <span v-else-if="i === processingStep" class="add-modal__step-spinner"></span>
-                  <span v-else class="add-modal__step-idle"></span>
+                  <span v-else-if="i === processingStep" class="add-modal__step-spinner"/>
+                  <span v-else class="add-modal__step-idle"/>
                 </span>
                 {{ t(`pipeline.${s}`) }}
               </li>
@@ -240,7 +240,7 @@
                 :disabled="addSaving || savesQuotaFull"
                 @keydown.enter="submitAdd"
                 @keydown.esc="closeAdd"
-              />
+              >
               <button v-if="!savesQuotaFull" class="btn btn--accent" :disabled="addSaving || !addUrl.trim()" @click="submitAdd">
                 {{ addSaving ? t('add.saving') : t('add.save') }}
               </button>
@@ -383,7 +383,7 @@ function stageToStep(stage: string): number {
 watch(addOpen, async (val) => {
   if (val) {
     nextTick(() => addInput.value?.focus())
-    try { addQuota.value = await apiFetch<UsageSummary>('/quota/me') } catch {}
+    try { addQuota.value = await apiFetch<UsageSummary>('/quota/me') } catch { /* 靜默：僅影響剩餘次數提示 */ }
   } else {
     addUrl.value = ''
     addError.value = ''

@@ -33,7 +33,9 @@ const editor = useEditor({
     Color,
     Link.configure({ openOnClick: false }),
     GlobalDragHandle.configure({ dragHandleWidth: 24 }),
-    Markdown.configure({ html: false }),
+    // tiptap v3 的 MarkdownExtensionOptions 只有 indentation / marked / markedOptions，
+    // 舊的 `html` 選項（tiptap-markdown v2 社群套件）已不存在，帶了也不會生效。
+    Markdown,
   ],
   editable: !props.readonly,
   content: '',
@@ -49,7 +51,8 @@ function setMarkdown(val: string | null | undefined) {
   const current = (editor.value as any).getMarkdown() as string
   if (current === (val ?? '')) return
   const parsed = (editor.value as any).markdown.parse(val ?? '')
-  editor.value.commands.setContent(parsed, false)
+  // tiptap v3：第二個參數改成 SetContentOptions，emitUpdate 移進物件裡（舊版是 boolean）
+  editor.value.commands.setContent(parsed, { emitUpdate: false })
 }
 
 watch(() => props.modelValue, setMarkdown)

@@ -67,7 +67,7 @@ function openDeleteDialog() {
               <!-- Avatar -->
               <div class="profile-avatar-row">
                 <div class="profile-avatar profile-avatar--lg">
-                  <img v-if="avatarUrl" :src="avatarUrl" :alt="displayName" referrerpolicy="no-referrer" />
+                  <img v-if="avatarUrl" :src="avatarUrl" :alt="displayName" referrerpolicy="no-referrer" >
                   <span v-else>{{ initials }}</span>
                 </div>
                 <div class="profile-avatar-meta">
@@ -112,7 +112,7 @@ function openDeleteDialog() {
           :placeholder="t('settings.danger.confirm_input_placeholder')"
           autocomplete="off"
           spellcheck="false"
-        />
+        >
         <div class="delete-dialog__actions">
           <button class="btn-cancel" @click="showDeleteDialog = false">
             {{ t('settings.danger.cancel') }}

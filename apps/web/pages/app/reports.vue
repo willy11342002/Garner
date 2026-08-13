@@ -183,7 +183,7 @@ function formatDate(iso: string) {
         <header class="report-view__head">
           <button class="report-view__back" @click="backToList">←</button>
           <div class="report-view__head-main">
-            <input v-if="editing" v-model="editTitle" class="report-view__title-input" />
+            <input v-if="editing" v-model="editTitle" class="report-view__title-input" >
             <h2 v-else class="report-view__title">{{ current.title }}</h2>
           </div>
         </header>

@@ -4,7 +4,9 @@ import type { Map as LeafletMap, Marker as LeafletMarker } from 'leaflet'
 // All state lives outside the composable function so it persists across
 // component lifecycles for the entire browser session.
 
-let leaflet: typeof import('leaflet')['default'] | null = null
+// @types/leaflet 用 `export as namespace L` 的具名匯出，沒有 default，
+// 所以型別是整個 module 而不是 module['default']。
+let leaflet: typeof import('leaflet') | null = null
 let mapInstance: LeafletMap | null = null
 let containerEl: HTMLElement | null = null
 let initPromise: Promise<void> | null = null

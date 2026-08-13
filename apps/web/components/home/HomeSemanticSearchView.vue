@@ -117,7 +117,7 @@ function cardTitle(url: string, title: string | null) {
           :placeholder="t('home.semantic_placeholder')"
           :disabled="loading"
           @keydown.enter="submit"
-        />
+        >
         <button class="btn btn--accent" :disabled="loading || !query.trim()" @click="submit">
           {{ loading ? t('home.semantic_searching') : t('home.semantic_search_btn') }}
         </button>
@@ -136,7 +136,7 @@ function cardTitle(url: string, title: string | null) {
 
     <!-- Loading (initial search) -->
     <div v-if="loading" class="semantic-state">
-      <span class="semantic-spinner"></span>
+      <span class="semantic-spinner"/>
       {{ t('home.semantic_searching') }}
     </div>
 
@@ -169,9 +169,9 @@ function cardTitle(url: string, title: string | null) {
           @click.prevent="openItemModal(item.id)"
         >
           <div class="card__thumb">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" />
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" >
             <div v-else class="placeholder placeholder--a">
-              <div class="placeholder__stripes"></div>
+              <div class="placeholder__stripes"/>
             </div>
             <span class="source-badge">{{ sourceLabel(item.url) }}</span>
             <button
@@ -189,7 +189,7 @@ function cardTitle(url: string, title: string | null) {
 
       <!-- Infinite scroll sentinel -->
       <div v-if="hasNext || loadingMore" ref="sentinelRef" class="semantic-load-more">
-        <span v-if="loadingMore" class="semantic-spinner"></span>
+        <span v-if="loadingMore" class="semantic-spinner"/>
       </div>
     </template>
   </div>

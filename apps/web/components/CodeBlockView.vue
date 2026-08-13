@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { NodeViewWrapper, NodeViewContent } from '@tiptap/vue-3'
+import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-3'
 
-defineProps<{
-  node: any
-  updateAttributes: (attrs: Record<string, unknown>) => void
-}>()
+// 用 tiptap 官方的 props 定義，而不是自己宣告 node / updateAttributes 兩個。
+// VueNodeViewRenderer 要求元件符合完整的 node-view props 契約，少宣告會型別對不上。
+defineProps(nodeViewProps)
 
 const LANGUAGES: { value: string; label: string }[] = [
   { value: 'bash',       label: 'Bash' },

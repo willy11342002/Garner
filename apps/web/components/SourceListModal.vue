@@ -49,12 +49,6 @@ function sourceEmoji(t: string | null) {
   if (t === 'note') return '📝'
   return '🔗'
 }
-function sourceLabel(t: string | null) {
-  if (t === 'youtube') return 'YouTube'
-  if (t === 'ig') return 'IG'
-  if (t === 'note') return 'Note'
-  return 'Article'
-}
 </script>
 
 <style scoped>

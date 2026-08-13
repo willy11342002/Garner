@@ -33,9 +33,11 @@ export interface Item {
   landmarks_error: string | null
 }
 
+// 對齊後端 apps/api/app/schemas/item.py 的 ArticleUpdate（title / notes_md 都是 str | None）：
+// null 代表「清空這個欄位」，跟「不帶這個欄位」意義不同。
 export interface ArticleUpdate {
-  title?: string
-  notes_md?: string
+  title?: string | null
+  notes_md?: string | null
 }
 
 export interface ItemCreate {
@@ -225,12 +227,60 @@ export interface ChatSession {
   updated_at: string
 }
 
+/** search 工具回傳的命中項目。對應 graph/windows/knowledge.py 的 event_data["titles"]。 */
+export interface ChatToolResultItem {
+  id: string | null
+  title: string
+  summary_preview?: string
+}
+
+/**
+ * SSE `tool_result` 事件的負載。欄位依工具而異，全部 optional：
+ * - `search`（knowledge 窗口）→ count + titles
+ * - `save_url`（knowledge 窗口）→ ok + id + title + source_type + error
+ * - report / trip 窗口的寫入工具 → ok + title（+ created / count）
+ * - 其餘工具 → 只有 name
+ * 真相在 apps/api/app/services/ai_service/graph/windows/*.py 的 event_data。
+ */
+export interface ChatToolResult {
+  name?: string
+  ok?: boolean
+  count?: number
+  titles?: ChatToolResultItem[]
+  title?: string | null
+  id?: string | null
+  source_type?: string | null
+  error?: string | null
+}
+
+export interface ChatProcessStep {
+  // 已知的工具參數（template 會直接讀這幾個）；其餘工具的參數用 index signature 收。
+  toolCall: {
+    name?: string
+    query?: string
+    title?: string
+    tags?: string[]
+    source_type?: string
+    start_date?: string
+    end_date?: string
+    [k: string]: unknown
+  }
+  toolResult: ChatToolResult | null
+}
+
+export interface ChatProcessLog {
+  thinking: string
+  steps: ChatProcessStep[]
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   cited_item_ids: string[] | null
-  process_log: { thinking: string; steps: Array<{ toolCall: Record<string, any>; toolResult: { count: number; titles: string[] } | null }> } | null
+  // optional：前端樂觀插入的訊息（送出當下、串流中）還沒有 process_log，
+  // 伺服器回來的歷史訊息才一定帶。
+  process_log?: ChatProcessLog | null
   created_at: string
 }
 

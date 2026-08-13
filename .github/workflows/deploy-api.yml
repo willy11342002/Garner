@@ -9,7 +9,26 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 部署前先自己跑一次測試。CI workflow 也會跑，但那是獨立 workflow、無法用 needs 串，
+  # 而 `push: main + paths` 的觸發條件要保留（改動 web 時不該部署 API），
+  # 所以這裡重跑一次當作硬性閘門——測試只要 3 秒，遠比推壞版本上線便宜。
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.6.11'
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv sync --locked
+      - run: uv run pytest tests/ -v
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

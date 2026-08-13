@@ -8,7 +8,10 @@ const visible   = ref(false)
 const menuTop   = ref(0)
 const menuLeft  = ref(0)
 const menuEl    = ref<HTMLElement | null>(null)
-let insideMenu  = false
+// 用 ref 而不是裸 let：template 的 @mouseenter/@mouseleave 會重新賦值，
+// script-setup 的裸 let 綁定在 template 端會被收斂成字面型別（true 不能指派給 false），
+// 而且 ESLint 的 prefer-const 只看 <script>、會誤判成沒被重新指派。
+const insideMenu = ref(false)
 
 async function reposition() {
   const { selection } = props.editor.state
@@ -39,7 +42,7 @@ async function reposition() {
 function onBlur() {
   // Keep visible while user types in link input
   setTimeout(() => {
-    if (!props.editor.isFocused && !insideMenu) visible.value = false
+    if (!props.editor.isFocused && !insideMenu.value) visible.value = false
   }, 150)
 }
 

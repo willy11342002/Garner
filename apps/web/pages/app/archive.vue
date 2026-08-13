@@ -41,7 +41,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
         永久刪除
       </button>
-      <div class="spacer"></div>
+      <div class="spacer"/>
       <button class="btn btn--ghost" @click="selectedIds.clear()">取消</button>
     </div>
 
@@ -60,14 +60,14 @@
           <svg v-if="selectedIds.has(item.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
         </span>
         <div class="aitem__thumb">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" />
-          <div v-else :class="`placeholder placeholder--${placeholderColor(item.source_type)}`"><div class="placeholder__stripes"></div></div>
+          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" >
+          <div v-else :class="`placeholder placeholder--${placeholderColor(item.source_type)}`"><div class="placeholder__stripes"/></div>
         </div>
         <div class="aitem__main">
           <h3 class="aitem__title">{{ item.title }}</h3>
           <div class="aitem__meta">
             <span>{{ sourceLabel(item.source_type) }}</span>
-            <span class="aitem__dot"></span>
+            <span class="aitem__dot"/>
             <span>{{ domainFromUrl(item.url) }}</span>
           </div>
         </div>
@@ -81,7 +81,7 @@
 
     <!-- Danger zone -->
     <template v-if="dangerItems.length > 0">
-      <header class="danger-head" id="danger">
+      <header id="danger" class="danger-head">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--warn)"><path d="M12 9v4M12 17h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
         <span class="mono">即將永久刪除</span>
         <span class="danger-head__count">{{ dangerItems.length }} 筆 · 24 小時後從系統清除</span>
@@ -89,10 +89,10 @@
 
       <div class="alist">
         <div v-for="item in dangerItems" :key="item.id" class="aitem aitem--danger">
-          <span class="checkbox"></span>
+          <span class="checkbox"/>
           <div class="aitem__thumb">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" />
-            <div v-else :class="`placeholder placeholder--${placeholderColor(item.source_type)}`"><div class="placeholder__stripes"></div></div>
+            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" >
+            <div v-else :class="`placeholder placeholder--${placeholderColor(item.source_type)}`"><div class="placeholder__stripes"/></div>
           </div>
           <div class="aitem__main">
             <h3 class="aitem__title">{{ item.title }}</h3>
@@ -100,7 +100,7 @@
               <span>{{ sourceLabel(item.source_type) }} · {{ timeAgo(item.saved_at) }}</span>
             </div>
           </div>
-          <span class="aitem__when"></span>
+          <span class="aitem__when"/>
           <div class="aitem__actions"><button class="btn btn--warn" @click.stop="restoreItem(item.id)">復原</button></div>
         </div>
       </div>

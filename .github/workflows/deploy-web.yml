@@ -9,7 +9,29 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 部署前先自己跑一次 lint + typecheck，理由同 deploy-api.yml 的 test job：
+  # CI 是獨立 workflow 串不上 needs，而 `push: main + paths` 的觸發條件要保留。
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+
   deploy:
+    needs: check
     runs-on: ubuntu-latest
 
     steps:

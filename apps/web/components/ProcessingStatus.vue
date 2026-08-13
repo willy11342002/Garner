@@ -5,7 +5,6 @@ const { t } = useI18n()
 const itemStore = useItemStore()
 const stage = computed(() => itemStore.processingStages.get(props.itemId) ?? 'fetch')
 
-const STAGES = ['fetch', 'assets', 'note', 'landmarks', 'embedding']
 const label = computed(() => {
   const s = stage.value
   const key = `pipeline.${s}`
