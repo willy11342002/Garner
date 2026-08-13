@@ -18,12 +18,17 @@ garner/
 │   ├── web/          # Nuxt 3 前端
 │   ├── api/          # FastAPI 後端
 │   └── extension/    # Plasmo Chrome Extension
-├── packages/
-│   └── types/        # 共用 TypeScript 型別定義
+├── docs/             # architecture / tech-decisions / agentic-chat-harness
+├── .github/workflows # CI 與部署
+├── .githooks/        # pre-commit（模組地圖同步、extension 升版號檢查）
 ├── CLAUDE.md
+├── CONTRIBUTING.md
 ├── README.md
 └── .gitignore
 ```
+
+> 沒有 `packages/`。共用型別目前各自維護（前端在 `apps/web/types/api.ts`，
+> 後端在 `apps/api/app/schemas/`），要改成共用 package 是還沒做的決定，不是現況。
 
 每個服務獨立管理自己的 `.env`、版本號、依賴。
 
@@ -90,11 +95,32 @@ garner/
 - `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發。**沒有 AI 專屬端口** —— 行程頁懸浮球走 chat，這裡只提供 `build_trip_scope`（組當前狀態＋card_no 對照給 `chat_service.resolve_scope`）與卡片寫入 helper（由 D 窗口的 executor 呼叫）
 - `quick_meta` — `POST /items/` 建立當下同步跑的輕量 metadata 前置步驟（在背景 ingest pipeline 之前跑,讓 201/203 回應時 title/thumbnail 就正確）：YouTube/TikTok 用平台原生 oEmbed；IG/Facebook 沒有可用的官方 oEmbed（需 Meta App Review），改用 `facebookexternalhit` User-Agent 直接抓貼文頁面的 og:title/og:description/og:image（IG/FB 官方連結預覽爬蟲會放行、跳過登入牆);Article 直接重用現有單次 Apify 呼叫（本來就快，同時拿到 title + 全文）。逾時/失敗回退成 title=null + API 回 203，交給背景 pipeline 補正。
 
+### API providers（`apps/api/app/providers/`）
+> ingest pipeline 的**內容來源策略層**，不是 service 也不是 crud。新增支援平台請擴充這裡，
+> 不要在 `item_service` 或 `apify_service` 內塞 if/else 判斷網址。
+
+- `base` — `ContentProvider` 抽象基底（`matches` / `fetch_info` / `fetch_content` 三個方法）
+  與 `FetchInfo` dataclass；另提供共用的 `_cache_thumbnail`（上傳 Supabase Storage）
+  與 `_download_bytes`
+- `__init__` — `get_provider(url)` 註冊表，依序比對 YouTube → Instagram → TikTok →
+  Facebook → Article → Default，第一個 `matches()` 命中者勝出
+- `youtube` · `instagram` · `tiktok` · `facebook` — 各平台的網址正規化
+  （`normalize_*_url`）＋ 抓取邏輯
+- `article` — 一般網頁文章（`fetch_info` 就會帶回 `raw_content`，因此跳過 `fetch_content`）
+- `default` — 都沒命中時的保底
+
 ### API routers（`apps/api/app/routers/`）
 `items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `trips` · `trip_tags`
 
 ### API crud（`apps/api/app/crud/`）
 `items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `trips`
+
+### API 其他（`apps/api/app/` 根目錄）
+- `dependencies` — 共用 `Depends`：DB session、`get_current_user`（只認 Supabase JWT，
+  PAT 機制已於 2026-08 整套下架）
+- `quota_depends` — 以 `Depends` 注入的配額檢查（`SaveQuota` / `ChatQuota` / `SearchAccess`）。
+  只處理「進 API 時就能判斷」的限制；影片長度這種要到 background task 才知道的，
+  在 `item_service.create_item()` 內查 plan 處理
 
 ### Web composables（`apps/web/composables/`）
 - `useItems` / `useItemStore` — Item 資料與狀態
@@ -120,7 +146,7 @@ garner/
 - `place/` — PlaceInfoPanel
 - `pricing/` — PricingPlans
 - `report/` — ReportAiFab（報告頁的 AI 修改懸浮球，跟 TripAiFab 一樣呼叫 chat 的端口、帶 `scope={kind:'report',id}`）
-- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新。**呼叫 chat 的端口**，不是專屬 API —— `POST /chat/sessions` 開一條 session、`POST /chat/sessions/{id}/messages` 帶 `scope={kind:'trip',id}`、`GET .../stream` 訂閱，跟首頁 chat 完全一樣；多輪追問靠後端 session 歷史，不自己帶 history）；TripCardEditor 支援 touch-drag-to-close 關閉 modal（向上或向下快速拖曳自動關閉）；TripShareModal（行程共用管理：成員列表、email 邀請、邀請連結產生/撤銷，owner 限定管理，viewer/editor 唯讀查看）
+- `trip/` — TripAiFab（旅遊行程頁的 AI 修改懸浮球：可拖曳左右停靠、SSE 串流逐動作 emit card-added/updated/deleted 給頁面即時更新。**呼叫 chat 的端口**，不是專屬 API —— `POST /chat/sessions` 開一條 session、`POST /chat/sessions/{id}/messages` 帶 `scope={kind:'trip',id}`、`GET .../stream` 訂閱，跟首頁 chat 完全一樣；多輪追問靠後端 session 歷史，不自己帶 history）；TripShareModal（行程共用管理：成員列表、email 邀請、邀請連結產生/撤銷，owner 限定管理，viewer/editor 唯讀查看）
 - 根目錄 — BaseFab（通用懸浮球容器：可拖曳、側邊停靠、badge、icon、panel slot、支援多球同時共存 multi-FAB），TiptapEditor, BubbleMenuBar, CodeBlockView, ProcessingStatus, SourceListModal（跨頁共用：列出來源收藏，點選後 emit select(id) 供開啟詳情）, ToastList（全域 toast 容器，掛在 default layout，搭配 useToast）, OfflineBanner（PWA 離線提示條，偵測 navigator.onLine 事件，掛在 default layout）
 
 ### Web utils（`apps/web/utils/`）
@@ -138,17 +164,52 @@ garner/
 | 後端 | FastAPI (Python) |
 | 資料庫 | Supabase PostgreSQL + pgvector |
 | 認證 | Supabase Auth（Google / GitHub SSO）|
-| AI | OpenRouter → Claude（摘要）+ OpenAI text-embedding-3-small（1536d）|
-| Object Storage | Cloudflare R2（縮圖快取）|
+| AI — LLM | **Gemini native API**（`google-genai` SDK）：對話、摘要、標籤、報告 |
+| AI — Embedding | **OpenRouter**（OpenAI `text-embedding-3-small`，1536d，走 OpenAI-compatible SDK）|
+| AI — Agent | LangGraph（`langgraph` + `langgraph-checkpoint-postgres`），分層 supervisor 架構 |
+| Object Storage | Supabase Storage（縮圖快取，bucket 由 `STORAGE_BUCKET` 指定）|
 | 付費 | Gumroad |
 | Extension | Plasmo（Manifest V3）|
-| 部署 | Vercel（前端）/ Railway 或 Fly.io（後端）|
-| 監控 | Sentry + PostHog |
+| 部署 | Vercel（前端）/ Fly.io（後端）|
+| 監控 | Sentry（`sentry-sdk`，見 `app/core/tracing.py`）|
+
+> **LLM 與 embedding 是兩個不同 provider、不同 SDK、不同 API key，不要混為一談。**
+> 這張表以前寫成「OpenRouter → Claude」，跟下方模組地圖自相矛盾，已於 2026-08 更正。
+>
+> **Cloudflare R2 沒有在用**：縮圖實際上傳 Supabase Storage
+> （`providers/base.py:_cache_thumbnail`、`item_service.py`）。
+>
+> **PostHog 目前沒有接**：不是依賴、沒有 plugin、沒有任何載入程式碼。
+> 但 `apps/web/pages/privacy.vue` 的隱私政策仍聲明有用 PostHog 收集匿名行為事件——
+> 這是對外聲明與實作不符，待處理（要嘛真的接上、要嘛移除該段聲明）。
 
 > **延伸閱讀**（屬同步對象，改到相關內容時一併更新）：
 > - 技術選型理由、成本、部署 → `docs/tech-decisions.md`
 > - 產品定位、商業模式、整體架構 → `docs/architecture.md`
 > - 最新訂閱方案與價格（單一真相來源）→ `apps/web/pages/pricing.vue`
+
+---
+
+## Health Stack
+
+品質檢查的完整指令。CI（`.github/workflows/ci.yml`）跑的就是這幾條，本機請跑同一組：
+
+- lint: `cd apps/web && pnpm lint`
+- typecheck: `cd apps/web && pnpm typecheck`
+- test: `cd apps/api && uv run pytest`
+
+三件事要知道：
+
+1. **`pnpm install` 的 postinstall 會跑 `nuxt prepare`**，產生 `.nuxt/eslint.config.mjs`
+   與型別定義。`eslint.config.mjs` 與 `typecheck` 都依賴它，乾淨環境不能跳過 install。
+2. **CI 同時掛 `push` 與 `pull_request`**。本專案實際流程是直接推 main，
+   只掛 `pull_request` 等於 CI 從來不會跑——2026-08 之前就是這樣，
+   `pnpm lint` 壞了（缺 eslint.config.mjs、exit 2）好幾個月沒人發現。
+3. **`deploy-api` / `deploy-web` 各自有前置 job**，測試或型別沒過就不部署。
+   不要為了趕上線加 `continue-on-error`——那正是 pytest 當年沒真的跑過的原因。
+
+前端目前**沒有任何自動化測試**，lint 與 typecheck 是唯一的自動防線，
+所以動到 `.vue` 的行為時要自己在瀏覽器走一遍。
 
 ---
 
@@ -178,6 +239,7 @@ apps/api/
 ├── app/
 │   ├── main.py              # FastAPI app 初始化、lifespan、middleware
 │   ├── dependencies.py      # 共用 Depends（db session、current user 等）
+│   ├── quota_depends.py     # 配額檢查 Depends（SaveQuota / ChatQuota / SearchAccess）
 │   ├── routers/             # 路由層：只做參數接收與回傳，不放業務邏輯
 │   │   ├── items.py
 │   │   ├── tags.py
@@ -185,9 +247,13 @@ apps/api/
 │   │   └── auth.py
 │   ├── services/            # 業務邏輯層：所有核心運算放這裡（完整清單見上方「現有模組地圖」）
 │   │   ├── item_service.py
-│   │   ├── ai_service.py    # OpenRouter 呼叫（摘要、embedding）
+│   │   ├── ai_service/      # LLM 走 Gemini native、embedding 走 OpenRouter（兩個 provider）
 │   │   ├── search_service.py
 │   │   └── ...              # chat / place / geocoding / billing / gumroad / apify
+│   ├── providers/           # 內容來源策略層：依網址挑 provider 抓取（見上方模組地圖）
+│   │   ├── base.py          # ContentProvider ABC + FetchInfo
+│   │   ├── youtube.py
+│   │   └── ...              # instagram / tiktok / facebook / article / default
 │   ├── crud/                # 資料庫操作層：只做 DB 讀寫，不放業務邏輯
 │   │   ├── items.py
 │   │   ├── tags.py
@@ -203,15 +269,19 @@ apps/api/
 │   ├── core/                # 設定、安全、常數
 │   │   ├── config.py        # 讀取 .env（用 pydantic-settings）
 │   │   ├── security.py      # JWT encode/decode
+│   │   ├── tracing.py       # Sentry span helper
 │   │   └── database.py      # Supabase 連線、session factory
 │   └── workers/             # BackgroundTasks 的實際工作函式
-│       └── process_item.py
+│       ├── process_item.py
+│       └── ingest_graph.py
+├── alembic/                 # migration（指令見 .claude/skills/garner-alembic）
 ├── tests/
 │   ├── test_items.py
 │   └── test_search.py
 ├── .env
 ├── pyproject.toml
-└── README.md
+├── uv.lock                  # 依賴的唯一真相，CI / 部署一律 --locked
+└── Dockerfile
 ```
 
 ### 層級規則

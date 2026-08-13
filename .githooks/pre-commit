@@ -21,7 +21,9 @@ read_version() {
 }
 
 # ---------- 1. 現有模組地圖同步檢查 ----------
-map_regex='^apps/api/app/(services|routers|crud)/|^apps/web/(composables|stores|utils)/|^apps/web/components/'
+# providers / workers 是後補的：2026-08 稽核時發現 app/providers/ 已經長到 7 支模組
+# 卻完全沒進 CLAUDE.md 的模組地圖，原因就是這條 regex 當初沒涵蓋它們。
+map_regex='^apps/api/app/(services|routers|crud|providers|workers)/|^apps/web/(composables|stores|utils)/|^apps/web/components/'
 
 new_modules=$(printf '%s\n' "$added_files" \
   | grep -E "$map_regex" \

@@ -209,8 +209,9 @@ score = (clicks + saves*2 + related*1.5) / Math.pow(hoursSince + 2, 1.8)
 
 - Frontend：Nuxt 3（Vue 3 + Pinia）
 - Vector DB：Supabase pgvector（不另接 Pinecone）
-- Embedding：OpenAI text-embedding-3-small（1536 維）
-- LLM：Claude via OpenRouter（摘要）
+- Embedding：OpenAI text-embedding-3-small（1536 維），via OpenRouter
+- LLM：Gemini native API（`google-genai`）——對話、摘要、標籤、報告
+  （2026-08 前是 Claude via OpenRouter，為了原生 function calling 改掉）
 - 付費：Gumroad
 - 縮圖：YouTube 直抓 / og:image / IG 透過 Apify
 

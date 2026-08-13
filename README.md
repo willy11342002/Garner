@@ -12,8 +12,7 @@ garner/
 │   ├── web/          # Nuxt 3 前端
 │   ├── api/          # FastAPI 後端
 │   └── extension/    # Plasmo Chrome Extension
-├── packages/
-│   └── types/        # 共用 TypeScript 型別定義
+├── docs/             # 架構與技術決策
 ├── CLAUDE.md
 ├── CONTRIBUTING.md
 └── README.md
@@ -25,9 +24,10 @@ garner/
 
 | 工具 | 版本 |
 |------|------|
-| Node.js | 20+ |
+| Node.js | 22+ |
 | Python | 3.12+ |
-| pnpm | 9+ |
+| pnpm | 由 `apps/web/package.json` 的 `packageManager` 決定（目前 11.3.0，用 `corepack enable`）|
+| uv | 0.6.11（釘在 Dockerfile 與兩支 workflow，要升就三處一起升）|
 
 ---
 
@@ -36,8 +36,8 @@ garner/
 ### 1. Clone repo
 
 ```bash
-git clone https://github.com/your-org/garner.git
-cd garner
+git clone https://github.com/willy11342002/Vela.git
+cd Vela
 ```
 
 ### 2. 前端（Nuxt 3）
@@ -85,8 +85,19 @@ pnpm dev
 - **AI**：Gemini native API（LLM）+ OpenRouter（OpenAI text-embedding-3-small，1536d）
   - **RAG**：pgvector 語意檢索（embedding 相似度搜尋）+ 關鍵字搜尋，供 chat / search 引用知識庫內容
   - **Agent 框架**：LangGraph（`langgraph` + `langgraph-checkpoint-postgres`）— chat 採分層 supervisor 架構：監督者派工給 knowledge / report / trip 三個窗口 agent
-- **Object Storage**：Cloudflare R2（縮圖快取）
+- **Object Storage**：Supabase Storage（縮圖快取）
 - **付費**：Gumroad
 - **Extension**：Plasmo（Manifest V3）
 - **部署**：Vercel（前端）/ Fly.io（後端）/ Supabase
-- **監控**：Sentry + PostHog
+- **監控**：Sentry
+
+---
+
+## 品質檢查
+
+```bash
+cd apps/web && pnpm lint && pnpm typecheck
+cd apps/api && uv run pytest
+```
+
+CI 跑的就是這幾條（`.github/workflows/ci.yml`，`push` 與 `pull_request` 都會觸發）。

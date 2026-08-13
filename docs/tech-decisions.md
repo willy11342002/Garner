@@ -13,7 +13,7 @@
     ↓
 資料層（Supabase PostgreSQL + pgvector）
     ↓
-AI 服務（OpenRouter → Claude + OpenAI Embedding）
+AI 服務（Gemini native → LLM；OpenRouter → OpenAI Embedding）
 ```
 
 一個前端 server + 一個後端 server。
@@ -56,9 +56,9 @@ routeRules: {
 用戶存入 URL
     → FastAPI 立刻回傳 202（已接收）
     → BackgroundTasks 背景執行：
-        1. 抓縮圖（YouTube API / og:image）
-        2. 呼叫 Claude API 產生摘要 + 標籤
-        3. 呼叫 OpenAI Embedding API
+        1. 抓縮圖（依網址挑 provider，見 app/providers/）
+        2. 呼叫 Gemini 產生摘要 + 標籤
+        3. 呼叫 OpenAI Embedding API（via OpenRouter）
         4. 寫入 PostgreSQL + pgvector
     → WebSocket 推回前端（toast 通知）
 ```
@@ -94,10 +94,12 @@ async def process_item(item_id, url):
 - 免費方案：500MB 資料庫空間，前 1000 個用戶不會超標
 - 軟刪除狀態機（active → archived → deleted）直接在 PostgreSQL 管理
 
-### Object Storage（Cloudflare R2）
+### Object Storage（Supabase Storage）
 
-- 用於快取縮圖
-- 比 Supabase Storage 便宜，無出流量費用
+- 用於快取縮圖，bucket 由 `STORAGE_BUCKET` 指定（預設 `thumbnails`）
+- 實作在 `app/providers/base.py:_cache_thumbnail` 與 `app/services/item_service.py`
+- 曾規劃改用 Cloudflare R2（更便宜、無出流量費用），**但一直沒有實作**。
+  repo 內沒有任何 R2 設定或程式碼，需要時再評估。
 
 ---
 
@@ -118,28 +120,34 @@ async def process_item(item_id, url):
 
 ---
 
-## AI 服務：OpenRouter
+## AI 服務：Gemini（LLM）+ OpenRouter（Embedding）
 
-**為什麼用 OpenRouter 而不是直連各家 API？**
+**現況是兩個 provider 並存，不是一個。** 兩者用不同 SDK、不同 API key，
+在 `app/services/ai_service/_client.py` 內分別由 `_llm()` 與 `_emb()` 取得。
 
-- 一個 API key 存取 Claude（摘要）+ OpenAI Embedding
-- 不需要分別申請 Anthropic 和 OpenAI 帳號
-- MVP 階段 $19 額度夠用來驗證產品
+| 用途 | Provider / 模型 | SDK |
+|------|------|------|
+| 對話、摘要、標籤、報告 | Gemini native API | `google-genai` |
+| Embedding 向量化 | OpenRouter → OpenAI `text-embedding-3-small`（1536 維）| `openai`（OpenAI-compatible）|
 
-**已知限制：**
+**為什麼 LLM 從 OpenRouter → Claude 改成 Gemini native？**
+
+原本走 OpenRouter 是為了「一個 key 打天下」，但 agentic chat 需要原生的
+function calling 與 `types.Content` 結構化訊息，隔一層 OpenAI-compatible 介面
+會失真（工具呼叫格式、多模態 part 都要手動轉）。改成 native 之後
+`_client.py` 統一用 `user_turn()` / `model_turn()` / `tool_results()` / `image_part()`
+組訊息，**不要再手刻 OpenAI 格式的 dict**。
+
+**為什麼 embedding 還留在 OpenRouter？**
+
+1536 維是寫死的架構決策（見下方「不可更改」），換 provider 就要 re-embed 全部資料。
+沒有足夠理由承擔這個成本，所以維持現狀。
+
+**OpenRouter 的已知限制（仍適用於 embedding）：**
 - 充值有 5.5% 手續費
 - 2025-2026 有三次斷線記錄（每次約 35-50 分鐘）
 - 沒有 SLA 保證
-- 斷線時會回傳 401 錯誤（容易誤判為自己的程式問題）
-
-**升級時機：** 每月 AI 成本超過 $50，或有付費用戶之後，考慮換直連 Anthropic API。Code 只需改一行 endpoint。
-
-**模型分工：**
-
-| 用途 | 模型 |
-|------|------|
-| 摘要 + 標籤生成 | Claude（via OpenRouter）|
-| Embedding 向量化 | OpenAI text-embedding-3-small（1536 維）|
+- 斷線時會回傳 401 錯誤（容易誤判為自己的程式問題）→ 後端捕捉後轉 503
 
 ---
 
@@ -161,17 +169,23 @@ https://img.youtube.com/vi/{VIDEO_ID}/maxresdefault.jpg
 
 | 服務 | 平台 | 備註 |
 |------|------|------|
-| FastAPI 後端 | Railway 或 Fly.io | Railway 設定較簡單；Fly.io 彈性較高 |
+| FastAPI 後端 | **Fly.io**（app: `garner-api`）| 2026-08 從 Railway 搬過來，已定案 |
 | Nuxt 3 前端 | Vercel | 與 Nuxt 3 官方整合最佳 |
 | PostgreSQL + Auth | Supabase | 免費方案起步 |
-| Redis | Upstash | 免費方案起步 |
+| 縮圖 Object Storage | Supabase Storage | bucket 由 `STORAGE_BUCKET` 指定 |
+
+> 搬離 Railway 時踩過的坑：Chrome Extension 曾把後端網址寫死在 build 裡，
+> 一搬家就整個掛掉，且改回來要重送 Chrome Web Store 審核。
+> 現在擴充只認前端網域（走 `/app/quick-add`），後端搬家與擴充無關。
 
 ---
 
 ## 監控
 
-- 錯誤監控：Sentry（FastAPI + Nuxt 3 都有 SDK）
-- 使用者行為分析：PostHog
+- 錯誤監控：**Sentry**（`sentry-sdk[fastapi]`，span helper 在 `app/core/tracing.py`）
+- 使用者行為分析：**尚未接**。`apps/web/pages/privacy.vue` 的隱私政策目前聲明
+  有用 PostHog 收集匿名行為事件，但 repo 內沒有 posthog 依賴、沒有 plugin、
+  沒有任何載入程式碼。這是對外聲明與實作不符，要嘛補上整合、要嘛移除該段聲明。
 
 ---
 
@@ -181,9 +195,10 @@ https://img.youtube.com/vi/{VIDEO_ID}/maxresdefault.jpg
 |------|---------|-----------|
 | Supabase | 500MB / 50K MAU | 超量或需要更多功能 |
 | Vercel | 100GB 流量 | 商業用途需升級 |
-| Railway | $5 免費額度/月 | 用完後按量計費 |
+| Fly.io | 小型機器有免費額度 | 超量按量計費（目前 shared-cpu-1x 單核）|
 | Gumroad | 無月費 | 每筆交易抽成 |
-| OpenRouter | $19 已有額度 | 用完後按量充值（+5.5% 手續費）|
+| Gemini API | 有免費層級 | LLM 呼叫（對話 / 摘要 / 標籤 / 報告）|
+| OpenRouter | $19 已有額度 | 只剩 embedding 在用（+5.5% 手續費）|
 
 **唯一從第一天就計費的是 AI API 呼叫。** 前 100 個用戶預估每月 $3–10 美金。
 
