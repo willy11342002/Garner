@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from app.schemas.item import ItemCreate, ItemPage, ItemRead, ItemUpdate
 from app.schemas.tag import TagCreate, TagRead
 from app.services import item_service
 
+logger = logging.getLogger("garner.items")
 router = APIRouter()
 
 
@@ -214,18 +216,7 @@ async def stream_item_status(item_id: UUID, current_user: CurrentUser, db: DbSes
 
 @router.get("/{item_id}/tags", response_model=list[TagRead])
 async def list_item_tags(item_id: UUID, current_user: CurrentUser, db: DbSession):
-    from sqlalchemy import select
-    from app.models.item_tag import ItemTag
-    from app.models.tag import Tag
-    result = await db.execute(
-        select(Tag)
-        .join(ItemTag, ItemTag.tag_id == Tag.id)
-        .where(
-            ItemTag.user_item_id == item_id,
-            Tag.user_id == UUID(current_user["sub"]),
-        )
-    )
-    return list(result.scalars().all())
+    return await crud_tags.get_by_item(db, UUID(current_user["sub"]), item_id)
 
 
 @router.post("/{item_id}/tags", response_model=TagRead)
@@ -273,14 +264,15 @@ async def reanalyze_item_notes(
         )
 
     async def _run() -> None:
-        from sqlalchemy import select
-        from app.models.user_item import UserItem
         from app.workers.process_item import _note_and_embedding
 
         async with AsyncSessionLocal() as bg_db:
-            raw_content = (await bg_db.execute(
-                select(UserItem.extract).where(UserItem.id == item_id)
-            )).scalar_one()["raw_content"]
+            raw_content = await crud_items.get_raw_content(bg_db, item_id)
+
+        if not raw_content:
+            # 上面已經擋過一次，但請求與背景任務之間內容可能被清掉
+            logger.warning("reanalyze skipped: no raw_content for item %s", item_id)
+            return
 
         # Each stage opens its own session; we only need raw_content + ids here.
         await _note_and_embedding(item_id, raw_content, user_id)

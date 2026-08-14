@@ -113,7 +113,18 @@ garner/
 `items` · `articles` · `tags` · `search` · `chat` · `reports` · `auth` · `billing` · `quota` · `notifications` · `locations` · `admin` · `trips` · `trip_tags`
 
 ### API crud（`apps/api/app/crud/`）
-`items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `trips`
+`items` · `tags` · `users` · `chat` · `reports` · `chunks` · `places` · `locations` · `notifications` · `trips` · `quota`
+
+> `quota` 是 `/quota/me` 的彙總查詢（一次 round-trip 撈齊 plan／用量／限制的手寫 SQL）。
+> 跟 `quota_depends` 的 ORM 逐項查詢刻意分開：後者是進 API 時判斷單一限制，前者是給前端畫面一次拿齊。
+
+### API workers（`apps/api/app/workers/`）
+> BackgroundTasks 的實際工作函式。router 只負責驗證與排程，批次／長流程邏輯放這裡。
+
+- `process_item` — ingest pipeline 的 stage 函式與 DAG 編排
+- `ingest_graph` — ingest 的 LangGraph 流程
+- `backfill` — 一次性 backfill（目前有 `backfill_search_zh`：補齊既有資料的中文斷詞欄位）
+- `maintenance` — 每日排程維護
 
 ### API 其他（`apps/api/app/` 根目錄）
 - `dependencies` — 共用 `Depends`：DB session、`get_current_user`（只認 Supabase JWT，

@@ -3,10 +3,10 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy import text
 
+from app.crud import quota as crud_quota
 from app.dependencies import CurrentUser, DbSession
-from app.quota_depends import _monthly_key
+from app.quota_depends import monthly_key
 
 router = APIRouter()
 
@@ -26,65 +26,6 @@ class UsageSummary(BaseModel):
     video_max_minutes: int
 
 
-_QUOTA_SQL = text("""
-WITH effective_plan AS (
-    -- 有效訂閱的 plan
-    SELECT p.id AS plan_id, p.name AS plan_name, s.current_period_end
-    FROM subscriptions s
-    JOIN plans p ON p.id = s.plan_id
-    WHERE s.user_id = :user_id
-      AND s.status IN ('active', 'trialing')
-      AND s.current_period_end > NOW()
-    UNION ALL
-    -- 無訂閱時 fallback 到 free plan
-    SELECT p.id, p.name, NULL::timestamptz
-    FROM plans p
-    WHERE p.name = 'free'
-      AND NOT EXISTS (
-          SELECT 1 FROM subscriptions s2
-          WHERE s2.user_id = :user_id
-            AND s2.status IN ('active', 'trialing')
-            AND s2.current_period_end > NOW()
-      )
-    LIMIT 1
-)
-SELECT
-    ep.plan_name,
-    ep.current_period_end,
-    -- saves：count user_items + reanalyze/landmark 的 user_feature_usage 計次
-    ((SELECT COUNT(*)::int
-      FROM user_items ui
-      WHERE ui.user_id  = :user_id
-        AND ui.saved_at >= :month_start
-        AND ui.deleted_at IS NULL
-        AND ui.source_type != 'article')
-     + COALESCE((SELECT ufu.count FROM user_feature_usage ufu
-                 WHERE ufu.user_id = :user_id AND ufu.feature = 'saves_monthly'
-                   AND ufu.period_key = :monthly_key), 0)
-    ) AS saves_used,
-    -- usage（各走 unique index point lookup）
-    COALESCE((SELECT ufu.count FROM user_feature_usage ufu
-              WHERE ufu.user_id = :user_id AND ufu.feature = 'chat_monthly'
-                AND ufu.period_key = :monthly_key), 0)  AS chat_used,
-    COALESCE((SELECT ufu.count FROM user_feature_usage ufu
-              WHERE ufu.user_id = :user_id AND ufu.feature = 'synthesis_monthly'
-                AND ufu.period_key = :monthly_key), 0)  AS synthesis_used,
-    -- limits（各走 PK index point lookup）
-    (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'saves_monthly')      AS saves_limit,
-    (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'chat_monthly')       AS chat_limit,
-    (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'synthesis_monthly')  AS synthesis_limit,
-    (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'video_max_sec')   AS video_max_sec,
-    (SELECT pfl.value FROM plan_feature_limits pfl
-     WHERE pfl.plan_id = ep.plan_id AND pfl.feature = 'search')          AS search_val
-FROM effective_plan ep
-LIMIT 1
-""")
-
-
 @router.get("/me", response_model=UsageSummary)
 async def get_my_quota(current_user: CurrentUser, db: DbSession):
     user_id = UUID(current_user["sub"])
@@ -92,14 +33,7 @@ async def get_my_quota(current_user: CurrentUser, db: DbSession):
         day=1, hour=0, minute=0, second=0, microsecond=0
     )
 
-    row = (await db.execute(
-        _QUOTA_SQL,
-        {
-            "user_id": user_id,
-            "month_start": month_start,
-            "monthly_key": _monthly_key(),
-        },
-    )).mappings().one()
+    row = await crud_quota.get_usage_summary(db, user_id, month_start, monthly_key())
 
     video_max_sec = row["video_max_sec"] or 1200
 

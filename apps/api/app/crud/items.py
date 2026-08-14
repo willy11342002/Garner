@@ -53,6 +53,34 @@ async def get_one(db: AsyncSession, user_id: UUID, item_id: UUID) -> UserItem | 
     return result.scalar_one_or_none()
 
 
+async def get_raw_content(db: AsyncSession, item_id: UUID) -> str | None:
+    """只取 extract["raw_content"]，不整筆 UserItem 撈進來。
+
+    給重新分析的背景任務用：它已經在 router 端驗證過擁有者，這裡只要內容。
+    """
+    extract = (await db.execute(
+        select(UserItem.extract).where(UserItem.id == item_id)
+    )).scalar_one_or_none()
+    return (extract or {}).get("raw_content")
+
+
+async def get_notes_md(db: AsyncSession, item_id: UUID) -> str:
+    """只取 notes_md 欄位。給重跑地標抽取的背景任務用；沒有內容時回空字串。"""
+    notes = (await db.execute(
+        select(UserItem.notes_md).where(UserItem.id == item_id)
+    )).scalar_one_or_none()
+    return notes or ""
+
+
+async def get_missing_search_zh(db: AsyncSession, limit: int) -> list[UserItem]:
+    """撈出還沒斷詞的 user_items（title_zh 為 NULL 但 title 有值），供 backfill 分批處理。"""
+    return list((await db.execute(
+        select(UserItem)
+        .where(UserItem.title_zh.is_(None), UserItem.title.is_not(None))
+        .limit(limit)
+    )).scalars().all())
+
+
 async def get_by_ids(db: AsyncSession, user_id: UUID, item_ids: list[UUID]) -> list[UserItem]:
     """批次取得指定 item_ids，保留原始順序，忽略不屬於該 user 或已刪除的。"""
     if not item_ids:

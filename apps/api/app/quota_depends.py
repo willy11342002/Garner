@@ -143,7 +143,7 @@ async def _increment(db: AsyncSession, user_id: UUID, feature: str, period_key: 
     await db.execute(stmt)
 
 
-def _monthly_key() -> str:
+def monthly_key() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
@@ -171,7 +171,7 @@ async def _count_monthly_saves(db: AsyncSession, user_id: UUID) -> int:
         )
     )
     item_saves = result.scalar_one()
-    reanalyze_saves = await _get_usage(db, user_id, "saves_monthly", _monthly_key())
+    reanalyze_saves = await _get_usage(db, user_id, "saves_monthly", monthly_key())
     return item_saves + reanalyze_saves
 
 
@@ -219,7 +219,7 @@ async def check_reanalyze_quota(current_user: CurrentUser, db: DbSession) -> Non
     used = await _count_monthly_saves(db, user_id)
     if used >= limit:
         raise _quota_exceeded("saves_monthly", used, limit, plan_name)
-    period = _monthly_key()
+    period = monthly_key()
     await _increment(db, user_id, "saves_monthly", period)
     await db.commit()
 
@@ -229,7 +229,7 @@ async def check_chat_quota(current_user: CurrentUser, db: DbSession) -> None:
     user_id = UUID(current_user["sub"])
     plan_id, plan_name = await _get_plan(db, user_id)
     limit = await _get_limit(db, plan_id, "chat_monthly")
-    period = _monthly_key()
+    period = monthly_key()
     used = await _get_usage(db, user_id, "chat_monthly", period)
     if limit is not None and used >= limit:
         raise _quota_exceeded("chat_monthly", used, limit, plan_name)

@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -118,3 +118,60 @@ async def test_detach_tag(client):
     with patch("app.crud.tags.detach_tag", new=AsyncMock(return_value=None)):
         resp = await client.delete(f"/items/{TEST_ITEM_ID}/tags/{TEST_TAG_ID}")
     assert resp.status_code == 204
+
+
+# ── Reanalyze ──────────────────────────────────────────────────────────────────
+
+async def test_reanalyze_passes_matching_signature_to_worker(client):
+    """回歸測試：背景任務曾經少傳一個參數給 _note_and_embedding。
+
+    router 呼叫 `_note_and_embedding(item_id, raw_content, user_id)`，但當時的簽章
+    多一個沒人用的 `url`，所以「重新分析」一按就 TypeError。這條路徑先前零覆蓋，
+    所以壞了也沒人知道。
+
+    關鍵是 `autospec=True`：它讓 mock 沿用真實簽章，參數數量對不上就會失敗。
+    用一般的 AsyncMock 會照單全收，抓不到這種錯。
+    """
+    from app.main import app
+    from app.quota_depends import check_reanalyze_quota
+
+    app.dependency_overrides[check_reanalyze_quota] = lambda: None
+    try:
+        item = MagicMock()
+        item.extract = {"raw_content": "some text"}
+
+        with (
+            patch("app.crud.items.get_one", new=AsyncMock(return_value=item)),
+            patch("app.crud.items.get_raw_content", new=AsyncMock(return_value="some text")),
+            patch("app.core.database.AsyncSessionLocal"),
+            patch(
+                "app.workers.process_item._note_and_embedding",
+                autospec=True,
+            ) as mock_worker,
+        ):
+            resp = await client.post(f"/items/{TEST_ITEM_ID}/reanalyze")
+
+        assert resp.status_code == 202
+        # BackgroundTasks 在回應送出後執行，此時應已被呼叫且參數對得上簽章
+        mock_worker.assert_awaited_once()
+        args, _ = mock_worker.await_args
+        assert args[0] == TEST_ITEM_ID
+        assert args[1] == "some text"
+    finally:
+        app.dependency_overrides.pop(check_reanalyze_quota, None)
+
+
+async def test_reanalyze_rejects_item_without_raw_content(client):
+    item = MagicMock()
+    item.extract = None
+
+    from app.main import app
+    from app.quota_depends import check_reanalyze_quota
+
+    app.dependency_overrides[check_reanalyze_quota] = lambda: None
+    try:
+        with patch("app.crud.items.get_one", new=AsyncMock(return_value=item)):
+            resp = await client.post(f"/items/{TEST_ITEM_ID}/reanalyze")
+        assert resp.status_code == 422
+    finally:
+        app.dependency_overrides.pop(check_reanalyze_quota, None)

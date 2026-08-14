@@ -236,7 +236,7 @@ async def _run_pipeline(
 
     async def _note_branch():
         nonlocal note_exc
-        note_exc = await _note_and_embedding(user_item_id, raw_content, user_id, url)
+        note_exc = await _note_and_embedding(user_item_id, raw_content, user_id)
 
     async def _landmarks_branch():
         # ai_locations come from raw_content directly, so this is independent
@@ -254,7 +254,7 @@ async def _run_pipeline(
 
 
 async def _note_and_embedding(
-    user_item_id: UUID, raw_content: str, user_id: UUID, url: str
+    user_item_id: UUID, raw_content: str, user_id: UUID
 ) -> Exception | None:
     """Run the note stage and the embedding stage for an item with known
     raw_content. The chunk embedding (pure network, no DB) is computed in

@@ -119,6 +119,21 @@ async def detach_tag(db: AsyncSession, user_item_id: UUID, tag_id: UUID) -> None
     await db.flush()
 
 
+async def get_by_item(
+    db: AsyncSession, user_id: UUID, user_item_id: UUID
+) -> list[Tag]:
+    """某筆收藏掛的所有標籤。get_items_by_tag 的反向查詢。"""
+    result = await db.execute(
+        select(Tag)
+        .join(ItemTag, ItemTag.tag_id == Tag.id)
+        .where(
+            ItemTag.user_item_id == user_item_id,
+            Tag.user_id == user_id,
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def get_items_by_tag(
     db: AsyncSession, user_id: UUID, tag_id: UUID
 ) -> list["UserItem"]:  # type: ignore[name-defined]

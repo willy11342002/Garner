@@ -147,8 +147,6 @@ async def extract_item_locations(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     async def _run_landmarks() -> None:
-        from sqlalchemy import select
-        from app.models.user_item import UserItem
         from app.workers.process_item import _stage_landmarks
         from app.services import ai_service
 
@@ -156,9 +154,7 @@ async def extract_item_locations(
         async with AsyncSessionLocal() as bg_db:
             await crud_locations.delete_auto_locations(bg_db, lm_item_id)
             await bg_db.commit()
-            notes_md = (await bg_db.execute(
-                select(UserItem.notes_md).where(UserItem.id == lm_item_id)
-            )).scalar_one() or ""
+            notes_md = await crud_items.get_notes_md(bg_db, lm_item_id)
 
         # _stage_landmarks opens its own session internally.
         ai_locations = await ai_service.extract_locations(notes_md)
