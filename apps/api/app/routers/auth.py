@@ -43,6 +43,17 @@ async def gumroad_oauth_callback(code: str):
     一次性 OAuth callback — 用 code 換 access_token。
     拿到 token 後貼到 .env GUMROAD_ACCESS_TOKEN 即可。
     """
+    # redirect_uri 必須跟 Gumroad 後台 Applications 註冊的逐字相同，否則 token 交換會被拒。
+    # 沒設定時先在這裡擋掉並講清楚，不要送一個空字串出去換 Gumroad 的模糊錯誤。
+    if not settings.gumroad_redirect_uri:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "GUMROAD_REDIRECT_URI 未設定。請設成 Gumroad 後台 Applications 的 "
+                "Redirect URI（本服務是 <API_BASE>/auth/gumroad/callback），兩邊必須完全一致。"
+            ),
+        )
+
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             "https://api.gumroad.com/oauth/token",

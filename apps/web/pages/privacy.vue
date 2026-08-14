@@ -53,7 +53,6 @@
           <li>{{ t('privacy.s5_li4') }}</li>
           <li>{{ t('privacy.s5_li5') }}</li>
           <li>{{ t('privacy.s5_li6') }}</li>
-          <li>{{ t('privacy.s5_li7') }}</li>
         </ul>
       </section>
 
