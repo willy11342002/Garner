@@ -38,6 +38,7 @@ const apiFetch = useApiFetch()
 const itemStore = useItemStore()
 const gmap = useGlobalMap()
 const { toggle: chainToggle, isInChain } = useChain()
+const { isBroken, markBroken } = useImageFallback()
 
 // ── Map state ─────────────────────────────────────────────────────────────────
 const mapContainer = ref<HTMLElement | null>(null)
@@ -314,7 +315,13 @@ watch(gmap.locationVersion, () => {
         <div v-if="drawerTab === 'items'" class="map-drawer__items">
           <div v-for="loc in drawerItems" :key="loc.id" class="map-drawer__item">
             <div class="map-drawer__item-card" @click="openItem(loc.item_id)">
-              <img v-if="loc.item_thumbnail" :src="loc.item_thumbnail" class="map-drawer__item-thumb" alt="" >
+              <img
+                v-if="loc.item_thumbnail && !isBroken(loc.item_thumbnail)"
+                :src="loc.item_thumbnail"
+                class="map-drawer__item-thumb"
+                alt=""
+                @error="markBroken(loc.item_thumbnail)"
+              >
               <div v-else class="map-drawer__item-thumb map-drawer__item-thumb--empty" />
               <div class="map-drawer__item-body">
                 <span class="map-drawer__item-title">{{ loc.item_title || '（無標題）' }}</span>
@@ -354,7 +361,13 @@ watch(gmap.locationVersion, () => {
       </div>
       <div class="map-no-location__list">
         <div v-for="item in noLocationItems.slice(0, 20)" :key="item.id" class="map-no-location__row">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="map-no-location__thumb" alt="" >
+          <img
+            v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+            :src="item.thumbnail_url"
+            class="map-no-location__thumb"
+            alt=""
+            @error="markBroken(item.thumbnail_url)"
+          >
           <div v-else class="map-no-location__thumb map-no-location__thumb--empty" />
           <span class="map-no-location__name">{{ item.title || '（無標題）' }}</span>
           <button

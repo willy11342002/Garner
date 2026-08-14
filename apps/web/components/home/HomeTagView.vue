@@ -9,6 +9,7 @@ const { open: openItemModal } = useItemModal()
 const { toggle: toggleChain, isInChain } = useChain()
 const { resumeItem } = useItems()
 const { t } = useI18n()
+const { isBroken, markBroken } = useImageFallback()
 
 const retryingIds = ref(new Set<string>())
 
@@ -373,7 +374,13 @@ onMounted(async () => {
         @click.prevent="openItemModal(item.id)"
       >
         <div class="card__thumb">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" >
+          <img
+            v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+            :src="item.thumbnail_url"
+            class="card__img"
+            alt=""
+            @error="markBroken(item.thumbnail_url)"
+          >
           <div v-else class="placeholder placeholder--a">
             <div class="placeholder__stripes"/>
           </div>

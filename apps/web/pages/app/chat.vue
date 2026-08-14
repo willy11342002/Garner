@@ -134,7 +134,13 @@
                         class="src-card"
                         :to="`/app/item/${item.id}`"
                       >
-                        <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="src-card__thumb">
+                        <img
+                          v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+                          :src="item.thumbnail_url"
+                          :alt="item.title || ''"
+                          class="src-card__thumb"
+                          @error="markBroken(item.thumbnail_url)"
+                        >
                         <div v-else class="src-card__thumb src-card__thumb--empty"/>
                         <div class="src-card__body">
                           <span class="src-card__title">{{ item.title || item.url }}</span>
@@ -198,7 +204,13 @@
                 <Transition name="sources">
                   <div v-if="openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
                     <div v-for="src in sourcesMap[msg.id]" :key="src.id" class="src-card" role="button" @click="previewItemId = src.id">
-                      <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
+                      <img
+                        v-if="src.thumbnail_url && !isBroken(src.thumbnail_url)"
+                        :src="src.thumbnail_url"
+                        :alt="src.title || ''"
+                        class="src-card__thumb"
+                        @error="markBroken(src.thumbnail_url)"
+                      >
                       <div v-else class="src-card__thumb src-card__thumb--empty"/>
                       <div class="src-card__body">
                         <span class="src-card__title">{{ src.title || src.url }}</span>
@@ -270,7 +282,13 @@
                 <Transition name="sources">
                   <div v-if="openSources.has(msg.id) && sourcesMap[msg.id]?.length" class="sources-list">
                     <div v-for="src in sourcesMap[msg.id]" :key="src.id" class="src-card" role="button" @click="previewItemId = src.id">
-                      <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
+                      <img
+                        v-if="src.thumbnail_url && !isBroken(src.thumbnail_url)"
+                        :src="src.thumbnail_url"
+                        :alt="src.title || ''"
+                        class="src-card__thumb"
+                        @error="markBroken(src.thumbnail_url)"
+                      >
                       <div v-else class="src-card__thumb src-card__thumb--empty"/>
                       <div class="src-card__body">
                         <span class="src-card__title">{{ src.title || src.url }}</span>
@@ -361,7 +379,13 @@
                     role="button"
                     @click="previewItemId = src.id"
                   >
-                    <img v-if="src.thumbnail_url" :src="src.thumbnail_url" :alt="src.title || ''" class="src-card__thumb">
+                    <img
+                      v-if="src.thumbnail_url && !isBroken(src.thumbnail_url)"
+                      :src="src.thumbnail_url"
+                      :alt="src.title || ''"
+                      class="src-card__thumb"
+                      @error="markBroken(src.thumbnail_url)"
+                    >
                     <div v-else class="src-card__thumb src-card__thumb--empty"/>
                     <div class="src-card__body">
                       <span class="src-card__title">{{ src.title || src.url }}</span>
@@ -423,6 +447,7 @@ const router = useRouter()
 const route = useRoute()
 const config = useRuntimeConfig()
 const session = useSupabaseSession()
+const { isBroken, markBroken } = useImageFallback()
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const folders = ref<ChatFolder[]>([])

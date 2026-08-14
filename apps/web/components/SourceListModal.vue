@@ -13,7 +13,13 @@
             class="slm__item"
             @click="emit('select', s.id)"
           >
-            <img v-if="s.thumbnail_url" :src="s.thumbnail_url" :alt="s.title || ''" class="slm__thumb">
+            <img
+              v-if="s.thumbnail_url && !isBroken(s.thumbnail_url)"
+              :src="s.thumbnail_url"
+              :alt="s.title || ''"
+              class="slm__thumb"
+              @error="markBroken(s.thumbnail_url)"
+            >
             <span v-else class="slm__thumb slm__thumb--ph">{{ sourceEmoji(s.source_type) }}</span>
             <span class="slm__name">{{ s.title || s.url || '來源' }}</span>
           </button>
@@ -42,6 +48,8 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'select', id: string): void
 }>()
+
+const { isBroken, markBroken } = useImageFallback()
 
 function sourceEmoji(t: string | null) {
   if (t === 'youtube') return '▶️'

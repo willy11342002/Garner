@@ -6,6 +6,7 @@ const itemStore = useItemStore()
 const { open: openItemModal } = useItemModal()
 const { t } = useI18n()
 const { toggle: chainToggle, isInChain } = useChain()
+const { isBroken, markBroken } = useImageFallback()
 
 const query = ref('')
 const results = ref<Item[]>([])
@@ -169,7 +170,13 @@ function cardTitle(url: string, title: string | null) {
           @click.prevent="openItemModal(item.id)"
         >
           <div class="card__thumb">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="card__img" alt="" >
+            <img
+              v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+              :src="item.thumbnail_url"
+              class="card__img"
+              alt=""
+              @error="markBroken(item.thumbnail_url)"
+            >
             <div v-else class="placeholder placeholder--a">
               <div class="placeholder__stripes"/>
             </div>

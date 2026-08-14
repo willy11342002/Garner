@@ -32,7 +32,13 @@
               <Transition name="thinking">
                 <div v-if="openContexts.has(msg.id)" class="context-block__body">
                   <div v-for="item in userContextMap[msg.id]" :key="item.id" class="src-card">
-                    <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="src-card__thumb">
+                    <img
+                      v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+                      :src="item.thumbnail_url"
+                      :alt="item.title || ''"
+                      class="src-card__thumb"
+                      @error="markBroken(item.thumbnail_url)"
+                    >
                     <div v-else class="src-card__thumb src-card__thumb--empty"/>
                     <div class="src-card__body">
                       <span class="src-card__title">{{ item.title || item.url }}</span>
@@ -154,7 +160,13 @@
     <div v-if="chainItems.length" class="hcp__chain">
       <div class="hcp__chain-nodes">
         <div v-for="item in chainItems" :key="item.id" class="hcp__node">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.title || ''" class="hcp__node-thumb">
+          <img
+            v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+            :src="item.thumbnail_url"
+            :alt="item.title || ''"
+            class="hcp__node-thumb"
+            @error="markBroken(item.thumbnail_url)"
+          >
           <div v-else class="hcp__node-thumb hcp__node-thumb--empty"/>
           <span class="hcp__node-label">{{ truncate(item.title || item.url || '', 16) }}</span>
           <button class="hcp__node-remove" @click="chain.remove(item.id)">×</button>
@@ -195,6 +207,7 @@ const apiFetch = useApiFetch()
 const config = useRuntimeConfig()
 const session = useSupabaseSession()
 const chain = useChain()
+const { isBroken, markBroken } = useImageFallback()
 const { chainItems } = chain
 
 const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG', tiktok: '♪ TikTok', facebook_reel: 'Facebook', facebook_post: 'Facebook' }

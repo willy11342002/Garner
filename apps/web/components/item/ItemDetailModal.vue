@@ -39,6 +39,7 @@ const apiFetch = useApiFetch()
 const gmap = useGlobalMap()
 const { getItem, getItemTags, attachTag, detachTag, updateItem, resumeItem } = useItems()
 const { updateArticle } = useArticles()
+const { isBroken, markBroken } = useImageFallback()
 
 const fetchedItem = ref<Item | null>(null)
 const tags = ref<Tag[]>([])
@@ -783,7 +784,13 @@ async function confirmArchive() {
           <template v-else-if="item">
 
           <div class="id-media">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="id-media__img" alt="">
+            <img
+              v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+              :src="item.thumbnail_url"
+              class="id-media__img"
+              alt=""
+              @error="markBroken(item.thumbnail_url)"
+            >
             <div v-else class="placeholder placeholder--b id-media__ph">
               <div class="placeholder__stripes"/>
             </div>
@@ -1011,7 +1018,13 @@ async function confirmArchive() {
       <div v-else-if="item" class="idp-wrap">
         <div class="idp-panel">
           <div class="idp-media">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" class="idp-media__img" alt="">
+            <img
+              v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+              :src="item.thumbnail_url"
+              class="idp-media__img"
+              alt=""
+              @error="markBroken(item.thumbnail_url)"
+            >
             <div v-else class="placeholder placeholder--b idp-media__ph">
               <div class="placeholder__stripes"/>
             </div>

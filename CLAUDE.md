@@ -145,6 +145,7 @@ garner/
 - `useI18nContent` — 內容多語
 - `useTheme` — 主題切換
 - `useToast` — 全域 toast 通知（show(message, type)；搭配根目錄 ToastList 元件顯示）
+- `useImageFallback` — 縮圖載入失敗的共用回退（`isBroken(url)` / `markBroken(url)`，模組層級共享的失敗 URL 集合）。`<img>` 一律寫成 `v-if="url && !isBroken(url)"` + `@error="markBroken(url)"`，失敗時退回原本「沒有圖片」的 placeholder 分支，不要留破圖 icon
 
 ### Web stores（`apps/web/stores/`）
 `useAuthStore` · `useItemStore` · `useTagStore` · `useNotificationStore`

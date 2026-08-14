@@ -60,7 +60,12 @@
           <svg v-if="selectedIds.has(item.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="5 12 10 17 19 7"/></svg>
         </span>
         <div class="aitem__thumb">
-          <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" >
+          <img
+            v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+            :src="item.thumbnail_url"
+            style="width:100%;height:100%;object-fit:cover;"
+            @error="markBroken(item.thumbnail_url)"
+          >
           <div v-else :class="`placeholder placeholder--${placeholderColor(item.source_type)}`"><div class="placeholder__stripes"/></div>
         </div>
         <div class="aitem__main">
@@ -91,7 +96,12 @@
         <div v-for="item in dangerItems" :key="item.id" class="aitem aitem--danger">
           <span class="checkbox"/>
           <div class="aitem__thumb">
-            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" style="width:100%;height:100%;object-fit:cover;" >
+            <img
+              v-if="item.thumbnail_url && !isBroken(item.thumbnail_url)"
+              :src="item.thumbnail_url"
+              style="width:100%;height:100%;object-fit:cover;"
+              @error="markBroken(item.thumbnail_url)"
+            >
             <div v-else :class="`placeholder placeholder--${placeholderColor(item.source_type)}`"><div class="placeholder__stripes"/></div>
           </div>
           <div class="aitem__main">
@@ -136,6 +146,7 @@ useHead({ title: 'Garner — 封存' })
 
 const { listArchivedItems, updateItem } = useItems()
 const apiFetch = useApiFetch()
+const { isBroken, markBroken } = useImageFallback()
 
 const sortBy = ref('date')
 const showConfirm = ref(false)
