@@ -4,7 +4,9 @@
     {
       "label": "uv sync (API)",
       "type": "shell",
-      "command": "uv sync --active --extra dev",
+      // dev 依賴在 [dependency-groups]（PEP 735），uv sync 預設就會裝。
+      // 不要加 --extra dev：那個旗標只看 [project.optional-dependencies]，會直接報錯。
+      "command": "uv sync --active",
       "options": {
         "cwd": "${workspaceFolder}/apps/api"
       },
