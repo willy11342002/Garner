@@ -145,6 +145,11 @@ garner/
 - `useI18nContent` — 內容多語
 - `useTheme` — 主題切換
 - `useToast` — 全域 toast 通知（show(message, type)；搭配根目錄 ToastList 元件顯示）
+- `useItemMap` — ItemDetailModal 地圖分頁的全部邏輯（地點載入、marker 渲染、地點搜尋
+  與新增、geocoding 輪詢、資訊／地圖分頁切換時的 gmap claim/release）。
+  簽章是 `useItemMap(itemId, activeTab)`，`activeTab` 由元件持有再傳進去
+- `useItemPolling` — ItemDetailModal 的重新分析與初始分析輪詢（含 retryIngest）。
+  輪詢請求都帶 `skipWhenHidden`
 - `useSwipeToClose` — 手機版底部面板的「向下拖曳關閉」手勢（`panelRef` + 三個 touch handler）。
   trips 的卡片編輯 modal 與 ItemDetailModal 共用，不要再各寫一份
 - `useImageFallback` — 縮圖載入失敗的共用回退（`isBroken(url)` / `markBroken(url)`，模組層級共享的失敗 URL 集合）。`<img>` 一律寫成 `v-if="url && !isBroken(url)"` + `@error="markBroken(url)"`，失敗時退回原本「沒有圖片」的 placeholder 分支，不要留破圖 icon

@@ -4,25 +4,6 @@ import { needsRetry } from '~/utils/itemStatus'
 
 type AnyItem = Item | CollectionShareItem
 
-interface PlaceSearchResult {
-  place_id: string
-  lat: number
-  lng: number
-  name: string
-  display_name: string
-  type: string
-}
-
-interface ItemLocation {
-  id: string
-  name: string
-  lat: number | null
-  lng: number | null
-  source: 'ai' | 'metadata' | 'user'
-  order_index: number
-  geocoding_status: 'pending' | 'done' | 'failed'
-}
-
 const props = defineProps<{
   itemId?: string | null
   item?: AnyItem | null
@@ -35,9 +16,7 @@ const isOpen = computed(() => !!(props.itemId || props.item))
 const readonly = computed(() => !props.itemId)
 
 const { t } = useI18n()
-const apiFetch = useApiFetch()
-const gmap = useGlobalMap()
-const { getItem, getItemTags, attachTag, detachTag, updateItem, resumeItem } = useItems()
+const { getItem, getItemTags, attachTag, detachTag, updateItem } = useItems()
 const { updateArticle } = useArticles()
 const { isBroken, markBroken } = useImageFallback()
 
@@ -48,19 +27,21 @@ const error = ref(false)
 
 const item = computed(() => readonly.value ? props.item ?? null : fetchedItem.value)
 
-// ── Tab ───────────────────────────────────────────────────────────────────────
+// ── Tab / 地圖 ────────────────────────────────────────────────────────────────
+// 地圖分頁的所有邏輯（地點載入、marker、搜尋 pin、geocoding 輪詢）在
+// composables/useItemMap.ts。activeTab 由這裡持有並傳進去，因為切分頁牽涉
+// gmap 的 claim / release，兩邊要看同一個 ref。
 const activeTab = ref<'info' | 'map'>('info')
-const mapSlotEl = ref<HTMLElement | null>(null)
-const itemLocations = ref<ItemLocation[]>([])
-const loadingLocations = ref(false)
-const extractingLocations = ref(false)
-const searchQuery = ref('')
-const searchLoading = ref(false)
-const searchHint = ref('')      // status text shown below search box
-const savingNewLoc = ref(false)
-let _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
-let _searchPins: import('leaflet').Marker[] = []
-let _geocodingPollTimer: ReturnType<typeof setTimeout> | null = null
+const {
+  mapSlotEl, itemLocations, loadingLocations, extractingLocations,
+  searchQuery, searchLoading, searchHint, savingNewLoc,
+  selectedLoc, placeData, placeLoading, placeError,
+  showExtractConfirm, extractQuotaError,
+  switchToMapTab, switchToInfoTab,
+  selectLocation, clearSelectedLoc, deleteLocation,
+  requestExtractLocations, extractLocations,
+  onSearchInput, clearSearch, resetForItem, leaveMapTab,
+} = useItemMap(toRef(props, 'itemId'), activeTab)
 
 // ── Swipe-down-to-close (mobile) ─────────────────────────────────────────────
 // 手勢邏輯抽到 composables/useSwipeToClose.ts，與 pages/app/trips.vue 共用。
@@ -72,320 +53,6 @@ const {
   onTouchEnd: onPanelTouchEnd,
 } = useSwipeToClose(() => doClose())
 
-// waitForAny=true: legacy item, poll until at least one location appears then check pending
-// waitForAny=false: snapshot path, locations exist but may be pending geocoding
-function startGeocodingPoll(waitForAny = false, maxAttempts = 40) {
-  if (_geocodingPollTimer) return
-  let attempts = 0
-  async function poll() {
-    if (!props.itemId || attempts >= maxAttempts) {
-      _geocodingPollTimer = null
-      extractingLocations.value = false
-      return
-    }
-    attempts++
-    try {
-      const locs = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations`, { skipWhenHidden: true })
-      itemLocations.value = locs
-      const hasAny = locs.length > 0
-      const hasPending = locs.some(l => l.geocoding_status === 'pending')
-      const keepPolling = (waitForAny && !hasAny) || hasPending
-      if (keepPolling) {
-        _geocodingPollTimer = setTimeout(poll, 3000)
-      } else {
-        _geocodingPollTimer = null
-        extractingLocations.value = false
-        renderItemMarkers()
-        gmap.notifyLocationChange()
-      }
-    } catch {
-      _geocodingPollTimer = null
-      extractingLocations.value = false
-    }
-  }
-  _geocodingPollTimer = setTimeout(poll, 3000)
-}
-
-function stopGeocodingPoll() {
-  if (_geocodingPollTimer) { clearTimeout(_geocodingPollTimer); _geocodingPollTimer = null }
-  extractingLocations.value = false
-}
-
-// Owner key changes with each item so re-opening a different item always re-claims
-const mapOwnerKey = computed(() => `modal:${props.itemId ?? ''}`)
-
-// ── Selected location (place panel) ──────────────────────────────────────────
-interface PlaceDetails {
-  place_id: string
-  name: string | null
-  rating: number | null
-  reviews: Array<{ author: string | null; author_photo: string | null; rating: number | null; text: string | null; relative_time: string | null }> | null
-  photos: string[] | null
-  address: string | null
-  phone: string | null
-  opening_hours: { open_now: boolean; weekday_descriptions: string[] } | null
-  maps_url: string | null
-}
-
-const selectedLoc = ref<typeof itemLocations.value[0] | null>(null)
-const placeData = ref<PlaceDetails | null>(null)
-const placeLoading = ref(false)
-const placeError = ref('')
-
-async function selectLocation(loc: typeof itemLocations.value[0]) {
-  selectedLoc.value = loc
-  placeData.value = null
-  placeError.value = ''
-  if (!loc.lat || !loc.lng) return
-  placeLoading.value = true
-  try {
-    const result = await apiFetch<PlaceDetails | null>(
-      `/places/lookup?name=${encodeURIComponent(loc.name)}&lat=${loc.lat}&lng=${loc.lng}`
-    )
-    placeData.value = result ?? null
-  } catch {
-    placeError.value = t('itemModal.placeLoadError')
-  } finally {
-    placeLoading.value = false
-  }
-}
-
-function clearSelectedLoc() {
-  selectedLoc.value = null
-  placeData.value = null
-  placeError.value = ''
-}
-
-async function switchToMapTab() {
-  activeTab.value = 'map'
-  await nextTick()  // wait for mapSlotEl to mount via v-if
-  if (!mapSlotEl.value || !props.itemId) return
-  await gmap.claim(mapSlotEl.value, mapOwnerKey.value)
-  await loadItemLocations()
-}
-
-function switchToInfoTab() {
-  clearSearch()   // also calls clearSearchPins()
-  clearSelectedLoc()
-  gmap.release(mapOwnerKey.value)
-  activeTab.value = 'info'
-}
-
-async function loadItemLocations() {
-  if (!props.itemId) return
-  loadingLocations.value = true
-  try {
-    itemLocations.value = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations`)
-    renderItemMarkers()
-  } finally {
-    loadingLocations.value = false
-  }
-}
-
-function renderItemMarkers() {
-  const map = gmap.getMap()
-  const L = gmap.getL()
-  if (!map || !L) return
-
-  gmap.clearAllMarkers()
-
-  const geoLocs = itemLocations.value.filter(l => l.lat !== null && l.lng !== null)
-  if (!geoLocs.length) return
-
-  const markerList: import('leaflet').Marker[] = []
-  for (const loc of geoLocs) {
-    const icon = L.divIcon({
-      className: '',
-      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin">
-        <path d="M12 0C5.37 0 0 5.37 0 12c0 8 12 20 12 20S24 20 24 12C24 5.37 18.63 0 12 0z"/>
-        <circle cx="12" cy="11" r="4.5" fill="white" fill-opacity="0.92"/>
-      </svg>`,
-      iconSize: [24, 32],
-      iconAnchor: [12, 32],
-    })
-    const m = L.marker([loc.lat!, loc.lng!], { icon }).addTo(map)
-    m.on('click', () => selectLocation(loc))
-    gmap.registerMarker(m)
-    markerList.push(m)
-  }
-
-  if (markerList.length > 0) {
-    const group = L.featureGroup(markerList)
-    map.fitBounds(group.getBounds().pad(0.4), { maxZoom: 14, animate: false })
-  }
-}
-
-
-async function deleteLocation(loc: ItemLocation) {
-  if (!props.itemId) return
-  await apiFetch(`/items/${props.itemId}/locations/${loc.id}`, { method: 'DELETE' })
-  itemLocations.value = itemLocations.value.filter(l => l.id !== loc.id)
-  if (selectedLoc.value?.id === loc.id) clearSelectedLoc()
-  renderItemMarkers()
-}
-
-const showExtractConfirm = ref(false)
-const extractQuotaError = ref(false)
-
-function requestExtractLocations() {
-  extractQuotaError.value = false
-  showExtractConfirm.value = true
-}
-
-async function extractLocations() {
-  if (!props.itemId) return
-  extractingLocations.value = true
-  extractQuotaError.value = false
-  try {
-    const result = await apiFetch<{ locations: ItemLocation[], extracting: boolean }>(
-      `/items/${props.itemId}/locations/extract`, { method: 'POST' }
-    )
-    showExtractConfirm.value = false
-    itemLocations.value = result.locations
-    renderItemMarkers()
-    gmap.notifyLocationChange()
-    if (result.extracting) {
-      // Legacy item: full pipeline running in background, keep spinner and poll for locations
-      startGeocodingPoll(true)
-    } else if (result.locations.some(l => l.geocoding_status === 'pending')) {
-      // Snapshot path: locations saved, geocoding in background
-      startGeocodingPoll(false)
-    } else {
-      extractingLocations.value = false
-    }
-  } catch (err: any) {
-    extractingLocations.value = false
-    if (err?.response?.status === 429) {
-      extractQuotaError.value = true  // keep dialog open to show the message
-    } else {
-      showExtractConfirm.value = false
-    }
-  }
-}
-
-function onSearchInput() {
-  if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer)
-  const q = searchQuery.value.trim()
-  if (q.length < 2) { clearSearchPins(); searchHint.value = ''; return }
-  _searchDebounceTimer = setTimeout(() => doSearch(q), 350)
-}
-
-async function doSearch(q: string) {
-  searchLoading.value = true
-  searchHint.value = ''
-  try {
-    const map = gmap.getMap()
-    const params = new URLSearchParams({ q })
-    if (map) {
-      const bounds = map.getBounds()
-      const center = bounds.getCenter()
-      const ne = bounds.getNorthEast()
-      const radiusMeters = Math.min(Math.round(center.distanceTo(ne)), 50000)
-      params.set('lat', center.lat.toString())
-      params.set('lng', center.lng.toString())
-      params.set('radius', radiusMeters.toString())
-    }
-    const results = await apiFetch<PlaceSearchResult[]>(`/places/search?${params}`)
-    showSearchPins(results)
-    searchHint.value = results.length
-      ? t('itemModal.searchFound', { n: results.length })
-      : t('itemModal.searchNoResult')
-  } catch {
-    searchHint.value = t('itemModal.searchFailed')
-  } finally {
-    searchLoading.value = false
-  }
-}
-
-function clearSearchPins() {
-  for (const m of _searchPins) m.remove()
-  _searchPins = []
-}
-
-function showSearchPins(results: PlaceSearchResult[]) {
-  const map = gmap.getMap()
-  const L = gmap.getL()
-  if (!map || !L) return
-  clearSearchPins()
-  if (!results.length) return
-  for (const r of results) {
-    const icon = L.divIcon({
-      className: '',
-      html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" class="map-pin map-pin--search">
-        <path d="M12 0C5.37 0 0 5.37 0 12c0 8 12 20 12 20S24 20 24 12C24 5.37 18.63 0 12 0z"/>
-        <circle cx="12" cy="11" r="4.5" fill="white" fill-opacity="0.92"/>
-      </svg>`,
-      iconSize: [24, 32],
-      iconAnchor: [12, 32],
-    })
-    const m = L.marker([r.lat, r.lng], { icon }).addTo(map)
-    m.bindPopup(
-      L.popup({ closeButton: false, className: 'id-loc-popup', offset: [0, -18] })
-        .setContent(buildSearchPinPopup(r))
-    )
-    _searchPins.push(m)
-  }
-  const group = L.featureGroup(_searchPins)
-  map.fitBounds(group.getBounds().pad(0.5), { maxZoom: 14, animate: true })
-}
-
-function buildSearchPinPopup(r: PlaceSearchResult): HTMLElement {
-  const root = document.createElement('div')
-  root.className = 'id-loc-popup__inner'
-
-  const name = document.createElement('div')
-  name.className = 'id-loc-popup__name'
-  name.textContent = r.name
-  root.appendChild(name)
-
-  // Show address without the first part (= name) to avoid duplication
-  const addrParts = r.display_name.split(', ').slice(1, 4)
-  if (addrParts.length) {
-    const addr = document.createElement('div')
-    addr.className = 'id-loc-popup__addr'
-    addr.textContent = addrParts.join(', ')
-    root.appendChild(addr)
-  }
-
-  const actions = document.createElement('div')
-  actions.className = 'id-loc-popup__actions'
-
-  const addBtn = document.createElement('button')
-  addBtn.className = 'id-loc-popup__btn id-loc-popup__btn--confirm'
-  addBtn.textContent = t('itemModal.addLandmark')
-  addBtn.addEventListener('click', async () => {
-    addBtn.disabled = true
-    addBtn.textContent = t('itemModal.adding')
-    await createLocation(r.name, r.lat, r.lng)
-  })
-  actions.appendChild(addBtn)
-  root.appendChild(actions)
-  return root
-}
-
-function clearSearch() {
-  searchQuery.value = ''
-  searchHint.value = ''
-  clearSearchPins()
-  if (_searchDebounceTimer) { clearTimeout(_searchDebounceTimer); _searchDebounceTimer = null }
-}
-
-async function createLocation(name: string, lat: number, lng: number) {
-  if (!props.itemId) return
-  savingNewLoc.value = true
-  try {
-    const newLoc = await apiFetch<ItemLocation>(`/items/${props.itemId}/locations`, {
-      method: 'POST',
-      body: { name, lat, lng },
-    })
-    itemLocations.value.push(newLoc)
-    clearSearchPins()
-    clearSearch()
-    renderItemMarkers()
-  } finally {
-    savingNewLoc.value = false
-  }
-}
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
 const addingTag = ref(false)
@@ -406,89 +73,22 @@ function cancelEditTitle() {
   editingTitle.value = ''
 }
 
-// ── Reanalyze (stage 3 → 5) ──────────────────────────────────────────────────
-const reanalyzing = ref(false)
-const showReanalyzeConfirm = ref(false)
-const reanalyzeQuotaError = ref(false)
-let _reanalyzePollTimer: ReturnType<typeof setTimeout> | null = null
+// ── Inline note editing（狀態宣告在此，因為下面的輪詢要讀 isEditingNotes）──────
+const isEditingNotes = ref(false)
+const editingNotesMd = ref('')
+// template 從以前就綁了 savingNotes（:disabled 與「儲存中」文案），但一直沒有宣告，
+// 所以那顆按鈕的 disabled 永遠是 undefined、儲存中狀態從沒顯示過。補回來。
+const savingNotes = ref(false)
 
-function requestReanalyze() {
-  reanalyzeQuotaError.value = false
-  showReanalyzeConfirm.value = true
-}
-
-async function reanalyze() {
-  if (!props.itemId) return
-  reanalyzing.value = true
-  reanalyzeQuotaError.value = false
-  try {
-    await apiFetch(`/items/${props.itemId}/reanalyze`, { method: 'POST' })
-    showReanalyzeConfirm.value = false
-    pollReanalyze()
-  } catch (err: any) {
-    reanalyzing.value = false
-    if (err?.response?.status === 429) {
-      reanalyzeQuotaError.value = true  // keep dialog open to show the message
-    } else {
-      showReanalyzeConfirm.value = false
-    }
-  }
-}
-
-function pollReanalyze(maxAttempts = 60) {
-  let attempts = 0
-  async function poll() {
-    if (!props.itemId || attempts >= maxAttempts) {
-      reanalyzing.value = false
-      _reanalyzePollTimer = null
-      return
-    }
-    attempts++
-    try {
-      const updated = await apiFetch<Item>(`/items/${props.itemId}`, { skipWhenHidden: true })
-      const done = updated.note_status === 'complete' && updated.embedding_status === 'complete'
-      const failed = updated.note_status === 'error'
-      if (done || failed) {
-        if (done) fetchedItem.value = updated
-        reanalyzing.value = false
-        _reanalyzePollTimer = null
-        return
-      }
-    } catch { /* 靜默：單次輪詢失敗不中斷，下面照樣排下一輪 */ }
-    _reanalyzePollTimer = setTimeout(poll, 2000)
-  }
-  poll()
-}
-
-onUnmounted(() => {
-  if (_reanalyzePollTimer) clearTimeout(_reanalyzePollTimer)
-})
-
-// ── Initial-analysis polling (item opened while still being processed) ─────────
-let _analysisPollTimer: ReturnType<typeof setTimeout> | null = null
-
-function stopAnalysisPoll() {
-  if (_analysisPollTimer) { clearTimeout(_analysisPollTimer); _analysisPollTimer = null }
-}
-
-function pollAnalysis(maxAttempts = 90) {
-  stopAnalysisPoll()
-  let attempts = 0
-  async function poll() {
-    if (!props.itemId || attempts >= maxAttempts) { _analysisPollTimer = null; return }
-    attempts++
-    try {
-      const updated = await apiFetch<Item>(`/items/${props.itemId}`, { skipWhenHidden: true })
-      if (!isEditingNotes.value) fetchedItem.value = updated
-      if (updated.note_status === 'complete' || updated.note_status === 'error') {
-        _analysisPollTimer = null
-        return
-      }
-    } catch { /* 靜默：單次輪詢失敗不中斷，下面照樣排下一輪 */ }
-    _analysisPollTimer = setTimeout(poll, 2000)
-  }
-  _analysisPollTimer = setTimeout(poll, 2000)
-}
+// ── 輪詢（重新分析 / 初始分析）───────────────────────────────────────────────
+// 實作在 composables/useItemPolling.ts。isEditingNotes 傳進去是為了讓輪詢在
+// 使用者編輯筆記時不要覆蓋他打到一半的內容。
+const {
+  reanalyzing, showReanalyzeConfirm, reanalyzeQuotaError,
+  requestReanalyze, reanalyze,
+  pollAnalysis, stopAnalysisPoll,
+  retrying, retryIngest,
+} = useItemPolling(toRef(props, 'itemId'), fetchedItem, isEditingNotes)
 
 // Item is still in its initial analysis (note stage not finished, no error).
 const isAnalyzing = computed(() => {
@@ -505,26 +105,7 @@ const showRetry = computed(() => {
   return needsRetry(it)
 })
 
-const retrying = ref(false)
-
-async function retryIngest() {
-  if (!props.itemId || retrying.value) return
-  retrying.value = true
-  try {
-    await resumeItem(props.itemId)
-    pollAnalysis()
-  } finally {
-    retrying.value = false
-  }
-}
-
-// ── Inline note editing ───────────────────────────────────────────────────────
-const isEditingNotes = ref(false)
-const editingNotesMd = ref('')
-// template 從以前就綁了 savingNotes（:disabled 與「儲存中」文案），但一直沒有宣告，
-// 所以那顆按鈕的 disabled 永遠是 undefined、儲存中狀態從沒顯示過。補回來。
-const savingNotes = ref(false)
-
+// ── Inline note editing：操作（狀態宣告在上面輪詢區塊之前）────────────────────
 function startEditNotes() {
   editingNotesMd.value = (item.value as Item)?.notes_md ?? ''
   isEditingNotes.value = true
@@ -595,12 +176,7 @@ const lockScroll = (lock: boolean) => {
 }
 
 watch(() => props.itemId, (id, prevId) => {
-  // Reset map tab when item changes
-  if (activeTab.value === 'map') {
-    gmap.release(`modal:${prevId ?? ''}`)
-    activeTab.value = 'info'
-  }
-  itemLocations.value = []
+  resetForItem(prevId)   // 釋放前一筆的地圖擁有權、回到資訊分頁、清空地點
 
   if (id) {
     lockScroll(true)
@@ -617,19 +193,14 @@ watch(() => props.item, (v) => {
 }, { immediate: true })
 
 onUnmounted(() => {
+  // 地圖相關的清理（搜尋、geocoding 輪詢、gmap 釋放）由 useItemMap 自己的
+  // onUnmounted 負責，這裡只處理元件自己的東西。
   lockScroll(false)
-  clearSearch()
-  stopGeocodingPoll()
   stopAnalysisPoll()
-  if (activeTab.value === 'map') gmap.release(mapOwnerKey.value)
 })
 
 function doClose() {
-  if (activeTab.value === 'map') {
-    clearSearch()
-    gmap.release(mapOwnerKey.value)
-    activeTab.value = 'info'
-  }
+  leaveMapTab()
   showArchiveConfirm.value = false
   isEditingNotes.value = false
   editingNotesMd.value = ''
