@@ -504,7 +504,10 @@
     "source_article": "文章",
     "time_today": "today",
     "time_1d": "1d ago",
-    "time_nd": "{n}d ago"
+    "time_nd": "{n}d ago",
+    "loading": "載入中...",
+    "load_failed": "載入失敗，請檢查網路連線後重試。",
+    "retry": "重新載入"
   },
   "notif": {
     "title": "通知",

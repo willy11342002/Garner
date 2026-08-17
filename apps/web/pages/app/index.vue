@@ -10,6 +10,7 @@ const { t } = useI18n()
 
 
 const loading = ref(true)
+const loadError = ref(false)
 const quota = ref<UsageSummary | null>(null)
 
 // URL quick-save (empty state CTA)
@@ -36,10 +37,12 @@ async function quickSave() {
     await itemStore.add({ url })
     newUrl.value = ''
   } catch (err: any) {
+    // 原本指向 home.error / home.error_quota_full，但這兩個 key 不存在，
+    // 存入失敗時使用者看到的是字面字串「home.error」。正確的在 add.* 命名空間。
     if (err?.response?.status === 429) {
-      saveError.value = t('home.error_quota_full')
+      saveError.value = t('add.error_quota_full')
     } else {
-      saveError.value = t('home.error')
+      saveError.value = t('add.error')
     }
   } finally {
     saving.value = false
@@ -57,20 +60,37 @@ watch(activeItemId, async (newId, oldId) => {
   }
 })
 
-onMounted(async () => {
-  await Promise.all([
-    itemStore.load(),
-    apiFetch<UsageSummary>('/quota/me').then(q => { quota.value = q }).catch(() => {}),
-  ])
-  loading.value = false
-  if (route.query.item) openModal(route.query.item as string)
-})
+async function loadInitial() {
+  loading.value = true
+  loadError.value = false
+  try {
+    await Promise.all([
+      itemStore.load(),
+      apiFetch<UsageSummary>('/quota/me').then(q => { quota.value = q }).catch(() => {}),
+    ])
+    if (route.query.item) openModal(route.query.item as string)
+  } catch {
+    // 之前這裡沒有 try/catch，itemStore.load() 一 reject 就讓 loading 永遠停在 true，
+    // 而且 template 沒有錯誤分支，使用者只會看到永久的「載入中」而且沒有出路。
+    loadError.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadInitial)
 </script>
 
 <template>
   <main class="shell">
     <!-- Loading -->
-    <div v-if="loading" class="loading-state">載入中...</div>
+    <div v-if="loading" class="loading-state">{{ t('home.loading') }}</div>
+
+    <!-- Load failed: 給使用者一條出路，不要只是停在載入中 -->
+    <div v-else-if="loadError" class="loading-state">
+      <p>{{ t('home.load_failed') }}</p>
+      <button class="btn btn--accent" @click="loadInitial">{{ t('home.retry') }}</button>
+    </div>
 
     <!-- Empty: Ghost Preview + CTA -->
     <template v-else-if="itemStore.totalAll === 0">

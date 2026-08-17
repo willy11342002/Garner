@@ -504,7 +504,10 @@
     "source_article": "Article",
     "time_today": "today",
     "time_1d": "1d ago",
-    "time_nd": "{n}d ago"
+    "time_nd": "{n}d ago",
+    "loading": "Loading...",
+    "load_failed": "Couldn't load your knowledge base. Check your connection and try again.",
+    "retry": "Reload"
   },
   "notif": {
     "title": "Notifications",

@@ -85,7 +85,7 @@ function startGeocodingPoll(waitForAny = false, maxAttempts = 40) {
     }
     attempts++
     try {
-      const locs = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations`)
+      const locs = await apiFetch<ItemLocation[]>(`/items/${props.itemId}/locations`, { skipWhenHidden: true })
       itemLocations.value = locs
       const hasAny = locs.length > 0
       const hasPending = locs.some(l => l.geocoding_status === 'pending')
@@ -445,7 +445,7 @@ function pollReanalyze(maxAttempts = 60) {
     }
     attempts++
     try {
-      const updated = await apiFetch<Item>(`/items/${props.itemId}`)
+      const updated = await apiFetch<Item>(`/items/${props.itemId}`, { skipWhenHidden: true })
       const done = updated.note_status === 'complete' && updated.embedding_status === 'complete'
       const failed = updated.note_status === 'error'
       if (done || failed) {
@@ -478,7 +478,7 @@ function pollAnalysis(maxAttempts = 90) {
     if (!props.itemId || attempts >= maxAttempts) { _analysisPollTimer = null; return }
     attempts++
     try {
-      const updated = await apiFetch<Item>(`/items/${props.itemId}`)
+      const updated = await apiFetch<Item>(`/items/${props.itemId}`, { skipWhenHidden: true })
       if (!isEditingNotes.value) fetchedItem.value = updated
       if (updated.note_status === 'complete' || updated.note_status === 'error') {
         _analysisPollTimer = null
