@@ -13,7 +13,11 @@ primary_region = 'nrt'
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = 'stop'
+  # 'suspend' 而非 'stop'：休眠時快照記憶體，resume 直接接回去，
+  # 跳過 FlashRank cross-encoder 與 jieba 字典的載入（冷開機的主要成本）。
+  # 計費與 'stop' 相同（休眠時不收 CPU/RAM），限制是機器記憶體需 <= 2GB。
+  # 注意：lifespan 不會重跑，resume 後所有長連線都是舊的 —— 見 app/core/checkpointer.py。
+  auto_stop_machines = 'suspend'
   auto_start_machines = true
   min_machines_running = 0
   processes = ['app']
