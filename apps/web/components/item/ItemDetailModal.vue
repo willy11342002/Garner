@@ -63,64 +63,14 @@ let _searchPins: import('leaflet').Marker[] = []
 let _geocodingPollTimer: ReturnType<typeof setTimeout> | null = null
 
 // ── Swipe-down-to-close (mobile) ─────────────────────────────────────────────
-const panelRef = ref<HTMLElement | null>(null)
+// 手勢邏輯抽到 composables/useSwipeToClose.ts，與 pages/app/trips.vue 共用。
 const overlayRef = ref<HTMLElement | null>(null)
-let _touchStartY = 0
-
-function onPanelTouchStart(e: TouchEvent) {
-  _touchStartY = e.touches[0].clientY
-}
-
-function onPanelTouchMove(e: TouchEvent) {
-  const panel = panelRef.value
-  if (!panel) return
-  
-  const deltaY = e.touches[0].clientY - _touchStartY
-  
-  // 當面板滾動到頂，且用戶向下拖拽時
-  if (panel.scrollTop <= 0 && deltaY > 0) {
-    panel.style.transition = 'none' // 拖拽時不需要動畫，才能即時跟手
-    panel.style.bottom = `-${deltaY}px`
-  } else {
-    panel.style.transition = ''
-    panel.style.bottom = ''
-  }
-}
-
-function onPanelTouchEnd(e: TouchEvent) {
-  const panel = panelRef.value
-  if (!panel) return
-
-  const deltaY = e.changedTouches[0].clientY - _touchStartY
-
-  // 判斷是否觸發關閉（向下拖拽超過 80px 且處於頂部）
-  if (panel.scrollTop <= 0 && deltaY > 80) {
-    // 【方案 A：動畫關閉】
-    // 給 bottom 加上平滑動畫，並將其設為 -100vh 移出螢幕外
-    panel.style.transition = 'bottom .2s ease-out'
-    panel.style.bottom = '-100vh'
-    
-    // 等 200ms 動畫結束後，執行真正的關閉邏輯與清理
-    setTimeout(() => {
-      doClose()
-      if (panel) {
-        panel.style.transition = ''
-        panel.style.bottom = '' // 重設樣式，避免下次打開時卡在下面
-      }
-    }, 200)
-
-  } else if (deltaY > 0) {
-    // 【方案 B：動畫復位】
-    // 有被向下拉但沒超過 80px，平滑彈回原本的 bottom: 0
-    panel.style.transition = 'bottom .3s cubic-bezier(0.32, 0.72, 0, 1)'
-    panel.style.bottom = '0px'
-    
-    // 動畫結束後清除 transition 恢復乾淨狀態
-    setTimeout(() => {
-      if (panel) panel.style.transition = ''
-    }, 300)
-  }
-}
+const {
+  panelRef,
+  onTouchStart: onPanelTouchStart,
+  onTouchMove: onPanelTouchMove,
+  onTouchEnd: onPanelTouchEnd,
+} = useSwipeToClose(() => doClose())
 
 // waitForAny=true: legacy item, poll until at least one location appears then check pending
 // waitForAny=false: snapshot path, locations exist but may be pending geocoding
@@ -602,22 +552,12 @@ async function saveNotes() {
 const archiving = ref(false)
 const showArchiveConfirm = ref(false)
 
-const TAG_COLORS = ['a', 'b', 'c', 'd', 'e'] as const
-function tagColor(i: number) { return TAG_COLORS[i % TAG_COLORS.length] }
 
 function sourceLabel(url: string) {
-  if (/youtu/.test(url)) return 'YouTube'
-  if (/instagram\.com/.test(url)) return 'IG'
-  if (/tiktok\.com|vt\.tiktok\.com/.test(url)) return 'TikTok'
-  if (/facebook\.com|fb\.watch/.test(url)) return 'Facebook'
-  return 'Article'
+  return SOURCE_DISPLAY_NAMES[sourceKindFromUrl(url)]
 }
 
-function cardTitle(url: string, title: string | null) {
-  if (title) return title
-  try { return new URL(url).hostname.replace(/^www\./, '') }
-  catch { return '' }
-}
+
 
 function relativeTime(dateStr: string) {
   const d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)

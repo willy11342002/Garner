@@ -145,6 +145,8 @@ garner/
 - `useI18nContent` — 內容多語
 - `useTheme` — 主題切換
 - `useToast` — 全域 toast 通知（show(message, type)；搭配根目錄 ToastList 元件顯示）
+- `useSwipeToClose` — 手機版底部面板的「向下拖曳關閉」手勢（`panelRef` + 三個 touch handler）。
+  trips 的卡片編輯 modal 與 ItemDetailModal 共用，不要再各寫一份
 - `useImageFallback` — 縮圖載入失敗的共用回退（`isBroken(url)` / `markBroken(url)`，模組層級共享的失敗 URL 集合）。`<img>` 一律寫成 `v-if="url && !isBroken(url)"` + `@error="markBroken(url)"`，失敗時退回原本「沒有圖片」的 placeholder 分支，不要留破圖 icon
 
 ### Web stores（`apps/web/stores/`）
@@ -164,6 +166,9 @@ garner/
 ### Web utils（`apps/web/utils/`）
 - `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）
 - `text` — 文字處理工具
+- `item` — 收藏項目的顯示用純函式：`cardTitle`、`domainFromUrl`、`tagColor` / `TAG_COLORS`、
+  `sourceKindFromUrl`（網址 → 平台種類）與三組文案對照表（`SOURCE_I18N_KEYS` 走 i18n、
+  `SOURCE_DISPLAY_NAMES` 未翻譯、`SOURCE_LABELS` 對應後端 source_type 欄位）
 - `itemStatus` — 判斷 item 的 ingest pipeline 是否「中斷」（`!parsed_at` 且 `updated_at` 超過 5 分鐘沒更新）或「失敗」（任一 stage `_status === 'error'`），供卡片/詳情頁顯示重試 badge
 
 ---

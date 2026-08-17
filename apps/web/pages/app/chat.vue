@@ -537,7 +537,6 @@ const previewItemId = ref<string | null>(null)
 const messagesEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 
-const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG', tiktok: '♪ TikTok', facebook_reel: 'Facebook', facebook_post: 'Facebook' }
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 const unfoldered = computed(() => sessions.value.filter(s => !s.folder_id))
@@ -1267,9 +1266,7 @@ function resetInputHeight() {
   if (inputEl.value) inputEl.value.style.height = ''
 }
 
-function sourceLabel(type: string | null) {
-  return type ? (SOURCE_LABELS[type] ?? type) : 'Article'
-}
+const sourceLabel = sourceLabelFromType
 
 // ── 推理過程：各工具的圖示／結果文字／進行中文字 ──
 function stepIcon(name?: string) {

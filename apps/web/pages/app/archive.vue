@@ -73,7 +73,7 @@
           <div class="aitem__meta">
             <span>{{ sourceLabel(item.source_type) }}</span>
             <span class="aitem__dot"/>
-            <span>{{ domainFromUrl(item.url) }}</span>
+            <span>{{ domainFromUrl(item.url, item.url) }}</span>
           </div>
         </div>
         <span class="aitem__when">封存於 {{ timeAgo(item.saved_at) }}</span>
@@ -184,10 +184,6 @@ function sourceLabel(sourceType: string | null): string {
   return 'Article'
 }
 
-function domainFromUrl(url: string): string {
-  try { return new URL(url).hostname.replace('www.', '') }
-  catch { return url }
-}
 
 function timeAgo(dateStr: string): string {
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)

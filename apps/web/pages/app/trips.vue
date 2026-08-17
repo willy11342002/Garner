@@ -244,7 +244,7 @@
         <div
           ref="panelRef"
           class="trips-modal"
-          @touchstart.passive="(e: TouchEvent) => { _touchStartY = e.touches[0].clientY }"
+          @touchstart.passive="onPanelTouchStart"
           @touchmove.passive="onPanelTouchMove"
           @touchend.passive="onPanelTouchEnd"
         >
@@ -971,11 +971,13 @@ async function handleAddItem() {
   }
 }
 
-const panelRef = ref<HTMLElement | null>(null)
-// template 的 @touchstart 內聯 handler 會賦值，但 ESLint 只看得到 <script> 區塊，
-// 會誤判成沒被重新指派。改成 const 會讓「拖曳關閉卡片編輯器」整個失效。
-// eslint-disable-next-line prefer-const
-let _touchStartY = 0
+// ── 拖曳關閉（手勢邏輯見 composables/useSwipeToClose.ts，與 ItemDetailModal 共用）──
+const {
+  panelRef,
+  onTouchStart: onPanelTouchStart,
+  onTouchMove: onPanelTouchMove,
+  onTouchEnd: onPanelTouchEnd,
+} = useSwipeToClose(() => doClose())
 
 function doClose(): Promise<void> {
   flushNoteSave()
@@ -986,53 +988,6 @@ function doClose(): Promise<void> {
 
 function closeItemEditor() {
   doClose()
-}
-
-function onPanelTouchMove(e: TouchEvent) {
-  const panel = panelRef.value
-  if (!panel) return
-  
-  const deltaY = e.touches[0].clientY - _touchStartY
-  
-  // 當面板滾動到頂，且用戶向下拖拽時
-  if (panel.scrollTop <= 0 && deltaY > 0) {
-    panel.style.transition = 'none' // 拖拽時不需要動畫，才能即時跟手
-    panel.style.bottom = `-${deltaY}px`
-  } else {
-    panel.style.transition = ''
-    panel.style.bottom = ''
-  }
-}
-
-function onPanelTouchEnd(e: TouchEvent) {
-  const panel = panelRef.value
-  if (!panel) return
-
-  const deltaY = e.changedTouches[0].clientY - _touchStartY
-
-  // 判斷是否觸發關閉（向下拖拽超過 80px 且處於頂部）
-  if (panel.scrollTop <= 0 && deltaY > 80) {
-    // 【方案 A：動畫關閉】
-    // 給 bottom 加上平滑動畫，並將其設為 -100vh 移出螢幕外
-    panel.style.transition = 'bottom .2s ease-out'
-    panel.style.bottom = '-100vh'
-    
-    // 等 200ms 動畫結束後，執行真正的關閉邏輯與清理
-    setTimeout(() => {
-      doClose()
-    }, 200)
-
-  } else if (deltaY > 0) {
-    // 【方案 B：動畫復位】
-    // 有被向下拉但沒超過 80px，平滑彈回原本的 bottom: 0
-    panel.style.transition = 'bottom .3s cubic-bezier(0.32, 0.72, 0, 1)'
-    panel.style.bottom = '0px'
-    
-    // 動畫結束後清除 transition 恢復乾淨狀態
-    setTimeout(() => {
-      if (panel) panel.style.transition = ''
-    }, 300)
-  }
 }
 
 function sidebarItemCount(tripId: string, delta: number) {

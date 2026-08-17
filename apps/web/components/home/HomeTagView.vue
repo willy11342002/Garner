@@ -66,23 +66,12 @@ const filterLogic = ref<'and' | 'or'>('and')
 const timeFilter = ref<'all' | '7d' | '30d' | 'year'>('all')
 const sortOrder = ref<'saved_desc' | 'saved_asc'>('saved_desc')
 
-const TAG_COLORS = ['a', 'b', 'c', 'd', 'e'] as const
-function tagColor(i: number) {
-  return TAG_COLORS[i % TAG_COLORS.length]
-}
 
-function cardTitle(url: string, title: string | null) {
-  if (title) return title
-  try { return new URL(url).hostname.replace(/^www\./, '') }
-  catch { return '' }
-}
+
+
 
 function sourceLabel(url: string) {
-  if (/youtu/.test(url)) return t('home.source_youtube')
-  if (/instagram\.com/.test(url)) return t('home.source_ig')
-  if (/tiktok\.com|vt\.tiktok\.com/.test(url)) return t('home.source_tiktok')
-  if (/facebook\.com|fb\.watch/.test(url)) return t('home.source_facebook')
-  return t('home.source_article')
+  return t(SOURCE_I18N_KEYS[sourceKindFromUrl(url)])
 }
 
 // Tags from API (for chip bar counts)

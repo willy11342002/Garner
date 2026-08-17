@@ -210,7 +210,6 @@ const chain = useChain()
 const { isBroken, markBroken } = useImageFallback()
 const { chainItems } = chain
 
-const SOURCE_LABELS: Record<string, string> = { youtube: '▶ YouTube', article: 'Article', ig: 'IG', tiktok: '♪ TikTok', facebook_reel: 'Facebook', facebook_post: 'Facebook' }
 
 // ── Quota ──────────────────────────────────────────────────
 const quota = ref<UsageSummary | null>(null)
@@ -460,9 +459,7 @@ function truncate(str: string, len: number) {
   return str.length > len ? str.slice(0, len) + '...' : str
 }
 
-function sourceLabel(type: string | null) {
-  return type ? (SOURCE_LABELS[type] ?? type) : 'Article'
-}
+const sourceLabel = sourceLabelFromType
 </script>
 
 <style scoped>
