@@ -145,6 +145,11 @@ garner/
 - `useI18nContent` — 內容多語
 - `useTheme` — 主題切換
 - `useToast` — 全域 toast 通知（show(message, type)；搭配根目錄 ToastList 元件顯示）
+- `useTripTags` — 旅遊行程的標籤目錄：清單、重新命名、刪除、看板欄位的拖曳排序與新增。
+  排序只存 localStorage（後端沒欄位），載入後要 `applyStoredTagOrder()`
+- `useTripItemEditor` — 行程卡片編輯器：表單狀態與「每個欄位各自 PATCH」的自動儲存
+  （樂觀更新 + 失敗回滾，備註去抖動 700ms）。簽章 `(current, trips, availableTags)`
+- `useEmojiPicker` — emoji 選擇器（含中文關鍵字對照表）與依觸發按鈕定位的浮層
 - `useItemMap` — ItemDetailModal 地圖分頁的全部邏輯（地點載入、marker 渲染、地點搜尋
   與新增、geocoding 輪詢、資訊／地圖分頁切換時的 gmap claim/release）。
   簽章是 `useItemMap(itemId, activeTab)`，`activeTab` 由元件持有再傳進去

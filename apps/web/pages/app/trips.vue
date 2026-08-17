@@ -473,13 +473,13 @@
 </template>
 
 <script setup lang="ts">
-import type { Trip, TripItem, TripListItem, TripTag } from '~/types/api'
+import type { Trip, TripItem, TripListItem } from '~/types/api'
 
 definePageMeta({ ssr: false })
 useHead({ title: 'Garner — 旅遊行程' })
 const { t, locale } = useI18n()
 
-const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, addItem, updateItem, deleteItem, listTags, createTag, updateTag, deleteTag, joinByToken } = useTrips()
+const { listTrips, getTrip, createTrip, updateTrip, deleteTrip, listTags, createTag, joinByToken } = useTrips()
 const { open: openItemModal } = useItemModal()
 const router = useRouter()
 
@@ -487,37 +487,6 @@ const router = useRouter()
 const VIEWS = [
   { key: 'board' as const, n: '1' },
   { key: 'date' as const, n: '2' },
-]
-
-const EMOJI_MAP: Array<{ e: string; k: string }> = [
-  // 景點
-  { e: '🏯', k: '城堡古蹟景點' }, { e: '🗼', k: '塔景點東京' }, { e: '⛩️', k: '鳥居神社景點' },
-  { e: '🎡', k: '摩天輪遊樂場景點' }, { e: '🎢', k: '雲霄飛車遊樂場' }, { e: '🏛️', k: '博物館景點' },
-  { e: '🗽', k: '自由女神像景點紐約' }, { e: '🏟️', k: '體育場競技場' }, { e: '🌊', k: '海浪海洋' },
-  { e: '🏔️', k: '山景點高山' }, { e: '🗻', k: '富士山景點' }, { e: '🌋', k: '火山景點' },
-  { e: '🏝️', k: '小島景點' }, { e: '🏖️', k: '海灘沙灘景點' }, { e: '🌅', k: '日出日落景點' },
-  { e: '🌉', k: '夜晚橋景點' }, { e: '🌄', k: '山日出景點' }, { e: '🌃', k: '夜景城市景點' },
-  // 美食
-  { e: '🍜', k: '拉麵麵食美食' }, { e: '🍣', k: '壽司生魚片日本美食' }, { e: '🍱', k: '便當美食' },
-  { e: '🍛', k: '咖哩美食' }, { e: '🍲', k: '火鍋鍋物美食' }, { e: '🍤', k: '炸蝦天婦羅美食' },
-  { e: '🥘', k: '燉菜美食鍋物' }, { e: '🍷', k: '紅酒葡萄酒' }, { e: '🍻', k: '啤酒' },
-  { e: '☕', k: '咖啡飲料' }, { e: '🍰', k: '蛋糕甜點' }, { e: '🍕', k: '披薩美食' },
-  { e: '🍔', k: '漢堡美食' }, { e: '🥗', k: '沙拉' }, { e: '🧇', k: '鬆餅早餐' }, { e: '🍦', k: '冰淇淋甜點' },
-  // 交通
-  { e: '✈️', k: '飛機航班交通' }, { e: '🚂', k: '火車交通' }, { e: '🚌', k: '公車交通' },
-  { e: '🚕', k: '計程車Uber交通' }, { e: '🚗', k: '租車自駕交通' }, { e: '🛵', k: '機車摩托車交通' },
-  { e: '🚲', k: '腳踏車單車交通' }, { e: '🚢', k: '郵輪船交通' }, { e: '🚁', k: '直升機交通' },
-  { e: '⛵', k: '帆船交通' }, { e: '🚐', k: '小巴交通' }, { e: '🛺', k: '嘟嘟車交通' },
-  { e: '🏎️', k: '賽車' }, { e: '🛳️', k: '大船郵輪交通' },
-  // 住宿
-  { e: '🏨', k: '飯店旅館住宿' }, { e: '🏠', k: '民宿家住宿' }, { e: '🛖', k: '小屋住宿' },
-  { e: '⛺', k: '露營帳篷住宿' }, { e: '🏕️', k: '露營住宿' }, { e: '🛏️', k: '床睡覺住宿' },
-  // 其他
-  { e: '📷', k: '相機拍照' }, { e: '🎫', k: '票券門票' }, { e: '🎟️', k: '票券' },
-  { e: '🛍️', k: '購物' }, { e: '🎒', k: '背包' }, { e: '🧳', k: '行李箱行李' },
-  { e: '🗺️', k: '地圖' }, { e: '🧭', k: '指南針' }, { e: '📍', k: '地標位置' },
-  { e: '📌', k: '圖釘標記' }, { e: '❤️', k: '愛心最愛' }, { e: '⭐', k: '星星推薦' },
-  { e: '🌸', k: '櫻花花' }, { e: '🎉', k: '慶祝' }, { e: '💡', k: '提示注意' }, { e: '🔑', k: '鑰匙' },
 ]
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -529,12 +498,24 @@ const loadingDetail = ref(false)
 const creating = ref(false)
 const activeView = ref<'board' | 'date'>('board')
 const titleEl = ref<HTMLElement | null>(null)
-const availableTags = ref<TripTag[]>([])
 const sourcesOpen = ref(false)
 const shareOpen = ref(false)
 const mobileView = ref<'list' | 'detail'>('list')
 
 const isEditor = computed(() => current.value?.my_role === 'owner' || current.value?.my_role === 'editor')
+
+// ── 標籤目錄 ────────────────────────────────────────────────────────────────
+// 清單、重新命名、刪除、看板欄位的拖曳排序與新增都在 composables/useTripTags.ts。
+// 卡片編輯器裡的「行內新增標籤」留在本檔（見下方），因為它同時要掛到當前卡片。
+const {
+  availableTags, applyStoredTagOrder,
+  editingTagId, editingTagName, tagEditInput,
+  startEditTag, finishEditTag, cancelEditTag,
+  handleDeleteTag,
+  dragTagId, dragOverTagId, onTagDragStart, onTagDragEnd, onTagDrop,
+  addingBoardTag, boardTagName, boardTagInputEl,
+  startAddBoardTag, confirmBoardTag, cancelBoardTag,
+} = useTripTags(current)
 
 async function refreshCurrentTrip() {
   if (!current.value) return
@@ -613,25 +594,18 @@ async function onAiDone() {
 }
 
 // Emoji picker
-const emojiTriggerEl = ref<HTMLButtonElement | null>(null)
-const showEmojiPicker = ref(false)
-const emojiSearch = ref('')
-const emojiPickerStyle = ref<Record<string, string>>({})
+// emoji 選擇器（含 emoji 對照表）在 composables/useEmojiPicker.ts。
+// 選到之後要做什麼由這裡決定：寫進表單並各自送出 PATCH。
+const {
+  emojiTriggerEl, showEmojiPicker, emojiSearch, emojiPickerStyle,
+  filteredEmojis, toggleEmojiPicker, pickEmoji, closeEmojiPicker,
+} = useEmojiPicker((e) => { editForm.value.emoji = e; saveField('emoji') })
 
 // Board tag editing
-const editingTagId = ref<string | null>(null)
-const editingTagName = ref('')
-const tagEditInput = ref<HTMLInputElement | null>(null)
 
 // Board add tag column
-const addingBoardTag = ref(false)
-const boardTagName = ref('')
-const boardTagInputEl = ref<HTMLInputElement | null>(null)
 
 // Board column drag-reorder（順序記憶在 localStorage）
-const TAG_ORDER_KEY = 'trips:tagOrder'
-const dragTagId = ref<string | null>(null)
-const dragOverTagId = ref<string | null>(null)
 
 // Modal inline tag add
 const addingTag = ref(false)
@@ -862,114 +836,15 @@ function isUrl(s: string | null | undefined): boolean {
   try { new URL(s); return true } catch { return false }
 }
 
-// ── Emoji picker ───────────────────────────────────────────────────────────
-const PICKER_W = 320
-const PICKER_H = 310
-
-const filteredEmojis = computed(() => {
-  const q = emojiSearch.value.trim()
-  if (!q) return EMOJI_MAP.map(e => e.e)
-  return EMOJI_MAP.filter(({ k }) => k.includes(q)).map(e => e.e)
-})
-
-function toggleEmojiPicker() {
-  if (showEmojiPicker.value) {
-    showEmojiPicker.value = false
-    return
-  }
-  if (!emojiTriggerEl.value) return
-  const rect = emojiTriggerEl.value.getBoundingClientRect()
-  let top = rect.bottom + 6
-  let left = rect.left
-
-  // Clamp horizontally
-  if (left + PICKER_W > window.innerWidth - 8) {
-    left = window.innerWidth - PICKER_W - 8
-  }
-  if (left < 8) left = 8
-
-  // Flip upward if not enough space below
-  if (top + PICKER_H > window.innerHeight - 8) {
-    top = rect.top - PICKER_H - 6
-  }
-
-  emojiPickerStyle.value = { top: `${top}px`, left: `${left}px` }
-  emojiSearch.value = ''
-  showEmojiPicker.value = true
-}
-
-function pickEmoji(e: string) {
-  editForm.value.emoji = e
-  showEmojiPicker.value = false
-  saveField('emoji')
-}
-
-// ── Item editor ────────────────────────────────────────────────────────────
-interface EditForm {
-  title: string
-  emoji: string
-  booked: boolean
-  ticket_url: string
-  start_date: string
-  end_date: string
-  start_time: string
-  end_time: string
-  place_name: string
-  note: string
-  tag_ids: string[]
-}
-
-const editingItem = ref<Partial<TripItem> | null>(null)
-const isSaving = ref(false)
-const editingPlace = ref(false)  // 地標：有值時預設顯示「開啟地圖」按鈕，按編輯才切成 input
-const editingTicket = ref(false) // 票券連結：同地標的切換行為
-const editForm = ref<EditForm>({
-  title: '', emoji: '', booked: false, ticket_url: '',
-  start_date: '', end_date: '', start_time: '', end_time: '',
-  place_name: '', note: '', tag_ids: [],
-})
-
-// populateForm 期間抑制自動儲存，避免載入卡片時誤觸 PATCH
-const suppressAutoSave = ref(false)
-
-function populateForm(item: Partial<TripItem>) {
-  suppressAutoSave.value = true
-  editingPlace.value = false   // 有地標就先顯示按鈕
-  editingTicket.value = false  // 有票券連結就先顯示按鈕
-  editForm.value = {
-    title: item.title ?? '',
-    emoji: item.emoji ?? '',
-    booked: item.booked ?? false,
-    ticket_url: item.ticket_url ?? '',
-    start_date: item.start_date ?? '',
-    end_date: item.end_date ?? '',
-    start_time: item.start_time ?? '',
-    end_time: item.end_time ?? '',
-    place_name: item.place_name ?? '',
-    note: item.note ?? '',
-    tag_ids: (item.tags ?? []).map(t => t.trip_tag_id),
-  }
-  nextTick(() => { suppressAutoSave.value = false })
-}
-
-function openItemEditor(item: TripItem) {
-  editingItem.value = item
-  populateForm(item)
-}
-
-// 新增：直接建立一張空白卡片再開編輯（無儲存按鈕，後續編輯各自 PATCH）
-async function handleAddItem() {
-  if (!current.value) return
-  const tripId = current.value.id
-  try {
-    const created = await addItem(tripId, { title: t('trips.defaultItemName'), order_index: current.value.items.length })
-    current.value.items.push(created)
-    sidebarItemCount(tripId, 1)
-    openItemEditor(created)
-  } catch {
-    useToast().show(t('trips.addFailed'), 'error')
-  }
-}
+// ── 卡片編輯器 ──────────────────────────────────────────────────────────────
+// 表單狀態與「每個欄位各自 PATCH」的自動儲存在 composables/useTripItemEditor.ts。
+const {
+  editingItem, isSaving, editingPlace, editingTicket, editForm,
+  openItemEditor, handleAddItem,
+  saveField, saveTags,
+  onTitleCommit, commitPlace, commitTicket,
+  handleDeleteItem, toggleTag, closeEditor,
+} = useTripItemEditor(current, trips, availableTags)
 
 // ── 拖曳關閉（手勢邏輯見 composables/useSwipeToClose.ts，與 ItemDetailModal 共用）──
 const {
@@ -979,248 +854,14 @@ const {
   onTouchEnd: onPanelTouchEnd,
 } = useSwipeToClose(() => doClose())
 
+// 關閉時除了編輯器本身的收尾，還要把 emoji 選擇器一起收掉。
 function doClose(): Promise<void> {
-  flushNoteSave()
-  editingItem.value = null
-  showEmojiPicker.value = false
-  return nextTick()
+  closeEmojiPicker()
+  return closeEditor()
 }
 
 function closeItemEditor() {
   doClose()
-}
-
-function sidebarItemCount(tripId: string, delta: number) {
-  const idx = trips.value.findIndex(t => t.id === tripId)
-  if (idx !== -1) trips.value[idx].item_count += delta
-}
-
-// ── 自動儲存：每個欄位變更各自發送 PATCH ─────────────────────────────────────
-async function patchField(patch: Record<string, unknown>, optimistic: Partial<TripItem>) {
-  if (!current.value || !editingItem.value?.id) return
-  const tripId = current.value.id
-  const itemId = editingItem.value.id
-  const idx = current.value.items.findIndex(i => i.id === itemId)
-  if (idx === -1) return
-  const prev = { ...current.value.items[idx] }
-  current.value.items[idx] = { ...current.value.items[idx], ...optimistic }
-  if (editingItem.value?.id === itemId) editingItem.value = current.value.items[idx]
-  try {
-    const updated = await updateItem(tripId, itemId, patch)
-    const i2 = current.value.items.findIndex(i => i.id === itemId)
-    if (i2 !== -1) current.value.items[i2] = updated
-    if (editingItem.value?.id === itemId) editingItem.value = updated
-  } catch {
-    const i2 = current.value.items.findIndex(i => i.id === itemId)
-    if (i2 !== -1) current.value.items[i2] = prev
-    if (editingItem.value?.id === itemId) editingItem.value = prev
-    useToast().show(t('trips.saveFailed'), 'error')
-  }
-}
-
-type SaveKey = 'title' | 'emoji' | 'booked' | 'ticket_url' | 'place_name'
-  | 'start_date' | 'end_date' | 'start_time' | 'end_time' | 'note'
-
-function saveField(key: SaveKey) {
-  if (suppressAutoSave.value) return
-  let value: unknown = editForm.value[key]
-  if (key === 'title') {
-    value = (value as string).trim() || t('trips.defaultItemName')
-    editForm.value.title = value as string
-  } else if (typeof value === 'string') {
-    value = value || null
-  }
-  patchField({ [key]: value }, { [key]: value } as Partial<TripItem>)
-}
-
-function saveTags() {
-  if (suppressAutoSave.value) return
-  const optimisticTags = availableTags.value
-    .filter(t => editForm.value.tag_ids.includes(t.id))
-    .map(t => ({ trip_tag_id: t.id, name: t.name, color: t.color }))
-  patchField({ tag_ids: [...editForm.value.tag_ids] }, { tags: optimisticTags })
-}
-
-function onTitleCommit() { saveField('title') }
-function commitPlace() { editingPlace.value = false; saveField('place_name') }
-function commitTicket() { editingTicket.value = false; saveField('ticket_url') }
-
-// 備註打字頻繁：去抖動後再送，離開卡片時 flush
-let noteTimer: ReturnType<typeof setTimeout> | null = null
-function flushNoteSave() {
-  if (noteTimer) { clearTimeout(noteTimer); noteTimer = null; saveField('note') }
-}
-watch(() => editForm.value.note, () => {
-  if (suppressAutoSave.value) return
-  if (noteTimer) clearTimeout(noteTimer)
-  noteTimer = setTimeout(() => { noteTimer = null; saveField('note') }, 700)
-})
-
-async function handleDeleteItem() {
-  if (!current.value || !editingItem.value?.id || isSaving.value) return
-  if (!confirm(t('trips.confirm.deleteCard'))) return
-  const tripId = current.value.id
-  const itemId = editingItem.value.id
-  const itemIdx = current.value.items.findIndex(i => i.id === itemId)
-  const removed = itemIdx !== -1 ? current.value.items[itemIdx] : null
-  if (itemIdx !== -1) current.value.items.splice(itemIdx, 1)
-  sidebarItemCount(tripId, -1)
-  closeItemEditor()
-  try {
-    await deleteItem(tripId, itemId)
-  } catch {
-    if (removed && itemIdx !== -1) current.value.items.splice(itemIdx, 0, removed)
-    sidebarItemCount(tripId, 1)
-  }
-}
-
-function toggleTag(tagId: string) {
-  const ids = editForm.value.tag_ids
-  const idx = ids.indexOf(tagId)
-  if (idx === -1) ids.push(tagId)
-  else ids.splice(idx, 1)
-  saveTags()
-}
-
-// ── Board tag editing ──────────────────────────────────────────────────────
-function startEditTag(tagId: string, name: string) {
-  editingTagId.value = tagId
-  editingTagName.value = name
-  nextTick(() => { tagEditInput.value?.select() })
-}
-
-async function finishEditTag(tagId: string) {
-  if (editingTagId.value === null) return  // cancelled
-  const newName = editingTagName.value.trim()
-  editingTagId.value = null
-  if (!newName) return
-  const tag = availableTags.value.find(t => t.id === tagId)
-  if (!tag || newName === tag.name) return
-  const prevName = tag.name
-  tag.name = newName
-  try {
-    await updateTag(tagId, { name: newName })
-  } catch {
-    tag.name = prevName
-  }
-}
-
-function cancelEditTag(e: KeyboardEvent) {
-  editingTagId.value = null
-  ;(e.target as HTMLElement).blur()
-}
-
-// ── Board delete tag ───────────────────────────────────────────────────────
-async function handleDeleteTag(tagId: string, name: string) {
-  if (!confirm(t('trips.confirm.deleteTag', { name }))) return
-  const idx = availableTags.value.findIndex(t => t.id === tagId)
-  if (idx === -1) return
-  const removed = availableTags.value[idx]
-  availableTags.value.splice(idx, 1)
-  // 同步把此標籤從目前行程的卡片上移除（後端 delete 會 cascade）
-  const detached: Array<{ item: TripItem; pos: number; tag: TripItem['tags'][number] }> = []
-  for (const item of current.value?.items ?? []) {
-    const ti = item.tags.findIndex(t => t.trip_tag_id === tagId)
-    if (ti !== -1) {
-      detached.push({ item, pos: ti, tag: item.tags[ti] })
-      item.tags.splice(ti, 1)
-    }
-  }
-  saveTagOrder()
-  try {
-    await deleteTag(tagId)
-  } catch {
-    availableTags.value.splice(idx, 0, removed)
-    for (const d of detached) d.item.tags.splice(d.pos, 0, d.tag)
-    saveTagOrder()
-  }
-}
-
-// ── Board column drag-reorder ──────────────────────────────────────────────
-function loadTagOrder(): string[] {
-  try {
-    const raw = localStorage.getItem(TAG_ORDER_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function saveTagOrder() {
-  try {
-    localStorage.setItem(TAG_ORDER_KEY, JSON.stringify(availableTags.value.map(t => t.id)))
-  } catch { /* ignore */ }
-}
-
-function applyStoredTagOrder() {
-  const order = loadTagOrder()
-  if (!order.length) return
-  availableTags.value.sort((a, b) => {
-    const ia = order.indexOf(a.id)
-    const ib = order.indexOf(b.id)
-    if (ia === -1 && ib === -1) return 0
-    if (ia === -1) return 1   // 未記錄的（新標籤）排最後
-    if (ib === -1) return -1
-    return ia - ib
-  })
-}
-
-function onTagDragStart(tagId: string, e: DragEvent) {
-  if (tagId === '__none__' || editingTagId.value === tagId) return
-  dragTagId.value = tagId
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', tagId)
-  }
-}
-
-function onTagDragEnd() {
-  dragTagId.value = null
-  dragOverTagId.value = null
-}
-
-function onTagDrop(targetId: string) {
-  const fromId = dragTagId.value
-  dragTagId.value = null
-  dragOverTagId.value = null
-  if (!fromId || fromId === targetId) return
-  const arr = availableTags.value
-  const fromIdx = arr.findIndex(t => t.id === fromId)
-  const toIdx = arr.findIndex(t => t.id === targetId)
-  if (fromIdx === -1 || toIdx === -1) return
-  const [moved] = arr.splice(fromIdx, 1)
-  arr.splice(toIdx, 0, moved)
-  saveTagOrder()
-}
-
-// ── Board add tag column ───────────────────────────────────────────────────
-function startAddBoardTag() {
-  addingBoardTag.value = true
-  boardTagName.value = ''
-  nextTick(() => boardTagInputEl.value?.focus())
-}
-
-async function confirmBoardTag() {
-  const name = boardTagName.value.trim()
-  addingBoardTag.value = false
-  boardTagName.value = ''
-  if (!name) return
-  const tempId = `temp-${Date.now()}`
-  availableTags.value.push({ id: tempId, name, color: null })
-  try {
-    const tag = await createTag({ name })
-    const idx = availableTags.value.findIndex(t => t.id === tempId)
-    if (idx !== -1) availableTags.value[idx] = tag
-  } catch {
-    availableTags.value = availableTags.value.filter(t => t.id !== tempId)
-  }
-}
-
-function cancelBoardTag(e: KeyboardEvent) {
-  addingBoardTag.value = false
-  boardTagName.value = ''
-  ;(e.target as HTMLElement).blur()
 }
 
 // ── Modal inline tag add (optimistic) ─────────────────────────────────────
