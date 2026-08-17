@@ -1,4 +1,13 @@
 {
+  "apiError": {
+    "network": "連線失敗，請檢查網路後再試。",
+    "server": "伺服器出了點問題，請稍後再試。",
+    "forbidden": "你沒有權限做這個操作。",
+    "notFound": "找不到這筆資料，可能已被刪除。",
+    "quota": "本月額度已用完。",
+    "validation": "輸入的內容無法儲存，請檢查後再試。",
+    "unknown": "操作失敗，請稍後再試。"
+  },
   "itemModal": {
     "loading": "載入中...",
     "loadFailed": "載入失敗，請重新整理",

@@ -1,4 +1,13 @@
 {
+  "apiError": {
+    "network": "Connection failed. Check your network and try again.",
+    "server": "Something went wrong on our side. Please try again later.",
+    "forbidden": "You don't have permission to do that.",
+    "notFound": "That item no longer exists.",
+    "quota": "You've used up this month's quota.",
+    "validation": "That value couldn't be saved. Please check it and try again.",
+    "unknown": "The action failed. Please try again later."
+  },
   "itemModal": {
     "loading": "Loading...",
     "loadFailed": "Failed to load, please refresh",

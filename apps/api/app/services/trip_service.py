@@ -653,11 +653,13 @@ async def add_item(
 
     item = await crud_trips.create_item(db, trip_id, **kwargs)
 
-    if data.tag_ids:
-        from app.models.trip import TripItemTag as _TripItemTag
-        for tid in data.tag_ids:
-            db.add(_TripItemTag(trip_item_id=item.id, trip_tag_id=tid))
-        await db.commit()
+    # 注意：這裡不要讀 data.tag_ids。TripItemCreate 沒有這個欄位（只有 TripItemUpdate 有），
+    # 原本的 `if data.tag_ids:` 會直接 AttributeError → 每次新增卡片都回 500。
+    # 而且 create_item 在那之前就已經 commit，所以卡片其實有建立，只是前端拿到 500
+    # 而不把它加進畫面，要重新整理才看得到。從 trips 功能第一版就是壞的。
+    #
+    # 建立時帶標籤這條路沒有任何呼叫端在用（前端是先建卡片、再 PATCH tag_ids；
+    # AI 的 add_card 走 add_card_from_chat 直接進 crud），所以直接移除而不是補欄位。
 
     item = await crud_trips.get_item(db, trip_id, item.id)
     source_map = await _build_item_source_map(db, user_id, [item])

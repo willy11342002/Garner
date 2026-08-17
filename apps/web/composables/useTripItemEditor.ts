@@ -38,6 +38,12 @@ export function useTripItemEditor(
   const { t } = useI18n()
   const { addItem, updateItem, deleteItem } = useTrips()
 
+  /** 把 API 錯誤轉成看得懂的訊息：後端有給 detail 就用它，否則依 status 分類。 */
+  function errorText(err: unknown, fallbackKey: string): string {
+    const { kind, detail } = classifyApiError(err, 'trips')
+    return detail ?? (kind === 'unknown' ? t(fallbackKey) : t(API_ERROR_I18N_KEYS[kind]))
+  }
+
   const editingItem = ref<Partial<TripItem> | null>(null)
   const isSaving = ref(false)
   const editingPlace = ref(false)  // 地標：有值時預設顯示「開啟地圖」按鈕，按編輯才切成 input
@@ -91,8 +97,8 @@ export function useTripItemEditor(
       current.value.items.push(created)
       sidebarItemCount(tripId, 1)
       openItemEditor(created)
-    } catch {
-      useToast().show(t('trips.addFailed'), 'error')
+    } catch (err) {
+      useToast().show(errorText(err, 'trips.addFailed'), 'error')
     }
   }
 
@@ -111,11 +117,13 @@ export function useTripItemEditor(
       const i2 = current.value.items.findIndex(i => i.id === itemId)
       if (i2 !== -1) current.value.items[i2] = updated
       if (editingItem.value?.id === itemId) editingItem.value = updated
-    } catch {
+    } catch (err) {
       const i2 = current.value.items.findIndex(i => i.id === itemId)
       if (i2 !== -1) current.value.items[i2] = prev
       if (editingItem.value?.id === itemId) editingItem.value = prev
-      useToast().show(t('trips.saveFailed'), 'error')
+      // 之前這裡不分青紅皂白顯示「儲存失敗，已復原」，把 422 / 500 / 斷網
+      // 全部壓成同一句，使用者與開發者都拿不到線索。
+      useToast().show(errorText(err, 'trips.saveFailed'), 'error')
     }
   }
 

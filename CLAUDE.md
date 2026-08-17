@@ -176,6 +176,10 @@ garner/
 ### Web utils（`apps/web/utils/`）
 - `apiFetch` — 統一 API 呼叫封裝（前端 fetch 一律走這裡）
 - `text` — 文字處理工具
+- `apiError` — 把 apiFetch 拋出的錯誤分類（`classifyApiError`）供 UI 顯示有意義的訊息。
+  後端 `HTTPException(detail=...)` 的字串優先直接顯示，其餘依 status 分成
+  network / server / forbidden / notFound / quota / validation 六類，
+  對應的 i18n key 在 `API_ERROR_I18N_KEYS`。**不要再寫「操作失敗」這種吞掉錯誤的 toast**
 - `item` — 收藏項目的顯示用純函式：`cardTitle`、`domainFromUrl`、`tagColor` / `TAG_COLORS`、
   `sourceKindFromUrl`（網址 → 平台種類）與三組文案對照表（`SOURCE_I18N_KEYS` 走 i18n、
   `SOURCE_DISPLAY_NAMES` 未翻譯、`SOURCE_LABELS` 對應後端 source_type 欄位）
