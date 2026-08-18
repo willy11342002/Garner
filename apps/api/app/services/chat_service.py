@@ -356,6 +356,28 @@ def _build_report_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID])
     return executor
 
 
+def _sanitize_card_args(args: dict, seen_ids: set[UUID]) -> dict:
+    """卡片工具的 args 進資料層前的清洗：只留本次實際檢索／預載過的知識 id。
+
+    防模型亂編 id 把別人的知識掛到卡片上。add_card 與 update_card 都要過這一關 ——
+    以前只有 add_card 有，等於 update_card 是同一個漏洞的側門。
+
+    `source_item_ids` 沒出現在 args 裡就不要補上：資料層用「key 在不在」判斷要不要
+    動關聯，補一個空陣列會變成「清空這張卡的所有知識關聯」。
+    """
+    if "source_item_ids" not in args:
+        return args
+    raw = args.get("source_item_ids")
+    valid: list[str] = []
+    for sid in raw if isinstance(raw, list) else []:
+        try:
+            if UUID(str(sid)) in seen_ids:
+                valid.append(str(sid))
+        except (ValueError, TypeError):
+            continue
+    return {**args, "source_item_ids": valid}
+
+
 def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
     """D（旅遊窗口）的 domain executor：search_trips / get_trip / create_trip / add_card / update_card / delete_card。
 
@@ -400,31 +422,12 @@ def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
             trip_id = _uuid_arg(args, "trip_id")
             if trip_id is None:
                 return {"ok": False, "error": "invalid trip_id"}
-            # 只接受本次實際檢索／預載過的知識 id（防模型亂編 id 寫到別人的知識）
-            raw_src = args.get("source_item_ids") or []
-            valid_src: list[str] = []
-            for sid in raw_src if isinstance(raw_src, list) else []:
-                try:
-                    if UUID(str(sid)) in seen_ids:
-                        valid_src.append(str(sid))
-                except (ValueError, TypeError):
-                    continue
             try:
                 res = await trip_service.add_card_from_chat(
-                    db, user_id, trip_id,
-                    day=args.get("day"),
-                    end_day=args.get("end_day"),
-                    title=args.get("title", "未命名"),
-                    place_name=args.get("place_name"),
-                    category=args.get("category"),
-                    emoji=args.get("emoji"),
-                    start_time=args.get("start_time"),
-                    note=args.get("note"),
-                    ticket_url=args.get("ticket_url"),
-                    source_item_ids=valid_src or None,
+                    db, user_id, trip_id, _sanitize_card_args(args, seen_ids)
                 )
-                if not res or not res.get("id"):
-                    return {"ok": False}
+                if not res.get("id"):
+                    return res if res.get("error") else {"ok": False}
                 # 帶完整卡片給前端即時新增（_ 前綴，不會灌回模型脈絡）
                 return await trip_service.card_read_json(
                     db, user_id, trip_id, UUID(res["id"])
@@ -439,7 +442,7 @@ def _build_trip_executor(db: AsyncSession, user_id: UUID, seen_ids: set[UUID]):
                 return {"ok": False, "error": "invalid trip_id or card_id"}
             try:
                 return await trip_service.update_card_from_chat(
-                    db, user_id, trip_id, card_id, args
+                    db, user_id, trip_id, card_id, _sanitize_card_args(args, seen_ids)
                 )
             except Exception:
                 logger.exception("update_card_from_chat failed")

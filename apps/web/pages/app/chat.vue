@@ -170,7 +170,7 @@
                         </template>
                       </div>
                       <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
-                        <span class="process-body__step-icon">✓</span>
+                        <span class="process-body__step-icon">{{ (block as ToolBlock).toolResult!.ok === false ? '⚠️' : '✓' }}</span>
                         <span>{{ stepResultLabel(block) }}</span>
                         <button
                           v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
@@ -246,7 +246,7 @@
                           </template>
                         </div>
                         <div v-if="step.toolResult" class="process-body__tool-result">
-                          <span class="process-body__step-icon">✓</span>
+                          <span class="process-body__step-icon">{{ step.toolResult.ok === false ? '⚠️' : '✓' }}</span>
                           <span>{{ stepResultLabel(step) }}</span>
                           <button
                             v-if="step.toolResult?.titles?.length && step.toolCall.name !== 'create_report'"
@@ -331,7 +331,7 @@
                     </template>
                   </div>
                   <div v-if="(block as ToolBlock).toolResult" class="process-body__tool-result">
-                    <span class="process-body__step-icon">✓</span>
+                    <span class="process-body__step-icon">{{ (block as ToolBlock).toolResult!.ok === false ? '⚠️' : '✓' }}</span>
                     <span>{{ stepResultLabel(block) }}</span>
                     <button
                       v-if="(block as ToolBlock).toolResult?.titles?.length && (block as ToolBlock).toolCall.name !== 'create_report'"
@@ -1270,25 +1270,38 @@ const sourceLabel = sourceLabelFromType
 
 // ── 推理過程：各工具的圖示／結果文字／進行中文字 ──
 function stepIcon(name?: string) {
-  return name === 'add_trip_card' ? '📍'
+  return name === 'add_card' ? '📍'
+    : name === 'update_card' ? '✏️'
+    : name === 'delete_card' ? '🗑️'
     : name === 'create_trip' ? '🗺️'
+    : name === 'get_trip' ? '🗺️'
     : name === 'create_report' ? '📝'
     : name === 'filter_sources' ? '🎯'
     : name === 'save_url' ? '📥'
     : '🔍'
+}
+// 卡片類工具沒有 count，以前全部掉進最後那句 `找到 N 筆` 的 fallback，
+// 於是每次改卡片都顯示「找到 0 筆」，看起來像查無資料——實際上是改成功了（或失敗了，
+// 但錯誤訊息同樣被這句蓋掉）。後端一直有推 ok / error，這裡照 TripAiFab 的做法用它。
+const CARD_VERB: Record<string, string> = {
+  add_card: '新增卡片', update_card: '修改卡片', delete_card: '刪除卡片',
 }
 function stepResultLabel(step: any): string {
   const n = step.toolCall?.name
   const r = step.toolResult || {}
   if (n === 'create_report') return `報告已建立：${r.title ?? ''}`
   if (n === 'create_trip') return `行程已建立：${r.title ?? ''}`
-  if (n === 'add_trip_card') return r.ok ? `新增卡片：${r.title ?? ''}` : '卡片新增失敗'
   if (n === 'save_url') return r.ok ? `已存入「${r.title ?? ''}」` : (r.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗')
+  if (n && CARD_VERB[n]) {
+    if (!r.ok) return `${CARD_VERB[n]}失敗${r.error ? `：${r.error}` : ''}`
+    return r.title ? `${CARD_VERB[n]}：${r.title}` : `${CARD_VERB[n]}完成`
+  }
+  if (n === 'get_trip') return `讀取行程「${r.title ?? ''}」，${r.count ?? 0} 張卡片`
   return `找到 ${r.count ?? 0} 筆`
 }
 function stepPendingLabel(name?: string): string {
   if (name === 'create_report' || name === 'create_trip') return '生成中'
-  if (name === 'add_trip_card') return '新增中'
+  if (name && CARD_VERB[name]) return `${CARD_VERB[name]}中`
   if (name === 'filter_sources') return '篩選中'
   if (name === 'save_url') return '存入中'
   return '搜尋中'

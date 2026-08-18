@@ -116,7 +116,15 @@ export function useTripItemEditor(
       const updated = await updateItem(tripId, itemId, patch)
       const i2 = current.value.items.findIndex(i => i.id === itemId)
       if (i2 !== -1) current.value.items[i2] = updated
-      if (editingItem.value?.id === itemId) editingItem.value = updated
+      if (editingItem.value?.id === itemId) {
+        editingItem.value = updated
+        // 後端會把只填一半的日期補成同一天（trip_service._mirror_card_dates），
+        // 表單得跟著回填，否則另一個輸入框停在空的，看起來像沒存進去。
+        if ('start_date' in patch || 'end_date' in patch) {
+          editForm.value.start_date = updated.start_date ?? ''
+          editForm.value.end_date = updated.end_date ?? ''
+        }
+      }
     } catch (err) {
       const i2 = current.value.items.findIndex(i => i.id === itemId)
       if (i2 !== -1) current.value.items[i2] = prev

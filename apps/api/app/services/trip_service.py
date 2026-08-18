@@ -187,7 +187,7 @@ async def _build_trip_read(
 
 
 async def list_trips(db: AsyncSession, user_id: UUID) -> list[TripListItem]:
-    trips = await crud_trips.list_trips(db, user_id)
+    rows = await crud_trips.list_trips(db, user_id)
     return [
         TripListItem(
             id=t.id,
@@ -196,14 +196,14 @@ async def list_trips(db: AsyncSession, user_id: UUID) -> list[TripListItem]:
             start_date=t.start_date,
             end_date=t.end_date,
             source_count=len(t.source_item_ids or []),
-            item_count=len(t.items or []),
+            item_count=item_count,   # SQL 算的，不是把卡片撈回來 len()
             member_count=len(t.members or []),
             my_role=_get_effective_role(t, user_id) or "owner",
             last_edited_by=t.last_edited_by,
             created_at=t.created_at,
             updated_at=t.updated_at,
         )
-        for t in trips
+        for t, item_count in rows
     ]
 
 
@@ -239,185 +239,122 @@ async def create_trip_from_chat(
     summary: str | None = None,
     start_date=None,
     end_date=None,
-    cards: list[dict] | None = None,
     source_item_ids: list | None = None,
 ) -> dict:
-    """chat 的 create_trip 工具用：LLM 已規劃好行程，這裡持久化成結構化 trip + 每日卡片。
-    有 place_name 的卡片在背景做 geocoding 以便地圖定位。回傳精簡 dict 給 chat 卡片。"""
-    from datetime import date as _date, datetime as _dt, timedelta
+    """D 窗口的 create_trip：只建立「空」行程（標題＋日期區間），卡片交給 add_card 逐張加。
 
-    def _parse_date(v):
-        if v is None or not isinstance(v, str):
-            return v
-        try:
-            return _date.fromisoformat(v)
-        except Exception:
-            return None
-
-    def _parse_time(v):
-        if not v or not isinstance(v, str):
-            return None
-        try:
-            return _dt.strptime(v, "%H:%M").time()
-        except Exception:
-            return None
-
-    sd = _parse_date(start_date)
-    ed = _parse_date(end_date)
-
+    這裡原本還收一個 cards=[...] 一次寫入所有卡片，但自從流程改成
+    create_trip → add_card ×N 之後就沒有呼叫端了。它是第三份卡片欄位解析
+    （自己一套 _parse_time／day 換算，欄位還比 add_card 少），留著只會再度分岔。
+    """
     trip = await crud_trips.create_trip(
         db, user_id,
         title=title, summary=summary,
-        start_date=sd, end_date=ed,
+        start_date=_parse_date_str(start_date), end_date=_parse_date_str(end_date),
         source_item_ids=source_item_ids,
         last_edited_by="ai",
     )
 
-    pending_geocode: list[tuple[UUID, str]] = []
-    cards = cards or []
-    for idx, card in enumerate(cards):
-        place = (card.get("place_name") or "").strip() or None
-        # day（1 起算）+ trip 起始日 → 推算該卡片日期（沒起始日就留空）
-        item_date = None
-        day = card.get("day")
-        if sd and isinstance(day, int) and day >= 1:
-            item_date = sd + timedelta(days=day - 1)
-        item = await crud_trips.create_item(
-            db, trip.id,
-            kind="event",
-            title=(card.get("title") or "未命名").strip(),
-            emoji=(card.get("emoji") or None),
-            note=(card.get("note") or None),
-            category=(card.get("category") or None),
-            booked=False,
-            start_date=item_date,
-            start_time=_parse_time(card.get("start_time")),
-            order_index=float(idx),
-            place_name=place,
-            geocoding_status=("pending" if place else "done"),
-        )
-        if place:
-            pending_geocode.append((item.id, place))
-
-    if pending_geocode:
-        asyncio.create_task(_geocode_items_bg(pending_geocode))
     asyncio.create_task(_embed_trip_bg(trip.id, user_id))
 
     return {
         "id": str(trip.id),
         "title": trip.title,
         "summary": trip.summary,
-        "item_count": len(cards),
+        "item_count": 0,  # 剛建立時一定是空的，卡片由後續 add_card 加
     }
 
 
 async def add_card_from_chat(
-    db: AsyncSession,
-    user_id: UUID,
-    trip_id: UUID,
-    *,
-    day=None,
-    end_day=None,
-    title: str = "未命名",
-    place_name: str | None = None,
-    category: str | None = None,
-    emoji: str | None = None,
-    start_time=None,
-    note: str | None = None,
-    ticket_url: str | None = None,
-    source_item_ids: list[str] | None = None,
-) -> dict | None:
-    """chat 的 add_trip_card 工具用：對既有行程逐張新增卡片，回傳精簡 dict。
-    source_item_ids：依地點對應到的知識 user_item id（已在上游用 seen_ids 過濾），寫入關聯表。"""
-    from datetime import datetime as _dt, timedelta
-    from urllib.parse import quote
+    db: AsyncSession, user_id: UUID, trip_id: UUID, args: dict
+) -> dict:
+    """D 窗口的 add_card：新增一張卡片，欄位與 update_card 完全一致。
 
+    args 的解析走 `_card_args_to_kwargs`（與 `_ai_update_card` 同一條路徑）—— 能新增的
+    欄位就一定能改回去，是靠共用那個函式保證的，不是靠兩邊各自記得加。
+    """
     # 用 editor 權限（不是單純 get_trip）—— get_trip 對任何成員都放行，
     # viewer 不該能透過 AI 新增卡片，行為要跟 delete_item 一致
     accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
     if accessible is None:
-        return None
+        return {"ok": False, "error": "trip not found"}
     trip = accessible[0]
 
-    def _parse_time(v):
-        if not v or not isinstance(v, str):
-            return None
-        try:
-            return _dt.strptime(v, "%H:%M").time()
-        except Exception:
-            return None
+    kwargs, extras = _card_args_to_kwargs(args)
+    _mirror_card_dates(kwargs)
 
-    # day 可能以 int / "1" / 1.0 等形式傳來，統一轉成 int 再算日期
-    def _to_int(v):
-        try:
-            return int(v) if v is not None else None
-        except (ValueError, TypeError):
-            return None
+    # 建立時的必要預設值（update 沒給就是不動，create 沒給就得有個底）
+    kwargs.setdefault("kind", "event")
+    kwargs.setdefault("title", "未命名")
+    kwargs.setdefault("booked", False)
+    kwargs.setdefault("order_index", float(len(trip.items or [])))  # 接在現有卡片之後
 
-    day_int = _to_int(day)
-    item_date = None
-    if trip.start_date and day_int and day_int >= 1:
-        item_date = trip.start_date + timedelta(days=day_int - 1)
+    item = await crud_trips.create_item(db, trip_id, **kwargs)
+    await _apply_card_extras(db, user_id, item, extras)
 
-    # end_day → end_date（跨日卡片，例如住宿前三天某飯店）。需 >= day 才視為有效 span
-    end_day_int = _to_int(end_day)
-    end_item_date = None
-    if trip.start_date and end_day_int and end_day_int >= (day_int or 1):
-        end_item_date = trip.start_date + timedelta(days=end_day_int - 1)
+    asyncio.create_task(_embed_trip_bg(trip_id, user_id))
+    result = {"ok": True, "id": str(item.id), "title": item.title}
+    if extras.get("warnings"):
+        result["warning"] = "; ".join(extras["warnings"])
+    return result
 
-    # place_name 欄位前端當「可點的地圖連結」用，所以把純地名轉成 Google Maps 連結；
-    # geocoding 仍用原始地名取座標（地圖標點靠 lat/lng，不靠這個連結）。
-    raw_place = (place_name or "").strip() or None
-    geocode_query = None
-    stored_place = None
-    if raw_place:
-        if raw_place.startswith("http"):
-            stored_place = raw_place  # 模型已給連結，直接用（無法 geocode）
-        else:
-            stored_place = f"https://www.google.com/maps/search/?api=1&query={quote(raw_place)}"
-            geocode_query = raw_place
 
-    item = await crud_trips.create_item(
-        db, trip_id,
-        kind="event",
-        title=(title or "未命名").strip()[:60],  # 防呆：title 過長截斷，避免整段敘述塞進標題
-        emoji=(emoji or None),
-        note=(note or None),
-        category=(category or None),
-        booked=False,
-        start_date=item_date,
-        end_date=end_item_date,
-        start_time=_parse_time(start_time),
-        order_index=float(len(trip.items or [])),  # 接在現有卡片之後
-        place_name=stored_place,
-        ticket_url=((ticket_url or "").strip() or None),
-        geocoding_status=("pending" if geocode_query else "done"),
-    )
+async def _apply_card_extras(
+    db: AsyncSession, user_id: UUID, item, extras: dict
+) -> None:
+    """卡片本體寫完之後的關聯欄位：標籤、知識關聯、背景 geocoding。
 
-    # category（景點／美食／交通／住宿）對應成 trip 標籤並掛到卡片，否則 board 視圖會全擠在「無標籤」。
-    # 卡片已建立成功，標籤掛失敗不該讓整張卡視為失敗，故獨立 try。
-    cat = (category or "").strip()
-    if cat in _CATEGORY_TAG_COLORS:
-        try:
-            from app.models.trip import TripItemTag as _TripItemTag
-            tag = await crud_trips.get_or_create_tag(db, user_id, cat, _CATEGORY_TAG_COLORS[cat])
+    這幾件事各自獨立 try —— 卡片已經寫進去了，掛標籤失敗不該讓整張卡視為失敗。
+    add_card 與 update_card 共用。
+    """
+    from app.models.trip import TripItemTag as _TripItemTag
+    from sqlalchemy import select
+
+    async def _attach(name: str, color: str | None) -> None:
+        tag = await crud_trips.get_or_create_tag(db, user_id, name, color)
+        exists = await db.execute(
+            select(_TripItemTag).where(
+                _TripItemTag.trip_item_id == item.id,
+                _TripItemTag.trip_tag_id == tag.id,
+            )
+        )
+        if exists.scalar_one_or_none() is None:
             db.add(_TripItemTag(trip_item_id=item.id, trip_tag_id=tag.id))
             await db.commit()
+
+    # tags 是全替換（模型傳 [] 就是清空），所以要先清再掛，且必須在 category 之前，
+    # 否則 category 自動掛上的標籤會被 tags 的全替換洗掉。
+    tag_names = extras.get("tag_names")
+    if tag_names is not None:
+        try:
+            await db.execute(
+                _TripItemTag.__table__.delete().where(_TripItemTag.trip_item_id == item.id)
+            )
+            await db.commit()
+            for name in tag_names:
+                await _attach(name, _CATEGORY_TAG_COLORS.get(name))
+        except Exception:
+            logger.exception("replace tags failed for item %s", item.id)
+
+    # category（景點／美食／交通／住宿）對應成 trip 標籤並掛到卡片，
+    # 否則 board 視圖會全擠在「無標籤」。
+    cat = (extras.get("category") or "").strip()
+    if cat in _CATEGORY_TAG_COLORS:
+        try:
+            await _attach(cat, _CATEGORY_TAG_COLORS[cat])
         except Exception:
             logger.exception("attach category tag failed for item %s", item.id)
 
-    # 知識關聯（依地點對應的知識 item）。寫失敗不影響卡片本身，故獨立 try。
-    parsed_sources = _parse_uuid_list(source_item_ids)
-    if parsed_sources:
+    # 知識關聯（依地點對應的知識 item）。全替換，傳 [] 即清空。
+    source_ids = extras.get("source_ids")
+    if source_ids is not None:
         try:
-            await crud_trips.set_item_sources(db, item.id, parsed_sources)
+            await crud_trips.set_item_sources(db, item.id, _parse_uuid_list(source_ids))
         except Exception:
             logger.exception("attach sources failed for item %s", item.id)
 
-    if geocode_query:
-        asyncio.create_task(_geocode_items_bg([(item.id, geocode_query)]))
-    asyncio.create_task(_embed_trip_bg(trip_id, user_id))
-    return {"ok": True, "id": str(item.id), "title": item.title}
+    if extras.get("geocode_query"):
+        asyncio.create_task(_geocode_items_bg([(item.id, extras["geocode_query"])]))
 
 
 def _parse_uuid_list(values: list[str] | None) -> list[UUID]:
@@ -475,10 +412,10 @@ async def search_trips_from_chat(
             "id": str(t.id),
             "title": t.title,
             "summary": t.summary,
-            "item_count": len(t.items or []),
+            "item_count": item_count,
             "updated_at": t.updated_at.isoformat(),
         }
-        for t in rows
+        for t, item_count in rows
     ]
 
 
@@ -651,6 +588,7 @@ async def add_item(
             kwargs["lat"] = loc.lat
             kwargs["lng"] = loc.lng
 
+    _mirror_card_dates(kwargs)
     item = await crud_trips.create_item(db, trip_id, **kwargs)
 
     # 注意：這裡不要讀 data.tag_ids。TripItemCreate 沒有這個欄位（只有 TripItemUpdate 有），
@@ -707,6 +645,7 @@ async def update_item(
         update_kwargs["lat"] = None
         update_kwargs["lng"] = None
 
+    _mirror_card_dates(update_kwargs, item)
     item = await crud_trips.update_item(db, item, tag_ids=data.tag_ids, **update_kwargs)
 
     if trigger_geocode:
@@ -773,9 +712,181 @@ def _parse_time_str(v):
     if not v or not isinstance(v, str):
         return None
     try:
-        return _dt.strptime(v, "%H:%M").time()
+        return _dt.strptime(v.strip(), "%H:%M").time()
     except Exception:
         return None
+
+
+def _parse_date_str(v):
+    """YYYY-MM-DD → date。空字串／格式不對回 None（呼叫端把 None 當「清空」）。
+
+    已經是 date 就原樣放行 —— create_trip_from_chat 的參數沒有型別約束，呼叫端
+    給 date 物件時不該被當成解析失敗而清成 None。
+    """
+    from datetime import date as _date, datetime as _dt
+    if isinstance(v, _date):
+        return v
+    if not v or not isinstance(v, str):
+        return None
+    try:
+        return _dt.strptime(v.strip(), "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _provided(v) -> bool:
+    """這個值是模型「真的有話要說」，還是宣告了參數卻沒東西填的佔位空值？
+
+    Gemini 常把工具宣告過的參數整組帶出來，沒話說的就給 "" 或 []。曾經把那種空值
+    當成「清空這個欄位」，結果模型每改一張卡片就順手把沒提到的欄位一起洗掉：
+    日期被清成 null（只剩時間）、tags 被清空、category 空字串連自動標籤都不掛。
+    要清空必須走 clear_fields 明講。
+
+    False 與 0 是有意義的值，所以不能用真值判斷。
+    """
+    if v is None:
+        return False
+    if isinstance(v, (bool, int, float)):
+        return True
+    if isinstance(v, str):
+        return bool(v.strip())
+    if isinstance(v, (list, tuple, dict, set)):
+        return len(v) > 0
+    return True
+
+
+# clear_fields 能點名清空的欄位。必須是 crud_trips.update_item 白名單的子集，
+# 否則設成 None 會被那邊當「呼叫端沒給值」而略過。
+_CLEARABLE_COLUMNS = (
+    "start_date", "end_date", "start_time", "end_time",
+    "place_name", "note", "emoji", "ticket_url", "category",
+)
+_CLEARABLE_RELATIONS = {"tags": "tag_names", "source_item_ids": "source_ids"}
+
+
+def _mirror_card_dates(kwargs: dict, item: TripItem | None = None) -> None:
+    """卡片的兩個日期要嘛都有、要嘛都沒有：只給其中一個就補成同一天（就地改 kwargs）。
+
+    判斷的是**合併後**的結果，不是只看這次送進來的欄位 —— 住宿卡片本來 8/22–8/25，
+    只改 start_date 不該連帶把 end_date 洗掉。
+
+    agent 與人工兩條路徑都要過這裡（add_card_from_chat／_ai_update_card 與 REST 的
+    add_item／update_item），不然同一份資料會因為入口不同而長得不一樣。
+
+    要把卡片改回未排程就兩個日期一起清（clear_fields 收陣列）；只清一個會被這裡補回來，
+    因為「有結束日期卻沒有起始日期」不是一個有意義的狀態。
+    """
+    def resulting(key):
+        if key in kwargs:
+            return kwargs[key]
+        return getattr(item, key, None) if item is not None else None
+
+    start, end = resulting("start_date"), resulting("end_date")
+    if start and not end:
+        kwargs["end_date"] = start
+    elif end and not start:
+        kwargs["start_date"] = end
+
+
+def _card_args_to_kwargs(args: dict) -> tuple[dict, dict]:
+    """D 窗口工具的 args → 卡片欄位 kwargs。add_card 與 update_card 的**唯一**解析路徑。
+
+    以前 add 與 update 各自解析一份，結果兩邊能力不對稱（update 有 booked、add 有
+    source_item_ids，兩邊都沒有 end_time／kind／tags），而且加欄位要記得改兩處。
+
+    **只有「有值」的欄位會被寫入**（見 `_provided`）—— 空字串／空陣列一律視為模型沒有
+    要動這個欄位，不是要清空它。清空只認 clear_fields。
+
+    回傳 (kwargs, extras)：
+    - kwargs：直接餵給 crud_trips.create_item / update_item
+    - extras：需要額外 I/O 的欄位（tag_names／source_ids／geocode_query），由
+      `_apply_card_extras` 在卡片寫完後處理；warnings 會回給模型看
+    """
+    kwargs: dict = {}
+    extras: dict = {}
+    warnings: list[str] = []
+
+    def given(key: str) -> bool:
+        return _provided(args.get(key))
+
+    # ── 排程 ──────────────────────────────────────────────────────────────────
+    # 解析失敗就跳過（不清空），但要讓模型知道 —— 靜默沒寫進去正是先前那個
+    # 「agent 說改好了、畫面上什麼都沒變」的老問題。
+    for key in ("start_date", "end_date"):
+        if given(key):
+            parsed = _parse_date_str(args.get(key))
+            if parsed is None:
+                warnings.append(f"{key}={args.get(key)!r} is not a valid YYYY-MM-DD date, ignored")
+            else:
+                kwargs[key] = parsed
+    for key in ("start_time", "end_time"):
+        if given(key):
+            parsed = _parse_time_str(args.get(key))
+            if parsed is None:
+                warnings.append(f"{key}={args.get(key)!r} is not a valid HH:MM time, ignored")
+            else:
+                kwargs[key] = parsed
+
+    if given("order_index"):
+        try:
+            kwargs["order_index"] = float(args["order_index"])
+        except (ValueError, TypeError):
+            warnings.append(f"order_index={args.get('order_index')!r} is not a number, ignored")
+
+    # ── 內容 ──────────────────────────────────────────────────────────────────
+    if given("title"):
+        # 防呆：title 過長截斷，避免整段敘述塞進標題
+        kwargs["title"] = str(args["title"]).strip()[:60]
+    for key in ("note", "emoji", "ticket_url", "category"):
+        if given(key):
+            kwargs[key] = str(args[key]).strip()
+    if isinstance(args.get("booked"), bool):
+        kwargs["booked"] = args["booked"]
+    if args.get("kind") in ("event", "reference"):
+        kwargs["kind"] = args["kind"]
+
+    # place_name 前端當「可點的地圖連結」用，所以純地名要轉成 Google Maps 連結；
+    # geocoding 仍用原始地名取座標（地圖標點靠 lat/lng，不靠這個連結）。
+    if given("place_name"):
+        stored_place, geocode_query = _maps_link_and_geocode_query(args.get("place_name"))
+        kwargs["place_name"] = stored_place
+        extras["geocode_query"] = geocode_query
+        if geocode_query:
+            kwargs["geocoding_status"] = "pending"
+            kwargs["lat"] = None
+            kwargs["lng"] = None
+
+    # ── 關聯（寫完卡片才處理）──────────────────────────────────────────────────
+    if given("tags"):
+        extras["tag_names"] = [
+            str(n).strip() for n in args["tags"] if _provided(n)
+        ]
+    if given("source_item_ids"):
+        extras["source_ids"] = list(args["source_item_ids"])
+
+    # ── 明確清空（放最後：跟上面衝突時以「要清掉」為準）────────────────────────
+    raw_clear = args.get("clear_fields")
+    for name in raw_clear if isinstance(raw_clear, list) else []:
+        key = str(name).strip()
+        if key in _CLEARABLE_RELATIONS:
+            extras[_CLEARABLE_RELATIONS[key]] = []
+        elif key in _CLEARABLE_COLUMNS:
+            kwargs[key] = None
+            if key == "place_name":
+                kwargs["lat"] = kwargs["lng"] = None
+                kwargs["geocoding_status"] = "done"
+                extras.pop("geocode_query", None)
+        else:
+            warnings.append(f"clear_fields: {key!r} is not a clearable field, ignored")
+
+    # 自動掛標籤要用「解析後」的 category，不能讓 _apply_card_extras 自己去讀原始 args ——
+    # 那樣 clear_fields 清掉 category 之後還是會掛上標籤。
+    if "category" in kwargs:
+        extras["category"] = kwargs["category"]
+
+    if warnings:
+        extras["warnings"] = warnings
+    return kwargs, extras
 
 
 def _maps_link_and_geocode_query(place_name: str | None) -> tuple[str | None, str | None]:
@@ -797,90 +908,28 @@ async def _ai_update_card(
     item_id: UUID,
     args: dict,
 ) -> dict:
-    from datetime import timedelta
-
     # 權限在這裡擋 —— 工具收得到模型給的任意 trip_id，不是別人的就查不到。
     # （這條檢查原本不在：舊版只有 FAB 會呼叫，端口已先驗過權限。現在 chat 也能改
     #  任一份行程，少了它就是 IDOR。）
     accessible = await _get_accessible_trip(db, user_id, trip_id, required_role="editor")
     if accessible is None:
         return {"ok": False, "error": "trip not found"}
-    trip_start_date = accessible[0].start_date
 
     item = await crud_trips.get_item(db, trip_id, item_id)
     if item is None:
         return {"ok": False, "error": "card not found"}
 
-    kwargs: dict = {}
-    if args.get("title"):
-        kwargs["title"] = str(args["title"]).strip()[:60]
-    if "note" in args:
-        kwargs["note"] = args.get("note") or None
-    if "emoji" in args:
-        kwargs["emoji"] = args.get("emoji") or None
-    if "ticket_url" in args:
-        kwargs["ticket_url"] = (args.get("ticket_url") or "").strip() or None
-    if isinstance(args.get("booked"), bool):
-        kwargs["booked"] = args["booked"]
-    if "start_time" in args:
-        kwargs["start_time"] = _parse_time_str(args.get("start_time"))
-    if args.get("category"):
-        kwargs["category"] = str(args["category"]).strip()
-
-    # day → start_date（需 trip 有起始日）
-    def _to_int(v):
-        try:
-            return int(v) if v not in (None, "") else None
-        except (ValueError, TypeError):
-            return None
-
-    day_int = _to_int(args.get("day"))
-    if trip_start_date and day_int and day_int >= 1:
-        kwargs["start_date"] = trip_start_date + timedelta(days=day_int - 1)
-
-    # end_day → end_date（跨日卡片）。傳 0／空可清除回單日
-    if "end_day" in args:
-        end_day_int = _to_int(args.get("end_day"))
-        if trip_start_date and end_day_int and end_day_int >= 1:
-            kwargs["end_date"] = trip_start_date + timedelta(days=end_day_int - 1)
-        else:
-            kwargs["end_date"] = None
-
-    # place_name 變更 → 存成可點連結 + 背景 geocoding
-    geocode_query = None
-    if "place_name" in args:
-        stored_place, geocode_query = _maps_link_and_geocode_query(args.get("place_name"))
-        kwargs["place_name"] = stored_place
-        if geocode_query:
-            kwargs["geocoding_status"] = "pending"
-            kwargs["lat"] = None
-            kwargs["lng"] = None
+    kwargs, extras = _card_args_to_kwargs(args)
+    _mirror_card_dates(kwargs, item)
 
     item = await crud_trips.update_item(db, item, **kwargs)
+    await _apply_card_extras(db, user_id, item, extras)
 
-    # category → 對應 trip 標籤並掛到卡片（沿用 add_card 的行為，掛失敗不影響卡片）
-    cat = (args.get("category") or "").strip()
-    if cat in _CATEGORY_TAG_COLORS:
-        try:
-            from app.models.trip import TripItemTag as _TripItemTag
-            from sqlalchemy import select
-            tag = await crud_trips.get_or_create_tag(db, user_id, cat, _CATEGORY_TAG_COLORS[cat])
-            exists = await db.execute(
-                select(_TripItemTag).where(
-                    _TripItemTag.trip_item_id == item.id,
-                    _TripItemTag.trip_tag_id == tag.id,
-                )
-            )
-            if exists.scalar_one_or_none() is None:
-                db.add(_TripItemTag(trip_item_id=item.id, trip_tag_id=tag.id))
-                await db.commit()
-        except Exception:
-            logger.exception("attach category tag failed for item %s", item.id)
-
-    if geocode_query:
-        asyncio.create_task(_geocode_items_bg([(item.id, geocode_query)]))
-
-    return await _item_read_json(db, trip_id, item.id, ok=True, user_id=user_id)
+    result = await _item_read_json(db, trip_id, item.id, ok=True, user_id=user_id)
+    # warning 不帶底線 → 會灌回模型脈絡，讓它知道哪個欄位沒吃進去
+    if extras.get("warnings"):
+        result["warning"] = "; ".join(extras["warnings"])
+    return result
 
 
 async def _item_read_json(

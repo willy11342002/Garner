@@ -68,10 +68,8 @@
                       <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                     </div>
                     <div v-if="step.toolResult" class="process-body__tool-result">
-                      <span class="process-body__step-icon">✓</span>
-                      <span v-if="step.toolCall.name === 'create_report'">報告已建立：{{ step.toolResult.title }}</span>
-                      <span v-else-if="step.toolCall.name === 'save_url'">{{ step.toolResult.ok ? `已存入「${step.toolResult.title}」` : (step.toolResult.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗') }}</span>
-                      <span v-else>找到 {{ step.toolResult.count }} 筆</span>
+                      <span class="process-body__step-icon">{{ step.toolResult.ok === false ? '⚠️' : '✓' }}</span>
+                      <span>{{ stepResultLabel(step) }}</span>
                       <button
                         v-if="step.toolResult?.titles?.length"
                         class="process-body__step-toggle"
@@ -120,10 +118,8 @@
                   <span v-if="step.toolCall.query" class="process-body__param">query: "{{ step.toolCall.query }}"</span>
                 </div>
                 <div v-if="step.toolResult" class="process-body__tool-result">
-                  <span class="process-body__step-icon">✓</span>
-                  <span v-if="step.toolCall.name === 'create_report'">報告已建立：{{ step.toolResult.title }}</span>
-                  <span v-else-if="step.toolCall.name === 'save_url'">{{ step.toolResult.ok ? `已存入「${step.toolResult.title}」` : (step.toolResult.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗') }}</span>
-                  <span v-else>找到 {{ step.toolResult.count }} 筆</span>
+                  <span class="process-body__step-icon">{{ step.toolResult.ok === false ? '⚠️' : '✓' }}</span>
+                  <span>{{ stepResultLabel(step) }}</span>
                   <button
                     v-if="step.toolResult?.titles?.length"
                     class="process-body__step-toggle"
@@ -139,7 +135,7 @@
                 </Transition>
                 <div v-if="!step.toolResult" class="process-body__tool-result process-body__tool-result--pending">
                   <span class="process-body__step-icon">⋯</span>
-                  <span>{{ step.toolCall.name === 'create_report' ? '生成中' : step.toolCall.name === 'save_url' ? '存入中' : t('fab.searching') }}</span>
+                  <span>{{ stepPendingLabel(step.toolCall.name) }}</span>
                 </div>
               </div>
             </div>
@@ -265,6 +261,32 @@ function toggleStep(msgId: string, stepIdx: number) {
   else s.add(key)
   openSteps.value = new Set(s)
 }
+
+// 卡片類工具沒有 count，以前全部掉進最後那句 `找到 N 筆`，於是每次改卡片都顯示
+// 「找到 0 筆」，看起來像查無資料——實際上是改成功了（或失敗了，但錯誤訊息同樣被蓋掉）。
+// 後端一直有推 ok / error，這裡照 TripAiFab 的做法用它。
+const CARD_VERB: Record<string, string> = {
+  add_card: '新增卡片', update_card: '修改卡片', delete_card: '刪除卡片',
+}
+function stepResultLabel(step: ChatProcessStep): string {
+  const n = step.toolCall?.name
+  const r = step.toolResult || {}
+  if (n === 'create_report') return `報告已建立：${r.title ?? ''}`
+  if (n === 'create_trip') return `行程已建立：${r.title ?? ''}`
+  if (n === 'save_url') return r.ok ? `已存入「${r.title ?? ''}」` : (r.error === 'quota_exceeded' ? '存入額度已用完' : '存入失敗')
+  if (n && CARD_VERB[n]) {
+    if (!r.ok) return `${CARD_VERB[n]}失敗${r.error ? `：${r.error}` : ''}`
+    return r.title ? `${CARD_VERB[n]}：${r.title}` : `${CARD_VERB[n]}完成`
+  }
+  if (n === 'get_trip') return `讀取行程「${r.title ?? ''}」，${r.count ?? 0} 張卡片`
+  return `找到 ${r.count ?? 0} 筆`
+}
+function stepPendingLabel(name?: string): string {
+  if (name === 'create_report' || name === 'create_trip') return '生成中'
+  if (name && CARD_VERB[name]) return `${CARD_VERB[name]}中`
+  if (name === 'save_url') return '存入中'
+  return t('fab.searching')
+}
 const openSources = ref<Set<string>>(new Set())
 
 // 比 ChatProcessLog 多一個 sources：面板要在同一塊區域顯示引用來源
@@ -383,7 +405,9 @@ async function send() {
           await nextTick(); scrollBottom()
         } else if (event === 'tool_result') {
           const steps = liveProcess.value.steps
-          if (steps.length) steps[steps.length - 1].toolResult = { count: data.count, titles: data.titles, title: data.title }
+          // 整包留著：以前只挑 count/titles/title，把後端推的 ok / error 丟掉，
+          // 於是卡片工具失敗時前端無從得知，只能顯示 fallback 的「找到 0 筆」
+          if (steps.length) steps[steps.length - 1].toolResult = data
           await nextTick(); scrollBottom()
         } else if (event === 'sources') {
           liveProcess.value.sources = data as ChatSource[]

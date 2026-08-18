@@ -151,10 +151,18 @@ async def create_item(db: AsyncSession, trip_id: UUID, **kwargs) -> TripItem:
 async def get_item(
     db: AsyncSession, trip_id: UUID, item_id: UUID
 ) -> TripItem | None:
+    """讀一張卡片的當前狀態（含 tags / sources）。
+
+    populate_existing 是必要的，不是保險：session 開了 expire_on_commit=False，而
+    tags／sources 是用 raw insert/delete 改的（沒有經過 item.item_tags.append），
+    少了它，同一個 session 裡改完標籤再讀，拿到的還是改之前那份已載入的集合 ——
+    回給前端的 _item 就會顯示舊標籤，看起來像沒改成功。
+    """
     result = await db.execute(
         select(TripItem)
         .where(TripItem.id == item_id, TripItem.trip_id == trip_id)
         .options(selectinload(TripItem.item_tags).selectinload(TripItemTag.trip_tag))
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 
@@ -166,9 +174,12 @@ async def update_item(
     tag_ids: list[UUID] | None = None,
     **kwargs,
 ) -> TripItem:
+    # None 只對「可清空」的欄位有意義；其餘（title / kind / booked / order_index）
+    # 傳 None 是呼叫端沒給值，不是要清掉，直接略過。
     for k, v in kwargs.items():
         if v is not None or k in ("start_date", "end_date", "start_time", "end_time",
-                                   "place_name", "lat", "lng", "note", "emoji", "ticket_url"):
+                                   "place_name", "lat", "lng", "note", "emoji",
+                                   "ticket_url", "category"):
             setattr(item, k, v)
 
     if tag_ids is not None:

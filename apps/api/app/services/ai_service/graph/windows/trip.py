@@ -35,9 +35,9 @@ _SYSTEM = """\
   不要在 add_card 之間輸出大段文字，不要反問用戶，卡片才是行程的主體
 - 若「目前正在編輯的行程」區塊存在，代表使用者正看著那一份：預設就改那一份，
   **不要呼叫 create_trip**，除非事件明確要求「另外開一份新的」
-- update_card 只填要變更的欄位，未填的保持不變
+- update_card 只填要變更的欄位，其餘一律保持原值；要清空某個欄位用 clear_fields 點名
 - 每個景點／餐廳／交通／住宿各一張卡片，title 只放名稱、細節放 note；一天通常 3～6 張
-- 跨日的卡片（住宿連住數晚、租車多日、多日票券）用 end_day 標出結束日：例如「前 3 天住 A 飯店」，day=1、end_day=3；別把同一間飯店每天各建一張
+- 跨日的卡片（住宿連住數晚、租車多日、多日票券）用 end_date 標出結束日期；別把同一間飯店每天各建一張
 - 若 context 裡有知識內容，且某張卡片的地點與某筆知識的「地點」相符，務必用 add_card 的
   source_item_ids 帶上那筆知識的 id，讓卡片連回對應知識；沒有相符的就留空
 - 只能用 search_trips／get_trip／create_trip 實際拿到的 trip_id 與 card_id，不要自己編
@@ -46,17 +46,51 @@ _SYSTEM = """\
 
 _TRIP_ID_PARAM = {"type": "string", "description": "要操作的行程 id（來自 search_trips／get_trip／create_trip）"}
 
+# 卡片的完整可寫欄位，add_card 與 update_card 共用同一組 —— 能新增的欄位就一定能改回去。
+# 不開放給模型的只有三個衍生欄位：lat／lng／geocoding_status，它們由 place_name 的背景
+# geocoding 決定，模型自己填只會蓋掉正確座標。
+#
+# 日期一律是卡片自己的絕對日期。這裡曾經有一組 day／end_day（第幾天），要靠 trips.start_date
+# 當錨點換算 —— 行程沒填出發日時就換算不出東西，等於整組欄位靜默失效。卡片的日期本來就
+# 存在卡片上，多這一層轉換沒有換到任何好處。日期不明就 report_missing_info 問用戶。
+#
+# 空值＝沒有要動這個欄位，**不是**清空。Gemini 會把宣告過的參數整組帶出來、沒話說的填 ""
+# 或 []，若把那當成清空，模型每改一張卡就會順手洗掉其他欄位（實際發生過：日期被清成 null
+# 只剩時間、標籤整組消失）。要清空得用 update_card 的 clear_fields 點名。
 _CARD_FIELDS = {
-    "day": {"type": "integer", "description": "第幾天，從 1 開始（行程有起始日才會排到該天）"},
-    "end_day": {"type": "integer", "description": "跨日卡片的結束日（含當天，從 1 開始）。單日項目不用填；住宿／租車／多日票等才填，例如住前 3 天 day=1、end_day=3"},
+    # ── 排程 ──────────────────────────────────────────────────────────────────
+    "start_date": {"type": "string", "description": "卡片日期 YYYY-MM-DD。兩個日期只填一個時，另一個會自動補成同一天"},
+    "end_date": {"type": "string", "description": "結束日期 YYYY-MM-DD（含當天）。橫跨多天的卡片（連住數晚的住宿、多日租車、多日票券）才需要填；當天來回的不用填，系統會自動補成跟 start_date 同一天"},
+    "start_time": {"type": "string", "description": "開始時間 HH:MM，可選"},
+    "end_time": {"type": "string", "description": "結束時間 HH:MM，可選"},
+    "order_index": {"type": "number", "description": "同一天內的排序位置，越小越前。可選，不填則新卡片接在最後"},
+    # ── 內容 ──────────────────────────────────────────────────────────────────
     "title": {"type": "string", "maxLength": 30, "description": "卡片名稱：單一景點／餐廳／活動，簡短（≤20 字）"},
     "place_name": {"type": "string", "description": "純地點名稱（含城市，例如「大阪 道頓堀」），用於地圖定位，不要放網址"},
-    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選"},
+    "category": {"type": "string", "enum": ["景點", "美食", "交通", "住宿"], "description": "分類，可選。會自動掛上同名標籤"},
     "emoji": {"type": "string", "description": "代表性 emoji，可選"},
-    "start_time": {"type": "string", "description": "建議時間 HH:MM，可選"},
     "note": {"type": "string", "description": "卡片細節（玩法、交通、提醒等），markdown 格式，可選"},
     "ticket_url": {"type": "string", "description": "票券／訂位連結（完整網址），可選"},
+    "booked": {"type": "boolean", "description": "是否已預定票券／訂位"},
+    "kind": {"type": "string", "enum": ["event", "reference"], "description": "event＝排進時間軸的行程項目（預設）；reference＝不上時間軸的參考資料（例如網卡、換匯筆記）"},
+    "tags": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "標籤名稱陣列（不存在的會自動建立）。有填就是全替換成這一組；不想動標籤就整個欄位不要填。要清空標籤請用 clear_fields",
+    },
+    "source_item_ids": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "這張卡片對應的知識 id 陣列，依地點對應。有填就是全替換成這一組；沒有相符的知識就整個欄位不要填。要清空關聯請用 clear_fields",
+    },
 }
+
+# 可以被 clear_fields 點名清空的欄位，對齊 trip_service._CLEARABLE_COLUMNS／_CLEARABLE_RELATIONS
+_CLEARABLE = [
+    "start_date", "end_date", "start_time", "end_time",
+    "place_name", "note", "emoji", "ticket_url", "category",
+    "tags", "source_item_ids",
+]
 
 _TOOLS = [
     types.FunctionDeclaration(
@@ -87,7 +121,7 @@ _TOOLS = [
             "properties": {
                 "title": {"type": "string", "description": "行程標題（繁體中文，例如「大阪4天3夜自由行」）"},
                 "summary": {"type": "string", "description": "50 字以內的行程摘要"},
-                "start_date": {"type": "string", "description": "出發日期 YYYY-MM-DD。只要事件有提到出發時間就務必推算並帶上，卡片才能正確排到每一天。"},
+                "start_date": {"type": "string", "description": "出發日期 YYYY-MM-DD，事件有提到就帶上。這是行程本身的日期區間，卡片的日期各自獨立設在卡片上"},
                 "end_date": {"type": "string", "description": "回程日期 YYYY-MM-DD（依天數推算）"},
             },
             "required": ["title"],
@@ -98,28 +132,27 @@ _TOOLS = [
         description="新增『一張』卡片（單一景點／餐廳／交通／住宿）到指定行程。需要幾個點就呼叫幾次。",
         parameters={
             "type": "object",
-            "properties": {
-                "trip_id": _TRIP_ID_PARAM,
-                **_CARD_FIELDS,
-                "source_item_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "這張卡片對應的知識 id 陣列，依地點對應。沒有相符的知識就留空。",
-                },
-            },
+            "properties": {"trip_id": _TRIP_ID_PARAM, **_CARD_FIELDS},
             "required": ["trip_id", "title"],
         },
     ),
     types.FunctionDeclaration(
         name="update_card",
-        description="修改一張既有卡片。card_id 來自 get_trip。只填要變更的欄位，未填的保持不變。",
+        description=(
+            "修改一張既有卡片的任何欄位。card_id 來自 get_trip。"
+            "只填要變更的欄位，其餘一律保持原值；要清空某個欄位請用 clear_fields 點名。"
+        ),
         parameters={
             "type": "object",
             "properties": {
                 "trip_id": _TRIP_ID_PARAM,
                 "card_id": {"type": "string", "description": "要修改的卡片 id（來自 get_trip）"},
                 **_CARD_FIELDS,
-                "booked": {"type": "boolean", "description": "是否已預定票券"},
+                "clear_fields": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": _CLEARABLE},
+                    "description": "要清空的欄位名稱陣列。只有點名的欄位會被清掉，其餘一律保持原值",
+                },
             },
             "required": ["trip_id", "card_id"],
         },

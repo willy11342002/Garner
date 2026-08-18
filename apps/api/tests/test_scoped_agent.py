@@ -128,6 +128,42 @@ def test_card_tools_take_a_real_card_id_not_a_display_index(tool_name):
     assert "card_no" not in _params(tool)
 
 
+# ── 欄位對稱：能新增的欄位就一定能改回去 ───────────────────────────────────────
+
+def test_add_card_and_update_card_expose_the_same_fields():
+    """兩支工具共用 _CARD_FIELDS，欄位集合必須完全一致（除了各自的 id）。
+
+    以前兩邊各自列欄位，結果 update 有 booked、add 有 source_item_ids，
+    兩邊都沒有 end_time／kind／tags —— 使用者叫 AI 改某個欄位就是改不動。
+    """
+    from app.services.ai_service.graph.windows.trip import _TOOLS
+
+    add = set(_params(_tool(_TOOLS, "add_card"))) - {"trip_id"}
+    update = set(_params(_tool(_TOOLS, "update_card"))) - {"trip_id", "card_id"}
+
+    # clear_fields 只有 update 有 —— 剛建好的卡片沒有東西可清
+    assert update - add == {"clear_fields"}
+    assert add - update == set()
+
+
+def test_card_tools_cover_every_writable_trip_item_column():
+    """工具欄位要蓋滿 TripItem 的可寫欄位，漏一個就是 AI 改不動那一格。
+
+    刻意不開放的三個衍生欄位（lat／lng／geocoding_status）由 place_name 的背景
+    geocoding 決定，模型自己填只會蓋掉正確座標。
+    """
+    from app.models.trip import TripItem
+    from app.services.ai_service.graph.windows.trip import _CARD_FIELDS
+
+    derived = {"lat", "lng", "geocoding_status"}
+    internal = {"id", "trip_id", "user_item_id", "created_at", "updated_at"}
+    writable = {c.name for c in TripItem.__table__.columns} - derived - internal
+
+    # tags / source_item_ids 走關聯表，不是 TripItem 的欄位，但都要能改
+    assert writable <= set(_CARD_FIELDS)
+    assert {"tags", "source_item_ids"} <= set(_CARD_FIELDS)
+
+
 @pytest.mark.parametrize("tool_name", ["get_report", "update_report"])
 def test_every_report_tool_takes_an_explicit_report_id(tool_name):
     from app.services.ai_service.graph.windows.report import _TOOLS
@@ -211,10 +247,10 @@ async def test_adding_a_card_requires_editor_not_just_membership():
     accessible = AsyncMock(return_value=None)
     with patch.object(trip_service, "_get_accessible_trip", new=accessible):
         result = await trip_service.add_card_from_chat(
-            AsyncMock(), USER_ID, TRIP_ID, title="偷加的"
+            AsyncMock(), USER_ID, TRIP_ID, {"title": "偷加的"}
         )
 
-    assert result is None
+    assert result == {"ok": False, "error": "trip not found"}
     assert accessible.await_args.kwargs["required_role"] == "editor"
 
 
@@ -225,6 +261,203 @@ async def test_reading_someone_elses_trip_is_refused():
         assert await trip_service.get_trip_detail_for_chat(
             AsyncMock(), USER_ID, OTHER_TRIP_ID
         ) is None
+
+
+async def test_update_card_filters_source_ids_it_never_retrieved():
+    """update_card 也要過 seen_ids 這一關 —— 以前只有 add_card 有，等於同一個漏洞的側門。"""
+    updated = AsyncMock(return_value={"ok": True, "_item": {}})
+    executor = chat_service._build_trip_executor(AsyncMock(), USER_ID, {CARD_ID})
+
+    with patch.object(chat_service.trip_service, "update_card_from_chat", new=updated):
+        await executor("update_card", {
+            "trip_id": str(TRIP_ID), "card_id": str(CARD_ID),
+            "source_item_ids": [str(CARD_ID), str(OTHER_TRIP_ID), "not-a-uuid"],
+        })
+
+    assert updated.await_args.args[4]["source_item_ids"] == [str(CARD_ID)]
+
+
+async def test_card_args_without_source_ids_are_left_alone():
+    """沒給 source_item_ids 就不要補空陣列 —— 資料層會把空陣列當成「清空關聯」。"""
+    updated = AsyncMock(return_value={"ok": True, "_item": {}})
+    executor = chat_service._build_trip_executor(AsyncMock(), USER_ID, set())
+
+    with patch.object(chat_service.trip_service, "update_card_from_chat", new=updated):
+        await executor("update_card", {
+            "trip_id": str(TRIP_ID), "card_id": str(CARD_ID), "title": "改名",
+        })
+
+    assert "source_item_ids" not in updated.await_args.args[4]
+
+
+# ── 欄位解析 ──────────────────────────────────────────────────────────────────
+
+def test_card_dates_are_absolute_and_need_no_trip_level_anchor():
+    """卡片日期就是卡片自己的絕對日期，不依賴 trips.start_date。
+
+    這裡曾經有一組 day／end_day（第幾天），要拿 trips.start_date 當錨點換算 ——
+    行程沒填出發日時整組靜默失效，卡片全躺在「未排程」，模型還一路回報成功。
+    """
+    from datetime import date
+    from app.services.trip_service import _card_args_to_kwargs
+
+    kwargs, _extras = _card_args_to_kwargs(
+        {"start_date": "2026-07-28", "end_date": "2026-07-30"}
+    )
+
+    assert kwargs["start_date"] == date(2026, 7, 28)
+    assert kwargs["end_date"] == date(2026, 7, 30)
+
+
+# ── 卡片日期：要嘛都有、要嘛都沒有 ────────────────────────────────────────────
+
+def test_a_lone_start_date_gets_mirrored_to_end_date():
+    from datetime import date
+    from app.services.trip_service import _mirror_card_dates
+
+    kwargs = {"start_date": date(2026, 8, 22)}
+    _mirror_card_dates(kwargs)
+
+    assert kwargs["end_date"] == date(2026, 8, 22)
+
+
+def test_a_lone_end_date_gets_mirrored_to_start_date():
+    from datetime import date
+    from app.services.trip_service import _mirror_card_dates
+
+    kwargs = {"end_date": date(2026, 8, 22)}
+    _mirror_card_dates(kwargs)
+
+    assert kwargs["start_date"] == date(2026, 8, 22)
+
+
+def test_a_real_multi_day_span_is_left_alone():
+    from datetime import date
+    from app.services.trip_service import _mirror_card_dates
+
+    kwargs = {"start_date": date(2026, 8, 22), "end_date": date(2026, 8, 25)}
+    _mirror_card_dates(kwargs)
+
+    assert (kwargs["start_date"], kwargs["end_date"]) == (date(2026, 8, 22), date(2026, 8, 25))
+
+
+def test_partial_update_keeps_the_existing_span():
+    """住宿卡片 8/22–8/25，只改 start_date 不該把 end_date 洗掉。
+
+    判斷要看「合併後」的狀態，不能只看這次送進來的欄位。
+    """
+    from datetime import date
+    from types import SimpleNamespace
+    from app.services.trip_service import _mirror_card_dates
+
+    existing = SimpleNamespace(start_date=date(2026, 8, 22), end_date=date(2026, 8, 25))
+    kwargs = {"start_date": date(2026, 8, 23)}
+    _mirror_card_dates(kwargs, existing)
+
+    assert "end_date" not in kwargs  # 沿用既有的 8/25
+
+
+def test_clearing_only_the_end_date_shortens_to_a_single_day():
+    """住宿改成只住一晚：清掉 end_date，會被補成跟 start_date 同一天，而不是變未排程。"""
+    from datetime import date
+    from types import SimpleNamespace
+    from app.services.trip_service import _mirror_card_dates
+
+    existing = SimpleNamespace(start_date=date(2026, 8, 22), end_date=date(2026, 8, 25))
+    kwargs = {"end_date": None}
+    _mirror_card_dates(kwargs, existing)
+
+    assert kwargs["end_date"] == date(2026, 8, 22)
+
+
+def test_clearing_both_dates_makes_the_card_unscheduled():
+    from datetime import date
+    from types import SimpleNamespace
+    from app.services.trip_service import _mirror_card_dates
+
+    existing = SimpleNamespace(start_date=date(2026, 8, 22), end_date=date(2026, 8, 22))
+    kwargs = {"start_date": None, "end_date": None}
+    _mirror_card_dates(kwargs, existing)
+
+    assert kwargs == {"start_date": None, "end_date": None}
+
+
+def test_a_card_with_no_dates_at_all_stays_that_way():
+    from app.services.trip_service import _mirror_card_dates
+
+    kwargs = {"title": "還沒排"}
+    _mirror_card_dates(kwargs)
+
+    assert kwargs == {"title": "還沒排"}
+
+
+def test_relative_day_fields_are_gone():
+    """day／end_day 不該再出現在工具簽章裡，免得模型以為還能用。"""
+    from app.services.ai_service.graph.windows.trip import _CARD_FIELDS
+
+    assert "day" not in _CARD_FIELDS
+    assert "end_day" not in _CARD_FIELDS
+
+
+def test_only_supplied_fields_are_written_back():
+    """update_card 是部分更新：沒填的欄位不能出現在 kwargs，否則會把既有值蓋成 None。"""
+    from app.services.trip_service import _card_args_to_kwargs
+
+    kwargs, extras = _card_args_to_kwargs({"title": "新名字"})
+
+    assert kwargs == {"title": "新名字"}
+    assert extras == {}
+
+
+def test_empty_values_mean_untouched_not_cleared():
+    """空字串／空陣列＝模型沒有要動這個欄位，不是要清空。
+
+    Gemini 會把宣告過的參數整組帶出來、沒話說的填 "" 或 []。曾經把那當成「清空」，
+    結果模型改一張卡片就順手洗掉其他欄位——實測看到日期被清成 null 只剩時間、
+    標籤整組消失。
+    """
+    from app.services.trip_service import _card_args_to_kwargs
+
+    kwargs, extras = _card_args_to_kwargs({
+        "title": "大阪生活今昔館", "start_time": "10:00",
+        "start_date": "", "end_date": "", "end_time": "",
+        "note": "", "emoji": "", "ticket_url": "", "category": "",
+        "place_name": "", "tags": [], "source_item_ids": [],
+    })
+
+    assert set(kwargs) == {"title", "start_time"}
+    assert extras == {}
+
+
+def test_falsy_but_meaningful_values_still_count():
+    """False 與 0 是有意義的值，不能被空值判斷吃掉。"""
+    from app.services.trip_service import _card_args_to_kwargs
+
+    kwargs, _extras = _card_args_to_kwargs({"booked": False, "order_index": 0})
+
+    assert kwargs == {"booked": False, "order_index": 0.0}
+
+
+def test_clear_fields_is_the_only_way_to_erase():
+    from app.services.trip_service import _card_args_to_kwargs
+
+    kwargs, extras = _card_args_to_kwargs(
+        {"clear_fields": ["note", "start_date", "tags"]}
+    )
+
+    assert kwargs["note"] is None
+    assert kwargs["start_date"] is None
+    assert extras["tag_names"] == []
+
+
+def test_unparseable_date_is_skipped_and_reported_back_to_the_model():
+    """解析失敗不要靜默略過 —— 那正是「agent 說改好了、畫面沒變」的來源。"""
+    from app.services.trip_service import _card_args_to_kwargs
+
+    kwargs, extras = _card_args_to_kwargs({"start_date": "2026/07/28"})
+
+    assert "start_date" not in kwargs
+    assert any("start_date" in w for w in extras["warnings"])
 
 
 async def test_reading_someone_elses_report_is_refused():
