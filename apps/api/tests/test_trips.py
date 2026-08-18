@@ -75,3 +75,57 @@ def test_trip_item_create_has_no_tag_ids():
 def test_add_item_reads_only_existing_schema_fields(field):
     """add_item 會讀的欄位都必須真的存在於 TripItemCreate。"""
     assert field in TripItemCreate.model_fields
+
+
+# ── 列表查詢的成本（/trips/ 曾經要 1.7s）────────────────────────────────────────
+
+class _ExplodingItems:
+    """存取 .items 就炸掉的 Trip 替身。
+
+    列表頁只要「幾張卡片」這個數字。以前是 selectinload(Trip.items) 撈回整包卡片再
+    len()，而 TripItem.item_tags / sources 是 lazy="selectin"，等於為了一個數字多打
+    兩輪查詢、把每張卡片的標籤與知識關聯全撈回來。對遠端 Supabase 每輪都是一次來回。
+    """
+
+    def __init__(self):
+        self.id = TRIP_ID
+        self.title = "沖繩4天3夜"
+        self.summary = None
+        self.start_date = self.end_date = None
+        self.source_item_ids = []
+        self.members = []
+        self.user_id = USER_ID
+        self.last_edited_by = None
+        self.created_at = self.updated_at = __import__("datetime").datetime(2026, 8, 18)
+
+    @property
+    def items(self):
+        raise AssertionError("列表頁不該存取 trip.items —— 卡片數要由 SQL 算")
+
+
+async def test_listing_trips_never_loads_the_cards():
+    rows = [(_ExplodingItems(), 12)]
+    with patch.object(trip_service.crud_trips, "list_trips", new=AsyncMock(return_value=rows)):
+        result = await trip_service.list_trips(AsyncMock(), USER_ID)
+
+    assert result[0].item_count == 12
+
+
+def test_the_list_query_does_not_drag_the_embedding_along():
+    """1536 維向量每筆都拉回來是純浪費，列表頁根本用不到。"""
+    from sqlalchemy import select
+    from sqlalchemy.orm import defer, selectinload
+    from sqlalchemy.dialects import postgresql
+    from app.models.trip import Trip
+    from app.crud.trips import _accessible, _item_count_col
+
+    stmt = (
+        select(Trip, _item_count_col().label("item_count"))
+        .where(_accessible(USER_ID))
+        .options(selectinload(Trip.members), defer(Trip.embedding))
+    )
+    sql = str(stmt.compile(dialect=postgresql.dialect()))
+    select_list = sql[:sql.index("FROM trips ")]
+
+    assert "trips.embedding" not in select_list
+    assert "count(trip_items.id)" in select_list

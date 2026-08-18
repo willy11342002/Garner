@@ -1,8 +1,8 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, joinedload, selectinload
 
 from app.models.trip import Trip, TripItem, TripItemSource, TripItemTag, TripMember, TripTag
 from app.models.user import User
@@ -10,6 +10,34 @@ from app.models.user_item import UserItem
 
 
 # ── Trip ──────────────────────────────────────────────────────────────────────
+
+def _accessible(user_id: UUID):
+    """行程的可見範圍：自己建的，或被加為成員的。"""
+    return or_(
+        Trip.user_id == user_id,
+        exists().where(
+            TripMember.trip_id == Trip.id,
+            TripMember.member_user_id == user_id,
+        ),
+    )
+
+
+def _item_count_col():
+    """卡片數的相關子查詢。
+
+    列表用的兩支查詢都只要「幾張卡片」這個數字，以前是 selectinload(Trip.items) 撈回
+    整包卡片再 len() —— 而 TripItem.item_tags / sources 是 lazy="selectin"，載入卡片會
+    再多打兩輪查詢，把每張卡片的標籤與知識關聯全部撈回來只為了算一個數。對遠端
+    Supabase 來說每一輪都是一次網路來回。
+    """
+    return (
+        select(func.count(TripItem.id))
+        .where(TripItem.trip_id == Trip.id)
+        .correlate(Trip)
+        .scalar_subquery()
+    )
+
+
 
 async def create_trip(
     db: AsyncSession,
@@ -69,43 +97,35 @@ async def semantic_search_trips(
     user_id: UUID,
     embedding: list[float],
     limit: int = 5,
-) -> list[Trip]:
+) -> list[tuple[Trip, int]]:
     result = await db.execute(
-        select(Trip)
-        .where(
-            or_(
-                Trip.user_id == user_id,
-                exists().where(
-                    TripMember.trip_id == Trip.id,
-                    TripMember.member_user_id == user_id,
-                ),
-            ),
-            Trip.embedding.isnot(None),
-        )
-        .options(selectinload(Trip.items))
+        select(Trip, _item_count_col().label("item_count"))
+        .where(_accessible(user_id), Trip.embedding.isnot(None))
+        # defer 只影響 SELECT 欄位，ORDER BY 的 cosine_distance 照常運作
+        .options(defer(Trip.embedding))
         .order_by(Trip.embedding.cosine_distance(embedding))
         .limit(limit)
     )
-    return list(result.scalars().all())
+    return [(t, n) for t, n in result.all()]
 
 
-async def list_trips(db: AsyncSession, user_id: UUID) -> list[Trip]:
-    """列出使用者擁有或已加入的所有行程。"""
+async def list_trips(db: AsyncSession, user_id: UUID) -> list[tuple[Trip, int]]:
+    """列出使用者擁有或已加入的所有行程，附上卡片數。回傳 [(trip, item_count), ...]。
+
+    members 用 joinedload 不是 selectinload：selectin 會另外發一支 SELECT，對遠端
+    Supabase 就是多一次網路來回，而這支查詢的成本幾乎全是來回次數（單趟數百毫秒）。
+    members 每筆行程通常只有 0～3 列，join 造成的列數放大遠比多一次來回便宜。
+    embedding 則 defer 掉 —— 列表頁用不到，1536 維向量每筆都拉回來是純浪費。
+
+    joinedload 會讓同一份行程出現多列，所以要 result.unique() 收斂。
+    """
     result = await db.execute(
-        select(Trip)
-        .where(
-            or_(
-                Trip.user_id == user_id,
-                exists().where(
-                    TripMember.trip_id == Trip.id,
-                    TripMember.member_user_id == user_id,
-                ),
-            )
-        )
-        .options(selectinload(Trip.items), selectinload(Trip.members))
+        select(Trip, _item_count_col().label("item_count"))
+        .where(_accessible(user_id))
+        .options(joinedload(Trip.members), defer(Trip.embedding))
         .order_by(Trip.updated_at.desc())
     )
-    return list(result.scalars().all())
+    return [(t, n) for t, n in result.unique().all()]
 
 
 async def update_trip(
