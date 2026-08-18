@@ -257,8 +257,8 @@
               type="button"
               :title="editForm.emoji ? t('trips.changeEmojiTooltip') : t('trips.selectEmojiTooltip')"
               @click="toggleEmojiPicker"
-            >{{ editForm.emoji || '😊' }}</button>
-            <span v-else class="trips-emoji-trigger trips-emoji-trigger--ro">{{ editForm.emoji || '😊' }}</span>
+            >{{ editForm.emoji }}</button>
+            <span v-else class="trips-emoji-trigger trips-emoji-trigger--ro">{{ editForm.emoji }}</span>
 
             <input
               v-model="editForm.title"
