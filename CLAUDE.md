@@ -93,15 +93,20 @@ garner/
 - `gumroad_service` — Gumroad 金流串接
 - `apify_service` — 外部內容抓取（Apify）：支援 YouTube、TikTok、Facebook。YouTube 用雙 actor 並行（`asyncio.gather`）：`streamers/youtube-scraper` 抓 metadata（title/duration/thumbnail）、`streamers/youtube-video-downloader` 下載影片檔（`downloadedFileUrl`，存 KVS 約 3 天過期），兩邊 merge 進 `raw_data`；影片連結對應集中在 `yt_video_url()`（provider 共用）
 - `trip_service` — 旅遊行程（trips）業務邏輯：行程 CRUD、卡片 CRUD、排序、geocoding 觸發。**沒有 AI 專屬端口** —— 行程頁懸浮球走 chat，這裡只提供 `build_trip_scope`（組當前狀態＋card_no 對照給 `chat_service.resolve_scope`）與卡片寫入 helper（由 D 窗口的 executor 呼叫）
-- `quick_meta` — `POST /items/` 建立當下同步跑的輕量 metadata 前置步驟（在背景 ingest pipeline 之前跑,讓 201/203 回應時 title/thumbnail 就正確）：YouTube/TikTok 用平台原生 oEmbed；IG/Facebook 沒有可用的官方 oEmbed（需 Meta App Review），改用 `facebookexternalhit` User-Agent 直接抓貼文頁面的 og:title/og:description/og:image（IG/FB 官方連結預覽爬蟲會放行、跳過登入牆);Article 直接重用現有單次 Apify 呼叫（本來就快，同時拿到 title + 全文）。逾時/失敗回退成 title=null + API 回 203，交給背景 pipeline 補正。
+- `quick_meta` — `POST /items/` 建立當下同步跑的輕量 metadata 前置步驟（在背景 ingest pipeline 之前跑,讓 201/203 回應時 title/thumbnail 就正確）：YouTube/TikTok 用平台原生 oEmbed；IG/Facebook 沒有可用的官方 oEmbed（需 Meta App Review），改用 `facebookexternalhit` User-Agent 直接抓貼文頁面的 og:title/og:description/og:image（IG/FB 官方連結預覽爬蟲會放行、跳過登入牆);Article 直接重用現有單次 Apify 呼叫（本來就快，同時拿到 title + 全文）。逾時/失敗回退成 title=null + API 回 203，交給背景 pipeline 補正。**它寫進 `thumbnail_url` 的是平台的短期簽名網址，只是第一眼的暫時值**，背景 pipeline 快取完成後一定會覆寫（`ingest_graph._fetch_core`）。
+- `thumbnail_service` — 縮圖在 Supabase Storage 的快取層：路徑慣例（`thumbnails/{item_id}.{ext}`）、
+  上傳、公開網址、查既有檔案，providers / `item_service` / backfill 都走這支，不要各自拼路徑。
+  **平台給的縮圖網址是短期簽名網址**（IG/FB 的 scontent 帶 `oe=`、TikTok 帶 `x-expires`），
+  幾小時到幾天就失效，只有這裡回傳的 Storage 公開網址能長期存進 DB
 
 ### API providers（`apps/api/app/providers/`）
 > ingest pipeline 的**內容來源策略層**，不是 service 也不是 crud。新增支援平台請擴充這裡，
 > 不要在 `item_service` 或 `apify_service` 內塞 if/else 判斷網址。
 
 - `base` — `ContentProvider` 抽象基底（`matches` / `fetch_info` / `fetch_content` 三個方法）
-  與 `FetchInfo` dataclass；另提供共用的 `_cache_thumbnail`（上傳 Supabase Storage）
-  與 `_download_bytes`
+  與 `FetchInfo` dataclass；另提供共用的 `_resolve_thumbnail`（下載平台縮圖 → 丟給
+  `thumbnail_service` 快取，回傳 `(url, cached)`；快取失敗才退回平台網址）與 `_download_bytes`。
+  `FetchInfo.thumbnail_cached` 就是那個 `cached`，**寫回 DB 的判斷靠它**，不要改成只看欄位空不空
 - `__init__` — `get_provider(url)` 註冊表，依序比對 YouTube → Instagram → TikTok →
   Facebook → Article → Default，第一個 `matches()` 命中者勝出
 - `youtube` · `instagram` · `tiktok` · `facebook` — 各平台的網址正規化
@@ -123,7 +128,8 @@ garner/
 
 - `process_item` — ingest pipeline 的 stage 函式與 DAG 編排
 - `ingest_graph` — ingest 的 LangGraph 流程
-- `backfill` — 一次性 backfill（目前有 `backfill_search_zh`：補齊既有資料的中文斷詞欄位）
+- `backfill` — 一次性 backfill（`backfill_search_zh`：補齊既有資料的中文斷詞欄位；
+  `backfill_thumbnails`：把還指向平台 CDN 的 `thumbnail_url` 換回 Storage 永久網址）
 - `maintenance` — 每日排程維護
 
 ### API 其他（`apps/api/app/` 根目錄）
@@ -208,7 +214,7 @@ garner/
 > 這張表以前寫成「OpenRouter → Claude」，跟下方模組地圖自相矛盾，已於 2026-08 更正。
 >
 > **Cloudflare R2 沒有在用**：縮圖實際上傳 Supabase Storage
-> （`providers/base.py:_cache_thumbnail`、`item_service.py`）。
+> （`services/thumbnail_service.py`，由 `providers/base.py` 與 `item_service.py` 呼叫）。
 >
 > **PostHog 目前沒有接**：不是依賴、沒有 plugin、沒有任何載入程式碼。
 > 但 `apps/web/pages/privacy.vue` 的隱私政策仍聲明有用 PostHog 收集匿名行為事件——

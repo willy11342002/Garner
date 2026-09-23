@@ -18,19 +18,16 @@ class DefaultProvider(ContentProvider):
 
         result = await apify_service.fetch_article(url)
 
-        thumbnail_url = None
-        if result.thumbnail_url:
-            thumb_bytes = await apify_service.download_bytes(result.thumbnail_url)
-            if thumb_bytes:
-                thumbnail_url = await self._cache_thumbnail(content_id, thumb_bytes)
-        if not thumbnail_url:
-            thumbnail_url = result.thumbnail_url
+        thumbnail_url, thumbnail_cached = await self._resolve_thumbnail(
+            content_id, result.thumbnail_url
+        )
 
         return FetchInfo(
             raw_data=result.raw_data,
             title=result.title,
             duration_sec=None,
             thumbnail_url=thumbnail_url,
+            thumbnail_cached=thumbnail_cached,
         )
 
     async def fetch_content(

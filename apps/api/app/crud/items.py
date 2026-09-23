@@ -81,6 +81,26 @@ async def get_missing_search_zh(db: AsyncSession, limit: int) -> list[UserItem]:
     )).scalars().all())
 
 
+async def get_external_thumbnails(
+    db: AsyncSession, limit: int, marker: str, after_id: UUID | None = None
+) -> list[UserItem]:
+    """撈出 thumbnail_url 還指向站外（網址不含 Storage 公開路徑 marker）的 user_items。
+
+    用 id 游標而不是靠條件自然收斂：補不回來的那幾筆會原地留著站外網址，
+    只靠 `NOT LIKE` 過濾的話下一輪會重新選到同一批，backfill 永遠跑不完。
+    """
+    stmt = select(UserItem).where(
+        UserItem.thumbnail_url.is_not(None),
+        UserItem.thumbnail_url.not_like(f"%{marker}%"),
+        UserItem.deleted_at.is_(None),
+    )
+    if after_id is not None:
+        stmt = stmt.where(UserItem.id > after_id)
+    return list((await db.execute(
+        stmt.order_by(UserItem.id).limit(limit)
+    )).scalars().all())
+
+
 async def get_by_ids(db: AsyncSession, user_id: UUID, item_ids: list[UUID]) -> list[UserItem]:
     """批次取得指定 item_ids，保留原始順序，忽略不屬於該 user 或已刪除的。"""
     if not item_ids:

@@ -15,6 +15,10 @@ class FetchInfo:
     title: str | None = None
     duration_sec: int | None = None
     thumbnail_url: str | None = None
+    # True when thumbnail_url points at our own Storage cache (permanent);
+    # False means it is the platform's own URL, which is usually a signed URL
+    # that expires within days — callers must not persist it over a cached one.
+    thumbnail_cached: bool = False
     # Set by ArticleProvider only; when present, skips fetch_content()
     raw_content: str | None = None
 
@@ -45,22 +49,28 @@ class ContentProvider(ABC):
         Returns raw_content text, or None on failure."""
         ...
 
-    async def _cache_thumbnail(self, content_id: str, image_bytes: bytes) -> str | None:
-        from app.core.config import settings
-        from app.core.supabase import get_supabase
+    async def _resolve_thumbnail(
+        self, content_id: str, source_url: str | None
+    ) -> tuple[str | None, bool]:
+        """Download the platform's thumbnail and cache it to Storage.
 
-        try:
-            supabase = await get_supabase()
-            path = f"thumbnails/{content_id}.jpg"
-            await supabase.storage.from_(settings.storage_bucket).upload(
-                path, image_bytes, {"content-type": "image/jpeg", "upsert": "true"}
-            )
-            url = await supabase.storage.from_(settings.storage_bucket).get_public_url(path)
-            logger.info("Thumbnail cached: %s", url)
-            return url
-        except Exception:
-            logger.warning("Thumbnail upload failed for content_id=%s", content_id, exc_info=True)
-            return None
+        Returns (url, cached). The platform URL is only a fallback for when
+        caching fails — those are short-lived signed URLs, so `cached` tells
+        the caller whether the URL is safe to keep."""
+        if not source_url:
+            return None, False
+
+        from app.services import apify_service, thumbnail_service
+
+        image_bytes = await apify_service.download_bytes(source_url)
+        if image_bytes:
+            try:
+                return await thumbnail_service.cache(content_id, image_bytes), True
+            except Exception:
+                logger.warning(
+                    "Thumbnail upload failed for content_id=%s", content_id, exc_info=True
+                )
+        return source_url, False
 
     async def _download_bytes(self, url: str) -> bytes | None:
         try:

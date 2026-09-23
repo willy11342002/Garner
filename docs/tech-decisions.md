@@ -97,7 +97,10 @@ async def process_item(item_id, url):
 ### Object Storage（Supabase Storage）
 
 - 用於快取縮圖，bucket 由 `STORAGE_BUCKET` 指定（預設 `thumbnails`）
-- 實作在 `app/providers/base.py:_cache_thumbnail` 與 `app/services/item_service.py`
+- 實作集中在 `app/services/thumbnail_service.py`（路徑慣例、上傳、公開網址、查既有檔案），
+  由 `app/providers/base.py:_resolve_thumbnail` 與 `app/services/item_service.py` 呼叫
+- **平台縮圖網址一律不入庫**：IG/FB 的 scontent（帶 `oe=`）、TikTok 的 `x-expires` 都是短期簽名網址，
+  幾天就失效。只有 Storage 的公開網址是永久的，DB 存的必須是它
 - 曾規劃改用 Cloudflare R2（更便宜、無出流量費用），**但一直沒有實作**。
   repo 內沒有任何 R2 設定或程式碼，需要時再評估。
 

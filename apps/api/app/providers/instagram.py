@@ -27,13 +27,9 @@ class InstagramProvider(ContentProvider):
         result = await apify_service.fetch_instagram(url)
 
         # Thumbnail = first image (cover) cached to Storage
-        thumbnail_url = None
-        if result.thumbnail_url:
-            thumb_bytes = await apify_service.download_bytes(result.thumbnail_url)
-            if thumb_bytes:
-                thumbnail_url = await self._cache_thumbnail(content_id, thumb_bytes)
-        if not thumbnail_url:
-            thumbnail_url = result.thumbnail_url
+        thumbnail_url, thumbnail_cached = await self._resolve_thumbnail(
+            content_id, result.thumbnail_url
+        )
 
         caption = result.raw_data.get("caption") or result.raw_data.get("text") or ""
         first_line = caption.strip().splitlines()[0] if caption.strip() else ""
@@ -44,6 +40,7 @@ class InstagramProvider(ContentProvider):
             title=title,
             duration_sec=result.duration_sec,
             thumbnail_url=thumbnail_url,
+            thumbnail_cached=thumbnail_cached,
         )
 
     async def fetch_content(

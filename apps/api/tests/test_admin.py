@@ -25,3 +25,18 @@ async def test_backfill_search_index_ok_with_correct_secret(client, monkeypatch)
         )
     assert resp.status_code == 200
     assert resp.json() == {"status": "queued"}
+
+
+async def test_backfill_thumbnails_forbidden_without_secret(client):
+    resp = await client.post("/admin/backfill/thumbnails")
+    assert resp.status_code == 403
+
+
+async def test_backfill_thumbnails_ok_with_correct_secret(client, monkeypatch):
+    monkeypatch.setattr(settings, "admin_secret", "test-secret")
+    with patch("app.routers.admin.backfill_thumbnails", new=AsyncMock()):
+        resp = await client.post(
+            "/admin/backfill/thumbnails", headers={"X-Admin-Secret": "test-secret"}
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "queued"}

@@ -391,21 +391,16 @@ async def upload_article_cover(
     if user_item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    from app.core.supabase import get_supabase
-    from app.core.config import settings
-    supabase = await get_supabase()
-    ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
-    path = f"thumbnails/{user_item.id}.{ext}"
+    from app.services import thumbnail_service
     try:
-        await supabase.storage.from_(settings.storage_bucket).upload(
-            path, image_bytes, {"content-type": content_type, "upsert": "true"}
+        thumbnail_url = await thumbnail_service.cache(
+            str(user_item.id), image_bytes, content_type
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Storage upload failed: {e}",
         )
-    thumbnail_url = await supabase.storage.from_(settings.storage_bucket).get_public_url(path)
     user_item.thumbnail_url = thumbnail_url
     await db.commit()
     await db.refresh(user_item)
@@ -422,15 +417,8 @@ async def delete_article_cover(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
     if user_item.thumbnail_url:
-        from app.core.supabase import get_supabase
-        from app.core.config import settings
-        supabase = await get_supabase()
-        for ext in ("jpg", "png", "webp"):
-            path = f"thumbnails/{user_item.id}.{ext}"
-            try:
-                await supabase.storage.from_(settings.storage_bucket).remove([path])
-            except Exception:
-                pass
+        from app.services import thumbnail_service
+        await thumbnail_service.remove(str(user_item.id))
         user_item.thumbnail_url = None
         await db.commit()
         await db.refresh(user_item)

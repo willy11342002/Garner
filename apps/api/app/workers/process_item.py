@@ -38,7 +38,12 @@ async def _stage_fetch(ctx: StageContext, url: str, max_video_sec: int) -> tuple
     # Commit provider metadata immediately so title/thumbnail appear fast
     if info.title and not user_item.title:
         user_item.title = info.title
-    if info.thumbnail_url and not user_item.thumbnail_url:
+    # Overwrite an existing thumbnail only when this one is our own Storage
+    # cache: quick_meta already filled the field at creation time with the
+    # platform's short-lived signed URL (IG/FB scontent, TikTok x-expires),
+    # which expires within days. Keeping `not user_item.thumbnail_url` here
+    # is what stranded every saved item on a URL that later 404s.
+    if info.thumbnail_url and (info.thumbnail_cached or not user_item.thumbnail_url):
         user_item.thumbnail_url = info.thumbnail_url
     if info.duration_sec is not None:
         user_item.duration_sec = info.duration_sec
